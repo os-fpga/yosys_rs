@@ -52,7 +52,6 @@ USING_YOSYS_NAMESPACE
 
 #ifdef YOSYSHQ_VERIFIC_EXTENSIONS
 #include "InitialAssertions.h"
-#endif
 
 #ifndef YOSYSHQ_VERIFIC_API_VERSION
 #  error "Only YosysHQ flavored Verific is supported. Please contact office@yosyshq.com for commercial support for Yosys+Verific."
@@ -61,6 +60,7 @@ USING_YOSYS_NAMESPACE
 #if YOSYSHQ_VERIFIC_API_VERSION < 20210801
 #  error "Please update your version of YosysHQ flavored Verific."
 #endif
+#endif // End of YOSYSHQ_VERIFIC_EXTENSIONS
 
 #ifdef __clang__
 #pragma clang diagnostic pop
@@ -1474,6 +1474,7 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::se
 				continue;
 		}
 
+#ifdef YOSYSHQ_VERIFIC_EXTENSIONS
 		if (inst->Type() == PRIM_YOSYSHQ_INITSTATE)
 		{
 			if (verific_verbose)
@@ -1485,6 +1486,7 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::se
 			if (!mode_keep)
 				continue;
 		}
+#endif
 
 		if (!mode_keep && verific_sva_prims.count(inst->Type())) {
 			if (verific_verbose)
