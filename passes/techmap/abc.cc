@@ -135,6 +135,7 @@ void run_command(const std::string &command, vector<int>& results, std::map<std:
         char logbuf[128];
         while (fgets(logbuf, 128, f) != NULL) {
             log_results[command]+=logbuf;
+        }
 
         int ret = pclose(f);
         if (ret < 0)
@@ -175,6 +176,8 @@ RTLIL::Design* cost(const vector<RTLIL::Design*>& mapped_designs, const std::str
 void abc_output_process_line(const std::string& script, std::function<void(const std::string&)> process_line){
 
           std::string line;
+        //char logbuf[128];
+       // while (fgets(logbuf, 128, f) != NULL) {
           for(auto it: split_tokens(script,"\n")){
 	        line+=(it+"\n");  
 		if (!line.empty() && line.back() == '\n'){
