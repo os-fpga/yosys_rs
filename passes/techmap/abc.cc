@@ -125,14 +125,8 @@ RTLIL::SigSpec clk_sig, en_sig;
 dict<int, std::string> pi_map, po_map;
 
 #if !defined(YOSYS_DISABLE_SPAWN)
-void run_command(const std::string &command, std::function<void(const std::string&)> process_line, vector<int>& results)
+void run_command(const std::string &command, vector<int>& results, std::map<std::string, std::string>& log_results)
 {
-	std::cout << command << "+++++++++++++" << std::endl;     
-   if (!process_line){
-                int res = system(command.c_str());
-		results.push_back(res);
-	}
-
         FILE *f = popen(command.c_str(), "r");
         if (f == nullptr)
                 results.push_back(-1);
@@ -140,12 +134,7 @@ void run_command(const std::string &command, std::function<void(const std::strin
         std::string line;
         char logbuf[128];
         while (fgets(logbuf, 128, f) != NULL) {
-                line += logbuf;
-                if (!line.empty() && line.back() == '\n')
-                        process_line(line), line.clear();
-        }
-        if (!line.empty())
-                process_line(line);
+            log_results[command]+=logbuf;
 
         int ret = pclose(f);
         if (ret < 0)
@@ -161,7 +150,7 @@ void run_command(const std::string &command, std::function<void(const std::strin
 RTLIL::Design* cost(const vector<RTLIL::Design*>& mapped_designs, const std::string& abc_scripts){
 	vector<int> lut_count;
 	vector<std::string> tmp = split_tokens(abc_scripts, ",");
-	for(int i=0; i < mapped_designs.size();++i){
+	for(size_t i=0; i < mapped_designs.size();++i){
 		RTLIL::Module *mapped_mod = mapped_designs[i]->module(ID(netlist));
 		std::map<std::string, int> cell_stats;
         	for (auto c : mapped_mod->cells()){
@@ -180,10 +169,21 @@ RTLIL::Design* cost(const vector<RTLIL::Design*>& mapped_designs, const std::str
 			min_index = i;
 		}
 	}
-	log("Minimum luts count is obtained using the %s script", tmp[min_index].c_str());
+	log("\nMinimum luts count is obtained using the %s script\n", tmp[min_index].c_str());
 	return mapped_designs[min_index];
 }
+void abc_output_process_line(const std::string& script, std::function<void(const std::string&)> process_line){
 
+          std::string line;
+          for(auto it: split_tokens(script,"\n")){
+	        line+=(it+"\n");  
+		if (!line.empty() && line.back() == '\n'){
+	                process_line(line), line.clear();
+		}
+        }
+        if (!line.empty())
+               process_line(line);
+}
 
 
 int map_signal(RTLIL::SigBit bit, gate_type_t gate_type = G(NONE), int in1 = -1, int in2 = -1, int in3 = -1, int in4 = -1)
@@ -713,7 +713,6 @@ struct abc_output_filter
 					po, po_map.count(po) ? po_map.at(po).c_str() : "???");
 			return;
 		}
-
 		for (char ch : line)
 			next_char(ch);
 	}
@@ -1005,6 +1004,7 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 	log("Extracted %d gates and %d wires to a netlist network with %d inputs and %d outputs.\n",
 			count_gates, GetSize(signal_list), count_input, count_output);
 	log_push();
+	
 	if (count_output > 0)
 	{
 		log_header(design, "Executing ABC.\n");
@@ -1064,19 +1064,25 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 				fprintf(f, "%d %d.00 1.00\n", i+1, lut_costs.at(i));
 			fclose(f);
 		}
+		// buffers - abc script commands
 		vector<std::string> buffers;
+	
+		// logs - collects logs separatly for each script run
+		std::map<std::string, std::string> logs;
 		for(int i = 1; i < count;++i){	
 			std::string tmp = buffer;
 			tmp = stringf("%s -s -f %s/abc_%d.script 2>&1", exe_file.c_str(), tempdir_name.c_str(), i);
 			log("Running ABC command: %s\n", replace_tempdir(tmp, tempdir_name, show_tempdir).c_str());	
 			buffers.push_back(tmp);
+			logs.insert({tmp, ""});
 		}
 #ifndef YOSYS_LINK_ABC
 		abc_output_filter filt(tempdir_name, show_tempdir);
 		vector<std::thread> abc_thread;
+		// run_results - return values of each abc_script run
 		vector<int> run_results;
 		for(auto &it : buffers){
-			std::thread abc_th(run_command, std::ref(it), std::bind(&abc_output_filter::next_line, filt, std::placeholders::_1), std::ref(run_results));
+			std::thread abc_th(run_command, std::ref(it), std::ref(run_results), std::ref(logs));
 			abc_thread.push_back(std::move(abc_th));
 		}
 		for(auto &it: abc_thread)
@@ -1099,11 +1105,12 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 #endif
 		for(size_t i=0; i < run_results.size();++i){
 		     if (run_results[i] != 0)
-		        log_error("ABC: execution of command \"%s\" failed: return code %d.\n", buffer.c_str(), i);
+		        log_error("ABC: execution of command \"%s\" failed: return code %d.\n", buffers[i].c_str(), run_results[i]);
 		}
 		bool builtin_lib = liberty_files.empty() && genlib_files.empty();
 		vector<RTLIL::Design* > mapped_designs;
 		vector<RTLIL::Module*> mapped_modules;
+		// lut_coun - collects lut count for each script run
 		vector<int> lut_count;
 
 		for(int i=1;i<count;i++){
@@ -1118,9 +1125,13 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 			mapped_designs.push_back(mapped_design);
 			ifs.close();
 		}
-
 	 	RTLIL::Design* mapped_design = cost(mapped_designs, script_file);	
-
+		for(unsigned i=0; i < mapped_designs.size();++i){
+			if(mapped_design == mapped_designs[i]){
+				std::string tmp = stringf("%s -s -f %s/abc_%u.script 2>&1", exe_file.c_str(), tempdir_name.c_str(), i+1);
+				abc_output_process_line(logs[tmp], std::bind(&abc_output_filter::next_line, filt, std::placeholders::_1));
+			}
+		}
 		log_header(design, "Re-integrating ABC results.\n");
 
 		RTLIL::Module *mapped_mod = mapped_design->module(ID(netlist));
