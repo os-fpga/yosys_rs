@@ -61,9 +61,9 @@
 #  include <unistd.h>
 #  include <dirent.h>
 #endif
-//#if !defined(YOSYS_DISABLE_SPAWN)
+#if !defined(YOSYS_DISABLE_SPAWN)
 #  include <sys/wait.h>
-//#endif
+#endif
 #include "frontends/blif/blifparse.h"
 
 #ifdef YOSYS_LINK_ABC
@@ -148,7 +148,7 @@ void run_command(const std::string &command, vector<int>& results, std::map<std:
 }
 #endif
 
-RTLIL::Design* cost(const vector<RTLIL::Design*>& mapped_designs, const std::string& abc_scripts){
+RTLIL::Design* area_cost_func(const vector<RTLIL::Design*>& mapped_designs, const std::string& abc_scripts){
 	vector<int> lut_count;
 	vector<std::string> tmp = split_tokens(abc_scripts, ",");
 	for(size_t i=0; i < mapped_designs.size();++i){
@@ -176,14 +176,12 @@ RTLIL::Design* cost(const vector<RTLIL::Design*>& mapped_designs, const std::str
 void abc_output_process_line(const std::string& script, std::function<void(const std::string&)> process_line){
 
           std::string line;
-        //char logbuf[128];
-       // while (fgets(logbuf, 128, f) != NULL) {
           for(auto it: split_tokens(script,"\n")){
-	        line+=(it+"\n");  
-		if (!line.empty() && line.back() == '\n'){
-	                process_line(line), line.clear();
-		}
-        }
+	          line+=(it+"\n");  
+		      if (!line.empty() && line.back() == '\n'){
+	             process_line(line), line.clear();
+		        }
+            }
         if (!line.empty())
                process_line(line);
 }
@@ -1067,10 +1065,8 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 				fprintf(f, "%d %d.00 1.00\n", i+1, lut_costs.at(i));
 			fclose(f);
 		}
-		// buffers - abc script commands
 		vector<std::string> buffers;
 	
-		// logs - collects logs separatly for each script run
 		std::map<std::string, std::string> logs;
 		for(int i = 1; i < count;++i){	
 			std::string tmp = buffer;
@@ -1082,7 +1078,6 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 #ifndef YOSYS_LINK_ABC
 		abc_output_filter filt(tempdir_name, show_tempdir);
 		vector<std::thread> abc_thread;
-		// run_results - return values of each abc_script run
 		vector<int> run_results;
 		for(auto &it : buffers){
 			std::thread abc_th(run_command, std::ref(it), std::ref(run_results), std::ref(logs));
@@ -1113,7 +1108,6 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 		bool builtin_lib = liberty_files.empty() && genlib_files.empty();
 		vector<RTLIL::Design* > mapped_designs;
 		vector<RTLIL::Module*> mapped_modules;
-		// lut_coun - collects lut count for each script run
 		vector<int> lut_count;
 
 		for(int i=1;i<count;i++){
@@ -1128,7 +1122,7 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 			mapped_designs.push_back(mapped_design);
 			ifs.close();
 		}
-	 	RTLIL::Design* mapped_design = cost(mapped_designs, script_file);	
+	 	RTLIL::Design* mapped_design = area_cost_func(mapped_designs, script_file);	
 		for(unsigned i=0; i < mapped_designs.size();++i){
 			if(mapped_design == mapped_designs[i]){
 				std::string tmp = stringf("%s -s -f %s/abc_%u.script 2>&1", exe_file.c_str(), tempdir_name.c_str(), i+1);
@@ -1345,7 +1339,6 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 			}
 
 		for (auto &it : cell_stats){
-			lut_count.push_back(it.second);
 			log("ABC RESULTS:   %15s cells: %8d\n", it.first.c_str(), it.second);
 		}
 		int in_wires = 0, out_wires = 0;
@@ -1669,11 +1662,6 @@ struct AbcPass : public Pass {
 			}
 			if (arg == "-script" && argidx+1 < args.size()) {
 				script_file = args[++argidx];
-			//	if(script_file.find(",") != std::string::npos){
-			//		for(auto it : split_tokens(args[++argidx],",")){
-			//			script_files.push_back(it);
-			//		}
-			//	}
 				continue;
 			}
 			if (arg == "-liberty" && argidx+1 < args.size()) {
