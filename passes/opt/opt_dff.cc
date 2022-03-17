@@ -728,6 +728,12 @@ struct OptDffWorker
 
 		// Run as a separate sub-pass, so that we don't mutate (non-FF) cells under ModWalker.
 		bool did_something = false;
+ 
+                // numbers to control below loop exit
+                //
+                int nbSolve = 0;
+                int nbRemove = 0;
+
 		for (auto cell : module->selected_cells()) {
 			if (!RTLIL::builtin_ff_cell_types().count(cell->type))
 				continue;
@@ -770,6 +776,7 @@ struct OptDffWorker
 						qcsat.prepare();
 
 						// Try to find out whether the register bit can change under some circumstances
+                                                nbSolve++;
 						bool counter_example_found = qcsat.ez->solve(qcsat.ez->IFF(q_sat_pi, init_sat_pi), qcsat.ez->NOT(qcsat.ez->IFF(d_sat_pi, init_sat_pi)));
 
 						// If the register bit cannot change, we can replace it with a constant
@@ -798,6 +805,7 @@ struct OptDffWorker
 						qcsat.prepare();
 
 						// Try to find out whether the register bit can change under some circumstances
+                                                nbSolve++;
 						bool counter_example_found = qcsat.ez->solve(qcsat.ez->IFF(q_sat_pi, init_sat_pi), qcsat.ez->NOT(qcsat.ez->IFF(d_sat_pi, init_sat_pi)));
 
 						// If the register bit cannot change, we can replace it with a constant
@@ -805,6 +813,8 @@ struct OptDffWorker
 							continue;
 					}
 				}
+
+                                nbRemove++;
 				log("Setting constant %d-bit at position %d on %s (%s) from module %s.\n", val ? 1 : 0,
 						i, log_id(cell), log_id(cell->type), log_id(module));
 
@@ -827,6 +837,17 @@ struct OptDffWorker
 				ff.emit();
 				did_something = true;
 			}
+
+                   // Check the return of investment of DFF optimization.
+                   // If too low (less than 0.1% of DFFs removed) then proceed to early exit. 
+                   // Performs this check for a reasonable minimum number of "solve" DFFs (2000)
+                   // when runtime starts to be costly.
+                   // [RapidSilicon]
+#if 1
+                   if ((nbSolve >= 1000) && (nbRemove < nbSolve * 0.002)) {
+                      break;
+                   }
+#endif
 		}
 		return did_something;
 	}
