@@ -550,7 +550,6 @@ module GND(output G);
 	assign G = 0;
 endmodule
 
-(* abc9_box *)
 module IBUF(output O, input I);
 
 	specify
@@ -560,7 +559,6 @@ module IBUF(output O, input I);
 	assign O = I;
 endmodule
 
-(* abc9_box *)
 module OBUF(output O, input I);
 
 	specify
@@ -582,6 +580,39 @@ module IOBUF (O, IO, I, OEN);
   inout IO;
   assign IO = OEN ? 1'bz : I;
   assign I = IO;
+endmodule
+
+module TLVDS_OBUF (I, O, OB);
+  input I;
+  output O;
+  output OB;
+  assign O = I;
+  assign OB = ~I;
+endmodule
+
+(* blackbox *)
+module ODDR(D0, D1, TX, CLK, Q0, Q1);
+	input D0;
+	input D1;
+	input TX;
+	input CLK;
+	output Q0;
+	output Q1;
+	parameter TXCLK_POL = 0;
+	parameter INIT = 0;
+endmodule
+
+(* blackbox *)
+module ODDRC(D0, D1, CLEAR, TX, CLK, Q0, Q1);
+	input D0;
+	input D1;
+	input CLEAR;
+	input TX;
+	input CLK;
+	output Q0;
+	output Q1;
+	parameter TXCLK_POL = 0;
+	parameter INIT = 0;
 endmodule
 
 module GSR (input GSRI);
@@ -1519,4 +1550,38 @@ parameter CLKOUTD_SRC =  "CLKOUT";  // CLKOUT, CLKOUTP
 parameter CLKOUTD3_SRC = "CLKOUT";  // CLKOUT, CLKOUTP
 parameter DEVICE = "GW1N-1";        // "GW1N-1", "GW1N-4", "GW1N-9", "GW1NR-4", "GW1NR-9", "GW1N-4B", "GW1NR-4B", "GW1NS-2", "GW1NS-2C", "GW1NZ-1", "GW1NSR-2", "GW1NSR-2C", "GW1N-1S", "GW1NSE-2C", "GW1NRF-4B", "GW1N-9C", "GW1NR-9C", "GW1N-4C", "GW1NR-4C"
 
+endmodule
+
+(* blackbox *)
+module OSC(OSCOUT);
+output OSCOUT;
+
+parameter FREQ_DIV = 100;
+parameter DEVICE = "GW1N-4";
+endmodule
+
+(* blackbox *)
+module OSCZ(OSCOUT, OSCEN);
+input OSCEN;
+
+output OSCOUT;
+
+parameter FREQ_DIV = 100;
+endmodule
+
+(* blackbox *)
+module OSCF(OSCOUT, OSCOUT30M, OSCEN);
+input OSCEN;
+
+output OSCOUT;
+output OSCOUT30M;
+
+parameter FREQ_DIV = 100;
+endmodule
+
+(* blackbox *)
+module OSCH(OSCOUT);
+output OSCOUT;
+
+parameter FREQ_DIV = 96;
 endmodule
