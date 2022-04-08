@@ -2,8 +2,24 @@
 List of major changes and improvements between releases
 =======================================================
 
-Yosys 0.15 .. Yosys 0.15-dev
+Yosys 0.16 .. Yosys 0.16-dev
 --------------------------
+
+ * SystemVerilog
+    - Fixed automatic `nosync` inference for local variables in `always_comb`
+      procedures not applying to nested blocks and blocks in functions
+
+Yosys 0.15 .. Yosys 0.16
+--------------------------
+ * Various
+    - Added BTOR2 witness file co-simulation.
+    - Simulation calls external vcd2fst for VCD conversion.
+    - Added fst2tb pass - generates testbench for the circuit using
+      the given top-level module and simulus signal from FST file.
+    - yosys-smtbmc: Option to keep going after failed assertions in BMC mode
+
+ * Verific support
+    - Import modules in alphabetic (reproducable) order.
 
 Yosys 0.14 .. Yosys 0.15
 --------------------------
