@@ -537,10 +537,8 @@ void yosys_setup()
 	already_setup = true;
 	init_share_dirname();
 	init_abc_executable_name();
-    if( 0 != access(yosys_abc_executable.c_str(), F_OK)){
-        std::cout << "ERROR: you need to set env. var ABC to abc executable path" << std::endl;
-        return;
-    }
+	if (0 != access(yosys_abc_executable.c_str(), F_OK))
+		log_error("ERROR: couldn't find ABC executable");
 #define X(_id) RTLIL::ID::_id = "\\" # _id;
 #include "kernel/constids.inc"
 #undef X
