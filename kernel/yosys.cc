@@ -73,6 +73,11 @@
 #include <limits.h>
 #include <errno.h>
 
+#if defined(_MSC_VER) || defined(__MINGW32__) || defined(__CYGWIN__) || defined(_WIN32)
+#define F_OK 0
+#define access _access
+#endif
+
 YOSYS_NAMESPACE_BEGIN
 
 int autoidx = 1;
@@ -532,7 +537,8 @@ void yosys_setup()
 	already_setup = true;
 	init_share_dirname();
 	init_abc_executable_name();
-
+	if (0 != access(yosys_abc_executable.c_str(), F_OK))
+		log_error("ERROR: couldn't find ABC executable");
 #define X(_id) RTLIL::ID::_id = "\\" # _id;
 #include "kernel/constids.inc"
 #undef X
@@ -902,7 +908,7 @@ void init_abc_executable_name()
 	if (std::getenv("ABC")) {
 		yosys_abc_executable = std::getenv("ABC");
 	} else {
-		yosys_abc_executable = ABCEXTERNAL;
+		yosys_abc_executable = proc_self_dirname() + "abc";
 	}
 #else
 	yosys_abc_executable = proc_self_dirname() + proc_program_prefix()+ "yosys-abc";
