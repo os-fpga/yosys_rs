@@ -44,6 +44,8 @@ DISABLE_SPAWN := 0
 # Needed for environments that don't have proper thread support (i.e. emscripten, wasm--for now)
 DISABLE_ABC_THREADS := 0
 
+YOSYS_VERIFIC := 0
+
 # clang sanitizers
 SANITIZER =
 # SANITIZER = address
@@ -89,6 +91,9 @@ VPATH := $(YOSYS_SRC)
 
 CXXSTD ?= c++11
 CXXFLAGS := $(CXXFLAGS) -Wall -Wextra -ggdb -I. -I"$(YOSYS_SRC)" -MD -MP -D_YOSYS_ -fPIC -I$(PREFIX)/include
+ifeq ($(YOSYS_VERIFIC),1)
+CXXFLAGS := $(CXXFLAGS) -DYOSYS_VERIFIC
+endif
 LDLIBS := $(LDLIBS) -lstdc++ -lm
 PLUGIN_LDFLAGS :=
 
@@ -730,6 +735,9 @@ YOSYS_VER_STR := Yosys $(YOSYS_VER) (git sha1 $(GIT_REV), $(notdir $(CXX)) $(she
 kernel/version_$(GIT_REV).cc: $(YOSYS_SRC)/Makefile
 	$(P) rm -f kernel/version_*.o kernel/version_*.d kernel/version_*.cc
 	$(Q) mkdir -p kernel && echo "namespace Yosys { extern const char *yosys_version_str; const char *yosys_version_str=\"$(YOSYS_VER_STR)\"; }" > kernel/version_$(GIT_REV).cc
+ifeq ($(YOSYS_VERIFIC),1)
+	$(Q) echo "namespace Yosys { extern const char *yosys_verific_version_str; const char *yosys_verific_version_str=\"$(YOSYS_VERIFIC_VER_STR)\"; }" >> kernel/version_$(GIT_REV).cc
+endif
 
 ifeq ($(ENABLE_VERIFIC),1)
 CXXFLAGS_NOVERIFIC = $(foreach v,$(CXXFLAGS),$(if $(findstring $(VERIFIC_DIR),$(v)),,$(v)))

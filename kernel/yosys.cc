@@ -159,6 +159,9 @@ void yosys_banner()
 	log(" |                                                                            |\n");
 	log(" \\----------------------------------------------------------------------------/\n");
 	log("\n");
+#ifdef YOSYS_VERIFIC
+	log(" %s\n", yosys_verific_version_str);
+#endif    
 	log(" %s\n", yosys_version_str);
 	log("\n");
 }
