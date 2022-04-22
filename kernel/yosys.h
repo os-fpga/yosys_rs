@@ -358,6 +358,9 @@ void shell(RTLIL::Design *design);
 extern std::set<std::string> yosys_input_files, yosys_output_files;
 
 // from kernel/version_*.o (cc source generated from Makefile)
+#ifdef YOSYS_VERIFIC
+extern const char *yosys_verific_version_str;
+#endif    
 extern const char *yosys_version_str;
 
 // from passes/cmds/design.cc
