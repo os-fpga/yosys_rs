@@ -97,9 +97,11 @@ std::vector<void*> memhasher_store;
 
 std::string yosys_share_dirname;
 std::string yosys_abc_executable;
+std::string yosys_shared_tmp_dirname;
 
 void init_share_dirname();
 void init_abc_executable_name();
+void remove_shared_tmp_dir();
 
 void memhasher_on()
 {
@@ -583,7 +585,7 @@ void yosys_shutdown()
 			fclose(f);
 	log_errfile = NULL;
 	log_files.clear();
-
+	remove_shared_tmp_dir();
 	yosys_celltypes.clear();
 
 #ifdef YOSYS_ENABLE_TCL
@@ -938,6 +940,22 @@ std::string proc_program_prefix()
 	program_prefix = YOSYS_PROGRAM_PREFIX;
 #endif
 	return program_prefix;
+}
+
+std::string get_shared_tmp_dirname()
+{
+	if (yosys_shared_tmp_dirname.empty()) {
+                yosys_shared_tmp_dirname = make_temp_dir();
+        }
+	return yosys_shared_tmp_dirname;
+}
+
+void remove_shared_tmp_dir()
+{
+	if (!yosys_shared_tmp_dirname.empty()) {
+                remove_directory(yosys_shared_tmp_dirname);
+	        yosys_shared_tmp_dirname.clear();
+        }
 }
 
 bool fgetline(FILE *f, std::string &buffer)
