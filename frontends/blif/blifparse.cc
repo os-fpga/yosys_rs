@@ -166,10 +166,7 @@ void parse_blif(RTLIL::Design *design, std::istream &f, IdString dff_name, bool 
 					goto error;
 				module = new RTLIL::Module;
 				lastcell = nullptr;
-                                std::string name = strtok(NULL, " \t\r\n");
-                                if(name.find_last_of("//") != std::string::npos)
-                                        name = name.substr(name.find_last_of("//") + 1);
-				module->name = RTLIL::escape_id(name);
+				module->name = RTLIL::escape_id(strtok(NULL, " \t\r\n"));
 				obj_attributes = &module->attributes;
 				obj_parameters = nullptr;
 				if (design->module(module->name))

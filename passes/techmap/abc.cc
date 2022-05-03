@@ -780,10 +780,7 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 	if (dff_mode && clk_sig.empty())
 		log_cmd_error("Clock domain %s not found.\n", clk_str.c_str());
 
-	std::string tempdir_name = "/tmp/" + proc_program_prefix()+ "yosys-abc-XXXXXX";
-	if (!cleanup)
-		tempdir_name[0] = tempdir_name[4] = '_';
-	tempdir_name = make_temp_dir(tempdir_name);
+	std::string tempdir_name = get_shared_tmp_dirname();
 	log_header(design, "Extracting gate netlist of module `%s' to `%s/input.blif'..\n",
 			module->name.c_str(), replace_tempdir(tempdir_name, tempdir_name, show_tempdir).c_str());
 
@@ -1388,12 +1385,6 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 	else
 	{
 		log("Don't call ABC as there is nothing to map.\n");
-	}
-
-	if (cleanup)
-	{
-		log("Removing temp directory.\n");
-		remove_directory(tempdir_name);
 	}
 
 	log_pop();
