@@ -188,6 +188,7 @@ void logv(const char *format, va_list ap)
 
 		log_warn_regex_recusion_guard = false;
 	}
+    log_flush();
 }
 
 void logv_header(RTLIL::Design *design, const char *format, va_list ap)
