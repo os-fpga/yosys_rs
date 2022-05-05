@@ -134,7 +134,7 @@ LDFLAGS += -rdynamic
 LDLIBS += -lrt
 endif
 
-YOSYS_VER := 0.16+6
+YOSYS_VER := 0.16+65
 GIT_REV := $(shell git -C $(YOSYS_SRC) rev-parse --short HEAD 2> /dev/null || echo UNKNOWN)
 OBJS = kernel/version_$(GIT_REV).o
 
@@ -147,7 +147,7 @@ bumpversion:
 # is just a symlink to your actual ABC working directory, as 'make mrproper'
 # will remove the 'abc' directory and you do not want to accidentally
 # delete your work on ABC..
-ABCREV = 00b674d
+ABCREV = 3da9357
 ABCPULL = 1
 ABCURL ?= https://github.com/YosysHQ/abc
 ABCMKARGS = CC="$(CXX)" CXX="$(CXX)" ABC_USE_LIBSTDCXX=1 VERBOSE=$(Q)
@@ -599,11 +599,15 @@ $(eval $(call add_include_file,kernel/satgen.h))
 $(eval $(call add_include_file,kernel/qcsat.h))
 $(eval $(call add_include_file,kernel/ff.h))
 $(eval $(call add_include_file,kernel/ffinit.h))
+ifeq ($(ENABLE_ZLIB),1)
 $(eval $(call add_include_file,kernel/fstdata.h))
+endif
 $(eval $(call add_include_file,kernel/mem.h))
 $(eval $(call add_include_file,libs/ezsat/ezsat.h))
 $(eval $(call add_include_file,libs/ezsat/ezminisat.h))
+ifeq ($(ENABLE_ZLIB),1)
 $(eval $(call add_include_file,libs/fst/fstapi.h))
+endif
 $(eval $(call add_include_file,libs/sha1/sha1.h))
 $(eval $(call add_include_file,libs/json11/json11.hpp))
 $(eval $(call add_include_file,passes/fsm/fsmdata.h))
@@ -625,7 +629,10 @@ ifneq ($(ABCEXTERNAL),)
 kernel/yosys.o: CXXFLAGS += -DABCEXTERNAL='"$(ABCEXTERNAL)"'
 endif
 endif
-OBJS += kernel/cellaigs.o kernel/celledges.o kernel/satgen.o kernel/qcsat.o kernel/mem.o kernel/ffmerge.o kernel/ff.o kernel/fstdata.o
+OBJS += kernel/cellaigs.o kernel/celledges.o kernel/satgen.o kernel/qcsat.o kernel/mem.o kernel/ffmerge.o kernel/ff.o
+ifeq ($(ENABLE_ZLIB),1)
+OBJS += kernel/fstdata.o
+endif
 
 kernel/log.o: CXXFLAGS += -DYOSYS_SRC='"$(YOSYS_SRC)"'
 kernel/yosys.o: CXXFLAGS += -DYOSYS_DATDIR='"$(DATDIR)"' -DYOSYS_PROGRAM_PREFIX='"$(PROGRAM_PREFIX)"'
@@ -649,9 +656,11 @@ OBJS += libs/minisat/SimpSolver.o
 OBJS += libs/minisat/Solver.o
 OBJS += libs/minisat/System.o
 
+ifeq ($(ENABLE_ZLIB),1)
 OBJS += libs/fst/fstapi.o
 OBJS += libs/fst/fastlz.o
 OBJS += libs/fst/lz4.o
+endif
 
 include $(YOSYS_SRC)/frontends/*/Makefile.inc
 include $(YOSYS_SRC)/passes/*/Makefile.inc
