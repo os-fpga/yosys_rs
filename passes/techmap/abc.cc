@@ -1393,11 +1393,11 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 		log("Don't call ABC as there is nothing to map.\n");
 	}
 
-        if (cleanup)
-        {
-                log("Removing temp directory.\n");
-                remove_directory(tempdir_name);
-        }
+	if (cleanup)
+	{
+		log("Removing temp directory.\n");
+		remove_directory(tempdir_name);
+	}
 
 	log_pop();
 }
