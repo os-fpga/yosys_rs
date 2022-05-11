@@ -345,6 +345,7 @@ RTLIL::Design *yosys_get_design();
 std::string proc_self_dirname();
 std::string proc_share_dirname();
 std::string proc_program_prefix();
+std::string get_shared_tmp_dirname();
 const char *create_prompt(RTLIL::Design *design, int recursion_counter);
 std::vector<std::string> glob_filename(const std::string &filename_pattern);
 void rewrite_filename(std::string &filename);
@@ -377,6 +378,7 @@ void load_plugin(std::string filename, std::vector<std::string> aliases);
 
 extern std::string yosys_share_dirname;
 extern std::string yosys_abc_executable;
+extern std::string yosys_shared_tmp_dirname;
 
 YOSYS_NAMESPACE_END
 
