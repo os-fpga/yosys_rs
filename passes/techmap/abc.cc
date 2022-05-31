@@ -672,7 +672,16 @@ struct abc_output_filter
 			return;
 		}
 		if (ch == '\n') {
+#ifdef NO_RAPID_SILICON
 			log("ABC: %s\n", replace_tempdir(linebuf, tempdir_name, show_tempdir).c_str());
+#else
+			string msg = replace_tempdir(linebuf, tempdir_name, show_tempdir);
+                        // Print out only "DE" related messages starting by "DE:"
+                        //
+                        if (msg.substr(0,3) == "DE:") {
+                           log("%s\n", msg.c_str());
+                        }
+#endif
 			got_cr = false, linebuf.clear();
 			return;
 		}
@@ -696,11 +705,14 @@ struct abc_output_filter
 	}
 };
 
-void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::string script_file, std::string exe_file,
-		std::vector<std::string> &liberty_files, std::vector<std::string> &genlib_files, std::string constr_file,
-		bool cleanup, vector<int> lut_costs, bool dff_mode, std::string clk_str, bool keepff, std::string delay_target,
-		std::string sop_inputs, std::string sop_products, std::string lutin_shared, bool fast_mode,
-		const std::vector<RTLIL::Cell*> &cells, bool show_tempdir, bool sop_mode, bool abc_dress)
+void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::string script_file, 
+                std::string exe_file, std::vector<std::string> &liberty_files, 
+                std::vector<std::string> &genlib_files, std::string constr_file,
+                bool cleanup, vector<int> lut_costs, bool dff_mode, std::string clk_str, 
+                bool keepff, std::string delay_target, std::string sop_inputs, 
+                std::string sop_products, std::string lutin_shared, bool fast_mode,
+		const std::vector<RTLIL::Cell*> &cells, bool show_tempdir, bool sop_mode, 
+                bool abc_dress)
 {
 	module = current_module;
 	map_autoidx = autoidx++;
@@ -1087,7 +1099,10 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 		}
 
 		buffer = stringf("%s -s -f %s/abc.script 2>&1", exe_file.c_str(), tempdir_name.c_str());
+
+#ifdef NO_RAPID_SILICON
 		log("Running ABC command: %s\n", replace_tempdir(buffer, tempdir_name, show_tempdir).c_str());
+#endif
 
 #ifndef YOSYS_LINK_ABC
 		abc_output_filter filt(tempdir_name, show_tempdir);
@@ -1122,7 +1137,9 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 
 		ifs.close();
 
+#ifdef NO_RAPID_SILICON
 		log_header(design, "Re-integrating ABC results.\n");
+#endif
 		RTLIL::Module *mapped_mod = mapped_design->module(ID(netlist));
 		if (mapped_mod == nullptr)
 			log_error("ABC output file does not contain a module `netlist'.\n");
@@ -1363,8 +1380,10 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 			module->connect(conn);
 		}
 
+#ifdef NO_RAPID_SILICON
 		for (auto &it : cell_stats)
 			log("ABC RESULTS:   %15s cells: %8d\n", it.first.c_str(), it.second);
+#endif
 		int in_wires = 0, out_wires = 0;
 		for (auto &si : signal_list)
 			if (si.is_port) {
@@ -1382,9 +1401,11 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 				}
 				module->connect(conn);
 			}
+#ifdef NO_RAPID_SILICON
 		log("ABC RESULTS:        internal signals: %8d\n", int(signal_list.size()) - in_wires - out_wires);
 		log("ABC RESULTS:           input signals: %8d\n", in_wires);
 		log("ABC RESULTS:          output signals: %8d\n", out_wires);
+#endif
 
 		delete mapped_design;
 	}
@@ -1395,7 +1416,9 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 
 	if (cleanup)
 	{
+#ifdef NO_RAPID_SILICON
 		log("Removing temp directory.\n");
+#endif
 		remove_directory(tempdir_name);
 	}
 
@@ -1984,13 +2007,13 @@ struct AbcPass : public Pass {
 			// enabled_gates.insert("NMUX");
 		}
 
+
 		for (auto mod : design->selected_modules())
 		{
 			if (mod->processes.size() > 0) {
 				log("Skipping module %s as it contains processes.\n", log_id(mod));
 				continue;
 			}
-
 			assign_map.set(mod);
 			initvals.set(&assign_map, mod);
 
@@ -2148,7 +2171,31 @@ struct AbcPass : public Pass {
 						std::get<4>(it.first) ? "" : "!", log_signal(std::get<5>(it.first)),
 						std::get<6>(it.first) ? "" : "!", log_signal(std::get<7>(it.first)));
 
+                        int nb = 0;
+
 			for (auto &it : assigned_cells) {
+
+#ifndef NO_RAPID_SILICON
+		// RapidSilicon [Thierry]
+		// Dirty fix to speed-up "abc -dff" call on designs with a lot of clock
+		// domain partitions (~ 1000).
+		// Designs are like main_loop_synth, cf_rca_16, ..., where hours can be spent in 
+		// this loop. 
+		// 200 has been chosen because:
+		//     - it does not affect Golden suite QoR (100 can affect s38417).
+		//     - it reduces significantly time spent in this loop
+		//
+		// We would need to investigate parallel calls on each "assigned_cells" if
+		// feasible.
+		//
+                                nb++;
+                                if (nb > 200) {
+                                  //log("Early exit at 200 iterations\n");
+                                  //getchar();
+                                  break;
+                                }
+#endif
+
 				clk_polarity = std::get<0>(it.first);
 				clk_sig = assign_map(std::get<1>(it.first));
 				en_polarity = std::get<2>(it.first);
@@ -2157,8 +2204,12 @@ struct AbcPass : public Pass {
 				arst_sig = assign_map(std::get<5>(it.first));
 				srst_polarity = std::get<6>(it.first);
 				srst_sig = assign_map(std::get<7>(it.first));
-				abc_module(design, mod, script_file, exe_file, liberty_files, genlib_files, constr_file, cleanup, lut_costs, !clk_sig.empty(), "$",
-						keepff, delay_target, sop_inputs, sop_products, lutin_shared, fast_mode, it.second, show_tempdir, sop_mode, abc_dress);
+
+				abc_module(design, mod, script_file, exe_file, liberty_files, 
+                                           genlib_files, constr_file, cleanup, lut_costs, 
+                                           !clk_sig.empty(), "$", keepff, delay_target, sop_inputs, 
+                                           sop_products, lutin_shared, fast_mode, it.second, 
+                                           show_tempdir, sop_mode, abc_dress);
 				assign_map.set(mod);
 			}
 		}
