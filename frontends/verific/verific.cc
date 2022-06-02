@@ -1527,23 +1527,45 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 
 			log_assert(inst->Input1Size() == inst->OutputSize());
 
-			SigSpec sig_d, sig_q, sig_o;
-			sig_q = module->addWire(new_verific_id(inst), inst->Input1Size());
+			unsigned width = inst->Input1Size();
 
-			for (int i = int(inst->Input1Size())-1; i >= 0; i--){
+			SigSpec sig_d, sig_dx, sig_qx, sig_o, sig_ox;
+			sig_dx = module->addWire(new_verific_id(inst), width * 2);
+			sig_qx = module->addWire(new_verific_id(inst), width * 2);
+			sig_ox = module->addWire(new_verific_id(inst), width * 2);
+
+			for (int i = int(width)-1; i >= 0; i--){
 				sig_d.append(net_map_at(inst->GetInput1Bit(i)));
 				sig_o.append(net_map_at(inst->GetOutputBit(i)));
 			}
 
 			if (verific_verbose) {
+				for (unsigned i = 0; i < width; i++) {
+					log("    NEX with A=%s, B=0, Y=%s.\n",
+							log_signal(sig_d[i]), log_signal(sig_dx[i]));
+					log("    EQX with A=%s, B=1, Y=%s.\n",
+							log_signal(sig_d[i]), log_signal(sig_dx[i + width]));
+				}
 				log("    %sedge FF with D=%s, Q=%s, C=%s.\n", clocking.posedge ? "pos" : "neg",
-						log_signal(sig_d), log_signal(sig_q), log_signal(clocking.clock_sig));
+						log_signal(sig_dx), log_signal(sig_qx), log_signal(clocking.clock_sig));
 				log("    XNOR with A=%s, B=%s, Y=%s.\n",
-						log_signal(sig_d), log_signal(sig_q), log_signal(sig_o));
+						log_signal(sig_dx), log_signal(sig_qx), log_signal(sig_ox));
+				log("    AND with A=%s, B=%s, Y=%s.\n",
+						log_signal(sig_ox.extract(0, width)), log_signal(sig_ox.extract(width, width)), log_signal(sig_o));
 			}
 
-			clocking.addDff(new_verific_id(inst), sig_d, sig_q);
-			module->addXnor(new_verific_id(inst), sig_d, sig_q, sig_o);
+			for (unsigned i = 0; i < width; i++) {
+				module->addNex(new_verific_id(inst), sig_d[i], State::S0, sig_dx[i]);
+				module->addEqx(new_verific_id(inst), sig_d[i], State::S1, sig_dx[i + width]);
+			}
+
+			Const qx_init = Const(State::S1, width);
+			qx_init.bits.resize(2 * width, State::S0);
+
+			clocking.addDff(new_verific_id(inst), sig_dx, sig_qx, qx_init);
+			module->addXnor(new_verific_id(inst), sig_dx, sig_qx, sig_ox);
+
+			module->addAnd(new_verific_id(inst), sig_ox.extract(0, width), sig_ox.extract(width, width), sig_o);
 
 			if (!mode_keep)
 				continue;
@@ -1557,17 +1579,25 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 
 			SigSpec sig_d = net_map_at(inst->GetInput1());
 			SigSpec sig_o = net_map_at(inst->GetOutput());
-			SigSpec sig_q = module->addWire(new_verific_id(inst));
+			SigSpec sig_dx = module->addWire(new_verific_id(inst), 2);
+			SigSpec sig_qx = module->addWire(new_verific_id(inst), 2);
 
 			if (verific_verbose) {
+				log("    NEX with A=%s, B=0, Y=%s.\n",
+						log_signal(sig_d), log_signal(sig_dx[0]));
+				log("    EQX with A=%s, B=1, Y=%s.\n",
+						log_signal(sig_d), log_signal(sig_dx[1]));
 				log("    %sedge FF with D=%s, Q=%s, C=%s.\n", clocking.posedge ? "pos" : "neg",
-						log_signal(sig_d), log_signal(sig_q), log_signal(clocking.clock_sig));
-				log("    XNOR with A=%s, B=%s, Y=%s.\n",
-						log_signal(sig_d), log_signal(sig_q), log_signal(sig_o));
+						log_signal(sig_dx), log_signal(sig_qx), log_signal(clocking.clock_sig));
+				log("    EQ with A=%s, B=%s, Y=%s.\n",
+						log_signal(sig_dx), log_signal(sig_qx), log_signal(sig_o));
 			}
 
-			clocking.addDff(new_verific_id(inst), sig_d, sig_q);
-			module->addXnor(new_verific_id(inst), sig_d, sig_q, sig_o);
+			module->addNex(new_verific_id(inst), sig_d, State::S0, sig_dx[0]);
+			module->addEqx(new_verific_id(inst), sig_d, State::S1, sig_dx[1]);
+
+			clocking.addDff(new_verific_id(inst), sig_dx, sig_qx, Const(1, 2));
+			module->addEq(new_verific_id(inst), sig_dx, sig_qx, sig_o);
 
 			if (!mode_keep)
 				continue;
@@ -1601,13 +1631,20 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 			SigBit sig_d = net_map_at(inst->GetInput1());
 			SigBit sig_o = net_map_at(inst->GetOutput());
 			SigBit sig_q = module->addWire(new_verific_id(inst));
+			SigBit sig_d_no_x = module->addWire(new_verific_id(inst));
 
-			if (verific_verbose)
+			if (verific_verbose) {
+				log("    EQX with A=%s, B=%d, Y=%s.\n",
+						log_signal(sig_d), inst->Type() == PRIM_SVA_ROSE, log_signal(sig_d_no_x));
 				log("    %sedge FF with D=%s, Q=%s, C=%s.\n", clocking.posedge ? "pos" : "neg",
-						log_signal(sig_d), log_signal(sig_q), log_signal(clocking.clock_sig));
+						log_signal(sig_d_no_x), log_signal(sig_q), log_signal(clocking.clock_sig));
+				log("    EQ with A={%s, %s}, B={0, 1}, Y=%s.\n",
+						log_signal(sig_q), log_signal(sig_d_no_x), log_signal(sig_o));
+			}
 
-			clocking.addDff(new_verific_id(inst), sig_d, sig_q);
-			module->addEq(new_verific_id(inst), {sig_q, sig_d}, Const(inst->Type() == PRIM_SVA_ROSE ? 1 : 2, 2), sig_o);
+			module->addEqx(new_verific_id(inst), sig_d, inst->Type() == PRIM_SVA_ROSE ? State::S1 : State::S0, sig_d_no_x);
+			clocking.addDff(new_verific_id(inst), sig_d_no_x, sig_q, State::S0);
+			module->addEq(new_verific_id(inst), {sig_q, sig_d_no_x}, Const(1, 2), sig_o);
 
 			if (!mode_keep)
 				continue;
@@ -1873,15 +1910,19 @@ VerificClocking::VerificClocking(VerificImporter *importer, Net *net, bool sva_a
 		if (inst_mux == nullptr || inst_mux->Type() != PRIM_MUX)
 			break;
 
-		if (!inst_mux->GetInput1()->IsPwr())
+		bool pwr1 = inst_mux->GetInput1()->IsPwr();
+		bool pwr2 = inst_mux->GetInput2()->IsPwr();
+
+		if (!pwr1 && !pwr2)
 			break;
 
-		Net *sva_net = inst_mux->GetInput2();
+		Net *sva_net = pwr1 ? inst_mux->GetInput2() : inst_mux->GetInput1();
 		if (!verific_is_sva_net(importer, sva_net))
 			break;
 
 		body_net = sva_net;
 		cond_net = inst_mux->GetControl();
+		cond_pol = pwr1;
 	} while (0);
 
 	clock_net = net;
@@ -2305,31 +2346,36 @@ struct VerificPass : public Pass {
 		log("\n");
 		log("\n");
 #endif
-		log("    verific {-f|-F} [-vlog95|-vlog2k|-sv2005|-sv2009|-sv2012|-sv|-formal] <command-file>\n");
+		log("    verific {-f|-F} [-vlog95|-vlog2k|-sv2005|-sv2009|\n");
+		log("                     -sv2012|-sv|-formal] <command-file>\n");
 		log("\n");
 		log("Load and execute the specified command file.\n");
 		log("Override verilog parsing mode can be set.\n");
 		log("The macros YOSYS, SYNTHESIS/FORMAL, and VERIFIC are defined implicitly.\n");
 		log("\n");
-		log("Command file parser supports following commands:\n");
-		log("    +define    - defines macro\n");
-		log("    -u         - upper case all identifier (makes Verilog parser case insensitive)\n");
-		log("    -v         - register library name (file)\n");
-		log("    -y         - register library name (directory)\n");
-		log("    +incdir    - specify include dir\n");
-		log("    +libext    - specify library extension\n");
-		log("    +liborder  - add library in ordered list\n");
-		log("    +librescan - unresolved modules will be always searched starting with the first\n");
-		log("                 library specified by -y/-v options.\n");
-		log("    -f/-file   - nested -f option\n");
-		log("    -F         - nested -F option\n");
+		log("Command file parser supports following commands in file:\n");
+		log("    +define+<MACRO>=<VALUE> - defines macro\n");
+		log("    -u                      - upper case all identifier (makes Verilog parser\n");
+		log("                              case insensitive)\n");
+		log("    -v <filepath>           - register library name (file)\n");
+		log("    -y <filepath>           - register library name (directory)\n");
+		log("    +incdir+<filepath>      - specify include dir\n");
+		log("    +libext+<filepath>      - specify library extension\n");
+		log("    +liborder+<id>          - add library in ordered list\n");
+		log("    +librescan              - unresolved modules will be always searched\n");
+		log("                              starting with the first library specified\n");
+		log("                              by -y/-v options.\n");
+		log("    -f/-file <filepath>     - nested -f option\n");
+		log("    -F <filepath>           - nested -F option (relative path)\n");
+		log("    parse files:\n");
+		log("        <filepath>\n");
+		log("        +systemverilogext+<filepath>\n");
+		log("        +verilog1995ext+<filepath>\n");
+		log("        +verilog2001ext+<filepath>\n");
 		log("\n");
-		log("    parse mode:\n");
+		log("    analysis mode:\n");
 		log("        -ams\n");
-		log("        +systemverilogext\n");
 		log("        +v2k\n");
-		log("        +verilog1995ext\n");
-		log("        +verilog2001ext\n");
 		log("        -sverilog\n");
 		log("\n");
 		log("\n");
@@ -2466,8 +2512,8 @@ struct VerificPass : public Pass {
 		log("        Parameter can also contain comma separated list of file locations.\n");
 		log("\n");
 		log("    -blfile <file>\n");
-		log("        Do not run application on locations specified in file, they can represent filename\n");
-		log("        or filename and location in file.\n");
+		log("        Do not run application on locations specified in file, they can\n");
+		log("        represent filename or filename and location in file.\n");
 		log("\n");
 		log("Applications:\n");
 		log("\n");
@@ -2676,7 +2722,7 @@ struct VerificPass : public Pass {
 
 		if (GetSize(args) > argidx && (args[argidx] == "-f" || args[argidx] == "-F"))
 		{
-			unsigned verilog_mode = veri_file::VERILOG_95; // default recommended by Verific
+			unsigned verilog_mode = veri_file::UNDEFINED;
 			bool is_formal = false;
 			const char* filename = nullptr;
 
@@ -2723,7 +2769,7 @@ struct VerificPass : public Pass {
 			veri_file::DefineMacro("VERIFIC");
 			veri_file::DefineMacro(is_formal ? "FORMAL" : "SYNTHESIS");
 
-			if (!veri_file::AnalyzeMultipleFiles(file_names, verilog_mode, work.c_str(), veri_file::MFCU)) {
+			if (!veri_file::AnalyzeMultipleFiles(file_names, analysis_mode, work.c_str(), veri_file::MFCU)) {
 				verific_error_msg.clear();
 				log_cmd_error("Reading Verilog/SystemVerilog sources failed.\n");
 			}
