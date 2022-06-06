@@ -1531,6 +1531,7 @@ bool AstNode::simplify(bool const_fold, bool at_zero, bool in_lvalue, int stage,
 		detectSignWidth(width_hint, sign_hint);
 		while (children[0]->simplify(const_fold, at_zero, in_lvalue, stage, width_hint, sign_hint, in_param)) { }
 		if (children[0]->type == AST_CONSTANT && children[0]->bits_only_01()) {
+			children[0]->is_signed = sign_hint;
 			RTLIL::Const case_expr = children[0]->bitsAsConst(width_hint, sign_hint);
 			std::vector<AstNode*> new_children;
 			new_children.push_back(children[0]);
@@ -3229,6 +3230,7 @@ skip_dynamic_range_lvalue_expansion:;
 
 					reg->str = stringf("$past$%s:%d$%d$%d", filename.c_str(), location.first_line, myidx, i);
 					reg->is_reg = true;
+					reg->is_signed = sign_hint;
 
 					current_ast_mod->children.push_back(reg);
 
@@ -3448,7 +3450,7 @@ skip_dynamic_range_lvalue_expansion:;
 				else {
 					result = width * mem_depth;
 				}
-				newNode = mkconst_int(result, false);
+				newNode = mkconst_int(result, true);
 				goto apply_newNode;
 			}
 

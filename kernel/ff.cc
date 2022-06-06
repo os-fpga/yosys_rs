@@ -688,9 +688,9 @@ void FfData::flip_bits(const pool<int> &bits) {
 	if (!bits.size())
 		return;
 
-        flip_rst_bits(bits);
+	flip_rst_bits(bits);
 
-        Wire *new_q = module->addWire(NEW_ID, width);
+	Wire *new_q = module->addWire(NEW_ID, width);
 
 	if (has_sr && cell) {
 		log_warning("Flipping D/Q/init and inserting priority fixup to legalize %s.%s [%s].\n", log_id(module->name), log_id(cell->name), log_id(cell->type));
