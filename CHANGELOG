@@ -2,8 +2,26 @@
 List of major changes and improvements between releases
 =======================================================
 
-Yosys 0.16 .. Yosys 0.16-dev
+Yosys 0.17 .. Yosys 0.17-dev
 --------------------------
+ * Formal Verification
+    - Fixed the signedness of $past's return value to be the same as the
+      argument's instead of always unsigned.
+
+ * Verilog
+    - Fixed an issue where simplifying case statements by removing unreachable
+      cases could result in the wrong signedness being used for comparison with
+      the remaining cases
+    - Fixed size and signedness computation for expressions containing array
+      querying functions
+    - Fixed size and signedness computation of functions used in ternary
+      expressions or case item expressions
+
+Yosys 0.16 .. Yosys 0.17
+--------------------------
+ * New commands and options
+    - Added "write_jny" ( JSON netlist metadata format )
+    - Added "tribuf -formal"
 
  * SystemVerilog
     - Fixed automatic `nosync` inference for local variables in `always_comb`

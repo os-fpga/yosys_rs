@@ -134,12 +134,23 @@ LDFLAGS += -rdynamic
 LDLIBS += -lrt
 endif
 
-YOSYS_VER := 0.16+65
-GIT_REV := $(shell git -C $(YOSYS_SRC) rev-parse --short HEAD 2> /dev/null || echo UNKNOWN)
+YOSYS_VER := 0.17+76
+
+# Note: We arrange for .gitcommit to contain the (short) commit hash in
+# tarballs generated with git-archive(1) using .gitattributes. The git repo
+# will have this file in its unexpanded form tough, in which case we fall
+# back to calling git directly.
+TARBALL_GIT_REV := $(shell cat $(YOSYS_SRC)/.gitcommit)
+ifeq ($(TARBALL_GIT_REV),$$Format:%h$$)
+GIT_REV := $(shell git ls-remote $(YOSYS_SRC) HEAD -q | $(AWK) 'BEGIN {R = "UNKNOWN"}; ($$2 == "HEAD") {R = substr($$1, 1, 9); exit} END {print R}')
+else
+GIT_REV := $(TARBALL_GIT_REV)
+endif
+
 OBJS = kernel/version_$(GIT_REV).o
 
 bumpversion:
-	sed -i "/^YOSYS_VER := / s/+[0-9][0-9]*$$/+`git log --oneline b63e0a0.. | wc -l`/;" Makefile
+	sed -i "/^YOSYS_VER := / s/+[0-9][0-9]*$$/+`git log --oneline 6f9602b.. | wc -l`/;" Makefile
 
 # set 'ABCREV = default' to use abc/ as it is
 #
@@ -147,7 +158,7 @@ bumpversion:
 # is just a symlink to your actual ABC working directory, as 'make mrproper'
 # will remove the 'abc' directory and you do not want to accidentally
 # delete your work on ABC..
-ABCREV = 3da9357
+ABCREV = 09a7e6d
 ABCPULL = 1
 ABCURL ?= https://github.com/YosysHQ/abc
 ABCMKARGS = CC="$(CXX)" CXX="$(CXX)" ABC_USE_LIBSTDCXX=1 VERBOSE=$(Q)
@@ -255,14 +266,15 @@ CXX = emcc
 LD = emcc
 CXXFLAGS := -std=$(CXXSTD) $(filter-out -fPIC -ggdb,$(CXXFLAGS))
 ABCMKARGS += ARCHFLAGS="-DABC_USE_STDINT_H -DABC_MEMALIGN=8"
-EMCCFLAGS := -Os -Wno-warn-absolute-paths
-EMCCFLAGS += --memory-init-file 0 --embed-file share -s NO_EXIT_RUNTIME=1
-EMCCFLAGS += -s EXPORTED_FUNCTIONS="['_main','_run','_prompt','_errmsg','_memset']"
-EMCCFLAGS += -s TOTAL_MEMORY=134217728
-EMCCFLAGS += -s EXTRA_EXPORTED_RUNTIME_METHODS='["ccall", "cwrap"]'
+EMCC_CXXFLAGS := -Os -Wno-warn-absolute-paths
+EMCC_LDFLAGS := --memory-init-file 0 --embed-file share
+EMCC_LDFLAGS += -s NO_EXIT_RUNTIME=1
+EMCC_LDFLAGS += -s EXPORTED_FUNCTIONS="['_main','_run','_prompt','_errmsg','_memset']"
+EMCC_LDFLAGS += -s TOTAL_MEMORY=134217728
+EMCC_LDFLAGS += -s EXPORTED_RUNTIME_METHODS='["ccall", "cwrap"]'
 # https://github.com/kripken/emscripten/blob/master/src/settings.js
-CXXFLAGS += $(EMCCFLAGS)
-LDFLAGS += $(EMCCFLAGS)
+CXXFLAGS += $(EMCC_CXXFLAGS)
+LDFLAGS += $(EMCC_LDFLAGS)
 LDLIBS =
 EXE = .js
 
@@ -280,7 +292,7 @@ viz.js:
 	wget -O viz.js.part https://github.com/mdaines/viz.js/releases/download/0.0.3/viz.js
 	mv viz.js.part viz.js
 
-yosysjs-$(YOSYS_VER).zip: yosys.js yosys.wasm viz.js misc/yosysjs/*
+yosysjs-$(YOSYS_VER).zip: yosys.js viz.js misc/yosysjs/*
 	rm -rf yosysjs-$(YOSYS_VER) yosysjs-$(YOSYS_VER).zip
 	mkdir -p yosysjs-$(YOSYS_VER)
 	cp viz.js misc/yosysjs/* yosys.js yosys.wasm yosysjs-$(YOSYS_VER)/
@@ -816,6 +828,7 @@ test: $(TARGETS) $(EXTRA_TARGETS)
 	+cd tests/fsm && bash run-test.sh $(SEEDOPT)
 	+cd tests/techmap && bash run-test.sh
 	+cd tests/memories && bash run-test.sh $(ABCOPT) $(SEEDOPT)
+	+cd tests/memlib && bash run-test.sh $(SEEDOPT)
 	+cd tests/bram && bash run-test.sh $(SEEDOPT)
 	+cd tests/various && bash run-test.sh
 	+cd tests/select && bash run-test.sh
