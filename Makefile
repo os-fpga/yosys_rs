@@ -893,7 +893,9 @@ install: $(TARGETS) $(EXTRA_TARGETS)
 	$(INSTALL_SUDO) mkdir -p $(DESTDIR)$(BINDIR)
 	$(INSTALL_SUDO) cp $(filter-out libyosys.so,$(TARGETS)) $(DESTDIR)$(BINDIR)
 ifneq ($(filter $(PROGRAM_PREFIX)yosys,$(TARGETS)),)
+ifneq ($(ENABLE_DEBUG),1)
 	$(INSTALL_SUDO) $(STRIP) -S $(DESTDIR)$(BINDIR)/$(PROGRAM_PREFIX)yosys
+endif
 endif
 ifneq ($(filter $(PROGRAM_PREFIX)yosys-abc,$(TARGETS)),)
 	$(INSTALL_SUDO) $(STRIP) $(DESTDIR)$(BINDIR)/$(PROGRAM_PREFIX)yosys-abc
@@ -906,7 +908,9 @@ endif
 ifeq ($(ENABLE_LIBYOSYS),1)
 	$(INSTALL_SUDO) mkdir -p $(DESTDIR)$(LIBDIR)
 	$(INSTALL_SUDO) cp libyosys.so $(DESTDIR)$(LIBDIR)/
+ifneq ($(ENABLE_DEBUG),1)
 	$(INSTALL_SUDO) $(STRIP) -S $(DESTDIR)$(LIBDIR)/libyosys.so
+endif
 ifeq ($(ENABLE_PYOSYS),1)
 	$(INSTALL_SUDO) mkdir -p $(DESTDIR)$(PYTHON_DESTDIR)/$(subst -,_,$(PROGRAM_PREFIX))pyosys
 	$(INSTALL_SUDO) cp libyosys.so $(DESTDIR)$(PYTHON_DESTDIR)/$(subst -,_,$(PROGRAM_PREFIX))pyosys/libyosys.so
