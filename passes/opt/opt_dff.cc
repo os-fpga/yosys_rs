@@ -733,11 +733,19 @@ struct OptDffWorker
                 //
                 int nbSolve = 0;
                 int nbRemove = 0;
+                int nbVisited = 0;
 
 		for (auto cell : module->selected_cells()) {
 			if (!RTLIL::builtin_ff_cell_types().count(cell->type))
 				continue;
 			FfData ff(&initvals, cell);
+
+                        nbVisited++;
+
+#if 0
+log("Nb visited = %d\n", nbVisited);
+log("Nb solve = %d\n", nbSolve);
+#endif
 
 			// Now check if any bit can be replaced by a constant.
 			pool<int> removed_sigbits;
@@ -839,13 +847,26 @@ struct OptDffWorker
 			}
 
                    // Check the return of investment of DFF optimization.
-                   // If too low (less than 0.1% of DFFs removed) then proceed to early exit. 
+                   // If too low (less than 0.2% of DFFs removed) then proceed to early exit. 
                    // Performs this check for a reasonable minimum number of "solve" DFFs (2000)
                    // when runtime starts to be costly.
                    // [RapidSilicon]
 #if 1
                    if ((nbSolve >= 1000) && (nbRemove < nbSolve * 0.002)) {
                       break;
+                   }
+                   if (nbSolve >= 4000) {
+                      // If we process too many "solve" w.r.t number of visited DFF we stop
+                      // because it is too costly (ex: design27, Jira 115)
+                      // The other design sensitive to this check is "main_loop_synth".
+                      //
+                      // These number have been tuned based on Jira 115 (design27) and 
+                      // "main_loop_synth". It helps to reduce Jira 115 from 3h30mn down
+                      // to 25 mn.
+                      //
+                      if (1 && (nbSolve >= 5 * nbVisited)) {
+                        break;
+                      }
                    }
 #endif
 		}
