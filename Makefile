@@ -25,6 +25,8 @@ ENABLE_LIBYOSYS := 0
 ENABLE_PROTOBUF := 0
 ENABLE_ZLIB := 1
 
+ENABLE_LICENSE := 0
+
 # python wrappers
 ENABLE_PYOSYS := 0
 
@@ -537,6 +539,11 @@ LDLIBS += $(patsubst %,$(VERIFIC_DIR)/%/*-mac.a,$(VERIFIC_COMPONENTS)) -lz
 else
 LDLIBS += $(patsubst %,$(VERIFIC_DIR)/%/*-linux.a,$(VERIFIC_COMPONENTS)) -lz
 endif
+endif
+
+ifeq ($(ENABLE_LICENSE),1)
+LDLIBS += $(FLEX_LM_BIN_DIR)/librs_licenseManager.a
+CXXFLAGS += $(EXTRA_CXX_FLAGS)
 endif
 
 ifeq ($(ENABLE_PROTOBUF),1)
