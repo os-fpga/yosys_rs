@@ -199,7 +199,7 @@ void yosys_atexit()
 int main(int argc, char **argv)
 {
 #ifdef LICENSE_ON
-	License_Manager license(License_Manager::LicensedProductName::YOSYS_VERIFIC_RS);
+	License_Manager license(License_Manager::LicensedProductName::YOSYS_RS);
 #endif
 	std::string frontend_command = "auto";
 	std::string backend_command = "auto";

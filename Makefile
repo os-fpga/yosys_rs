@@ -542,8 +542,10 @@ endif
 endif
 
 ifeq ($(ENABLE_LICENSE),1)
-LDLIBS += $(FLEX_LM_BIN_DIR)/librs_licenseManager.a
-CXXFLAGS += $(EXTRA_CXX_FLAGS)
+LDLIBS += $(EXTRA_LDLIBS)
+CXXFLAGS += $(EXTRA_CXX_FLAGS) -fPIC
+LDFLAGS += $(EXTRA_LD_FLAGS)
+OBJS += $(EXTRA_OBJS)
 endif
 
 ifeq ($(ENABLE_PROTOBUF),1)
