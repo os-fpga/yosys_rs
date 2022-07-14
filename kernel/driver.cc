@@ -20,6 +20,10 @@
 #include "kernel/yosys.h"
 #include "libs/sha1/sha1.h"
 
+#ifdef PRODUCTION_BUILD
+#include "License_manager.hpp"
+#endif
+
 #ifdef YOSYS_ENABLE_READLINE
 #  include <readline/readline.h>
 #  include <readline/history.h>
@@ -194,6 +198,9 @@ void yosys_atexit()
 
 int main(int argc, char **argv)
 {
+#ifdef PRODUCTION_BUILD
+	License_Manager license(License_Manager::LicensedProductName::YOSYS_RS);
+#endif
 	std::string frontend_command = "auto";
 	std::string backend_command = "auto";
 	std::vector<std::string> vlog_defines;

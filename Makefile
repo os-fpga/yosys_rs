@@ -25,6 +25,8 @@ ENABLE_LIBYOSYS := 0
 ENABLE_PROTOBUF := 0
 ENABLE_ZLIB := 1
 
+PRODUCTION_BUILD := 0
+
 # python wrappers
 ENABLE_PYOSYS := 0
 
@@ -537,6 +539,13 @@ LDLIBS += $(patsubst %,$(VERIFIC_DIR)/%/*-mac.a,$(VERIFIC_COMPONENTS)) -lz
 else
 LDLIBS += $(patsubst %,$(VERIFIC_DIR)/%/*-linux.a,$(VERIFIC_COMPONENTS)) -lz
 endif
+endif
+
+ifeq ($(PRODUCTION_BUILD),1)
+LDLIBS += $(EXTRA_LDLIBS)
+CXXFLAGS += $(EXTRA_CXX_FLAGS)
+LDFLAGS += $(EXTRA_LD_FLAGS)
+OBJS += $(EXTRA_OBJS)
 endif
 
 ifeq ($(ENABLE_PROTOBUF),1)
