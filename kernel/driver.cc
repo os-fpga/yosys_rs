@@ -20,11 +20,10 @@
 #include "kernel/yosys.h"
 #include "libs/sha1/sha1.h"
 
-/*
+
 #ifdef PRODUCTION_BUILD
 #include "License_manager.hpp"
 #endif
-*/
 
 #ifdef YOSYS_ENABLE_READLINE
 #  include <readline/readline.h>
