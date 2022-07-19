@@ -1129,7 +1129,7 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 		std::ifstream ifs;
 		ifs.open(buffer);
 		if (ifs.fail())
-			log_error("Can't open ABC output file `%s'.\n", buffer.c_str());
+			log_error("ERROR: something went wrong in DE LUT mapper (hint: please make sure you have DE license).");
 
 		bool builtin_lib = liberty_files.empty() && genlib_files.empty();
 		RTLIL::Design *mapped_design = new RTLIL::Design;
