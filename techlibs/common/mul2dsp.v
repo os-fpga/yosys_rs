@@ -69,19 +69,15 @@ module _80_mul (A, B, Y);
 	generate
 	if (0) begin end
 `ifdef DSP_A_MINWIDTH
-        `ifdef DSP_B_MINWIDTH
-		else if (A_WIDTH < `DSP_A_MINWIDTH && B_WIDTH < `DSP_B_MINWIDTH)
-			wire _TECHMAP_FAIL_ = 1;
-	`else
-		else if (A_WIDTH < `DSP_A_MINWIDTH)
-			wire _TECHMAP_FAIL_ = 1;
-	`endif
-`else
-	`ifdef DSP_B_MINWIDTH
-		else if (B_WIDTH < `DSP_B_MINWIDTH)
-			wire _TECHMAP_FAIL_ = 1;
-	`endif
+	else if (A_WIDTH < `DSP_A_MINWIDTH)
+		wire _TECHMAP_FAIL_ = 1;
 `endif
+
+`ifdef DSP_B_MINWIDTH
+	else if (B_WIDTH < `DSP_B_MINWIDTH)
+		wire _TECHMAP_FAIL_ = 1;
+`endif
+
 `ifdef DSP_Y_MINWIDTH
 	else if (Y_WIDTH < `DSP_Y_MINWIDTH)
 		wire _TECHMAP_FAIL_ = 1;
