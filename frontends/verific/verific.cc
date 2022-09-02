@@ -2561,6 +2561,7 @@ struct VerificPass : public Pass {
 					"binaries of YosysHQ Tabby CAD Suite.\n");
 
 		log_header(design, "Executing VERIFIC (loading SystemVerilog and VHDL designs using Verific).\n");
+		RuntimeFlags::SetVar("veri_loop_limit",50000);
 
 		if (set_verific_global_flags)
 		{
