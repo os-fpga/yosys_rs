@@ -93,8 +93,8 @@ struct Abc9Pass : public ScriptPass
 		log("\n");
 		log("    abc9 [options] [selection]\n");
 		log("\n");
-		log("This script pass performs a sequence of commands to facilitate the use of the ABC\n");
-		log("tool [1] for technology mapping of the current design to a target FPGA\n");
+		log("This script pass performs a sequence of commands to facilitate the use of the\n");
+		log("ABC tool [1] for technology mapping of the current design to a target FPGA\n");
 		log("architecture. Only fully-selected modules are supported.\n");
 		log("\n");
 		log("    -run <from_label>:<to_label>\n");
@@ -404,9 +404,12 @@ struct Abc9Pass : public ScriptPass
 					if (!active_design->selected_whole_module(mod))
 						log_error("Can't handle partially selected module %s!\n", log_id(mod));
 
-					std::string tempdir_name = get_base_tmpdir() + "/" + proc_program_prefix() + "yosys-abc-XXXXXX";
-					if (!cleanup)
-						tempdir_name[0] = tempdir_name[4] = '_';
+					std::string tempdir_name;
+					if (cleanup) 
+						tempdir_name = get_base_tmpdir() + "/";
+					else
+						tempdir_name = "_tmp_";
+					tempdir_name += proc_program_prefix() + "yosys-abc-XXXXXX";
 					tempdir_name = make_temp_dir(tempdir_name);
 
 					if (!lut_mode)
