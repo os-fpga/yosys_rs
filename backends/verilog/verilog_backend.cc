@@ -395,6 +395,47 @@ void dump_attributes(std::ostream &f, std::string indent, dict<RTLIL::IdString, 
 	}
 }
 
+void dump_module_ports(std::string file_name, RTLIL::Module *module)
+{
+	std::ofstream ofs(file_name);
+	std::map<int, RTLIL::Wire *> inputs, outputs, inouts;
+
+	ofs << stringf("$?TOPINST: %s\n", log_id(module));
+	for (auto wire : module->wires()) {
+		if (wire->port_input && !wire->port_output)
+			inputs[wire->port_id] = wire;
+		if (wire->port_output && !wire->port_input)
+			outputs[wire->port_id] = wire;
+		if (wire->port_output && wire->port_input)
+			inouts[wire->port_id] = wire;
+	}
+	ofs << stringf("$?INPUTS\n");
+	for (auto &it : inputs) {
+		RTLIL::Wire *wire = it.second;
+		for (int i = 0; i < wire->width; i++) {
+			ofs << stringf("%s\n", id(wire->name).c_str());
+		}
+	}
+	ofs << stringf("$?END\n");
+	ofs << stringf("$?OUTPUTS\n");
+	for (auto &it : outputs) {
+		RTLIL::Wire *wire = it.second;
+		for (int i = 0; i < wire->width; i++)
+			ofs << stringf("%s\n", id(wire->name).c_str());
+	}
+	ofs << stringf("$?END\n");
+	ofs << stringf("$?INOUTS\n");
+	for (auto &it : inouts) {
+		RTLIL::Wire *wire = it.second;
+		for (int i = 0; i < wire->width; i++)
+			ofs << stringf("%s\n", id(wire->name).c_str());
+	}
+	ofs << stringf("$?END\n");
+	ofs.close();
+
+	return;
+}
+
 void dump_wire(std::ostream &f, std::string indent, RTLIL::Wire *wire)
 {
 	dump_attributes(f, indent, wire->attributes, '\n', /*modattr=*/false, /*regattr=*/reg_wires.count(wire->name));
@@ -2214,6 +2255,7 @@ struct VerilogBackend : public Backend {
 		decimal = false;
 		siminit = false;
 		simple_lhs = false;
+		bool dump_top_ports = false;
 		auto_prefix = "";
 
 		bool blackboxes = false;
@@ -2298,6 +2340,10 @@ struct VerilogBackend : public Backend {
 				enableopt = true;
 				continue;
 			}
+			if (arg == "-dump_top_ports") {
+				dump_top_ports = true;
+				continue;
+			}
 			break;
 		}
 		extra_args(f, filename, args, argidx);
@@ -2330,6 +2376,19 @@ struct VerilogBackend : public Backend {
 			}
 			log("Dumping module `%s'.\n", module->name.c_str());
 			dump_module(*f, "", module);
+			if (dump_top_ports && module->get_bool_attribute(ID::top)) {
+				// change file extension name
+				std::string port_file_name;
+				std::size_t ext_loc = filename.rfind(".");
+				if (ext_loc != std::string::npos) {
+					port_file_name = filename.substr(0, ext_loc);
+				} else {
+					port_file_name = filename;
+				}
+				port_file_name += ".ports";
+				dump_module_ports(port_file_name, module);
+				dump_top_ports = false;
+			}
 		}
 
 		auto_name_map.clear();
