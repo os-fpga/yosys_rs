@@ -87,6 +87,7 @@ string verific_error_msg;
 int verific_sva_fsm_limit;
 
 vector<string> verific_incdirs, verific_libdirs, verific_libexts;
+std::map<IdString, const Map*> moduleToParamsMap;
 
 void msg_func(msg_type_t msg_type, const char *message_id, linefile_type linefile, const char *msg, va_list args)
 {
@@ -119,6 +120,25 @@ string get_full_netlist_name(Netlist *nl)
 	}
 
 	return nl->CellBaseName();
+}
+
+void set_instance_parameters(Design *design) {
+	for (auto module : design->selected_modules()) {
+		for (auto cell : module->cells_) {
+			auto it = moduleToParamsMap.find(cell.second->type);
+			if (it != moduleToParamsMap.end()) {
+				MapIter mIter;
+				const char *k, *v;
+				FOREACH_MAP_ITEM(it->second, mIter, &k, &v) {
+					if (verific_verbose)
+						log("Setting parameter %s to %s for %s cell.\n", k, v, cell.second->name.c_str());
+					Const paramValue = Const(std::string(v));
+					IdString paramName = IdString(std::string("\\") + k);
+					cell.second->setParam(paramName, paramValue);
+				}
+			}
+		}
+	}
 }
 
 class YosysStreamCallBackHandler : public VerificStreamCallBackHandler
@@ -1074,6 +1094,9 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 	if (is_blackbox(nl)) {
 		log("Importing blackbox module %s.\n", RTLIL::id2cstr(module->name));
 		module->set_bool_attribute(ID::blackbox);
+		if (nl->GetParameters()) {
+			moduleToParamsMap[module->name] = nl->GetParameters();
+		}
 	} else {
 		log("Importing module %s.\n", RTLIL::id2cstr(module->name));
 	}
@@ -2313,6 +2336,8 @@ void verific_import(Design *design, const std::map<std::string,std::string> &par
 		nl_todo.erase(it);
 	}
 
+	set_instance_parameters(design);
+
 	hier_tree::DeleteHierarchicalTree();
 	veri_file::Reset();
 #ifdef VERIFIC_VHDL_SUPPORT
@@ -3114,6 +3139,8 @@ struct VerificPass : public Pass {
 				}
 				nl_todo.erase(it);
 			}
+
+			set_instance_parameters(design);
 
 			hier_tree::DeleteHierarchicalTree();
 			veri_file::Reset();
