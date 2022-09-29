@@ -20,7 +20,11 @@
 #include "kernel/yosys.h"
 
 #ifdef YOSYS_ENABLE_PLUGINS
-#  include <dlfcn.h>
+#	ifdef _WIN32
+#	include <Windows.h>
+#	else
+#	include <dlfcn.h>
+#	endif
 #endif
 
 #ifdef WITH_PYTHON
@@ -31,13 +35,50 @@
 
 YOSYS_NAMESPACE_BEGIN
 
-std::map<std::string, void*> loaded_plugins;
+#ifdef _WIN32
+std::map<std::string, HINSTANCE> loaded_plugins;
+#else
+std::map<std::string, void *> loaded_plugins;
+#endif
+
+
 #ifdef WITH_PYTHON
 std::map<std::string, void*> loaded_python_plugins;
 #endif
 std::map<std::string, std::string> loaded_plugin_aliases;
 
 #ifdef YOSYS_ENABLE_PLUGINS
+
+#ifdef _WIN32
+// Windows variant of load_plugin(std::string, std::vector<std::string>) function
+// This function may be needed if your plugin is a Dll
+void load_plugin(std::string filename, std::vector<std::string> aliases)
+{
+
+	std::string orig_filename = filename;
+
+	if (filename.find('\\') == std::string::npos) // 	'\\' symbol same as '\'
+		filename = ".\\" + filename;
+
+	if (!loaded_plugins.count(filename)) {
+		HINSTANCE hdl = nullptr;
+		hdl = LoadLibraryA(filename.c_str());
+
+		if (hdl == nullptr && orig_filename.find('\\') == std::string::npos) 
+			hdl = LoadLibraryA(((proc_share_dirname() + "plugins\\" + orig_filename + ".dll").c_str()));
+		if (hdl == nullptr)
+			log_cmd_error("Can't load module `%s': %s\n", filename.c_str(), GetLastError());
+
+		loaded_plugins[orig_filename] = hdl;
+		Pass::init_register();
+	}
+
+	for (auto &alias : aliases) {
+		loaded_plugin_aliases[alias] = orig_filename;
+	}
+}
+#else
+
 void load_plugin(std::string filename, std::vector<std::string> aliases)
 {
 	std::string orig_filename = filename;
@@ -90,14 +131,19 @@ void load_plugin(std::string filename, std::vector<std::string> aliases)
 	for (auto &alias : aliases)
 		loaded_plugin_aliases[alias] = orig_filename;
 }
+#endif
+
 #else
-void load_plugin(std::string, std::vector<std::string>)
+void load_plugin(std::string filename, std::vector<std::string>)
 {
-	log_error(
-		"\n  This version of Yosys cannot load plugins at runtime.\n"
-		"  Some plugins may have been included at build time.\n"
-		"  Use option `-H' to see the available built-in and plugin commands.\n"
-	);
+	if (filename == "synth-rs") {
+		// yosys-rs-plugin has been built as a static library
+		log("synth-rs has been built as a static library and doesn't need to be loaded");
+		return;
+	}
+	log_error("\n  This version of Yosys cannot load plugins at runtime.\n"
+			  "  Some plugins may have been included at build time.\n"
+			  "  Use option `-H' to see the available built-in and plugin commands.\n");
 }
 #endif
 

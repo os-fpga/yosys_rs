@@ -29,8 +29,8 @@
 #  include <editline/readline.h>
 #endif
 
-#ifdef YOSYS_ENABLE_PLUGINS
-#  include <dlfcn.h>
+#if defined(YOSYS_ENABLE_PLUGINS) && !defined(_WIN32)
+#include <dlfcn.h>
 #endif
 
 #if defined(_WIN32)
@@ -613,8 +613,13 @@ void yosys_shutdown()
 #endif
 
 #ifdef YOSYS_ENABLE_PLUGINS
-	for (auto &it : loaded_plugins)
+	for (auto &it : loaded_plugins) {
+#ifdef _WIN32
+		FreeLibrary(it.second);
+#else
 		dlclose(it.second);
+#endif
+	}
 
 	loaded_plugins.clear();
 #ifdef WITH_PYTHON
@@ -931,7 +936,12 @@ void init_abc_executable_name()
 	if (std::getenv("ABC")) {
 		yosys_abc_executable = std::getenv("ABC");
 	} else {
+#ifdef _WIN32
+		yosys_abc_executable = proc_self_dirname() + "abc.exe";		//Nairi
+#else
 		yosys_abc_executable = proc_self_dirname() + "abc";
+#endif
+		std::cout << "yosys_abc_executable " << yosys_abc_executable << '\n'; // Nairi
 	}
 #else
 	yosys_abc_executable = proc_self_dirname() + proc_program_prefix()+ "yosys-abc";

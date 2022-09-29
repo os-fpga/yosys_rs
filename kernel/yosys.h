@@ -370,7 +370,12 @@ extern std::map<std::string, RTLIL::Design*> saved_designs;
 extern std::vector<RTLIL::Design*> pushed_designs;
 
 // from passes/cmds/pluginc.cc
-extern std::map<std::string, void*> loaded_plugins;
+#ifdef _WIN32
+extern std::map<std::string, HINSTANCE> loaded_plugins;
+#else
+extern std::map<std::string, void *> loaded_plugins;
+#endif
+
 #ifdef WITH_PYTHON
 extern std::map<std::string, void*> loaded_python_plugins;
 #endif
