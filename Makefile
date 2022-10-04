@@ -984,6 +984,11 @@ qtcreator:
 	{ echo .; find backends frontends kernel libs passes -type f \( -name '*.h' -o -name '*.hh' \) -printf '%h\n' | sort -u; } > qtcreator.includes
 	touch qtcreator.config qtcreator.creator
 
+genfiles: $(GENFILES) zlib
+
+zlib:
+	bash misc/create_msvc.sh yosys_verific_rs $(YOSYS_VER) $(GIT_REV)
+
 vcxsrc: $(GENFILES) $(EXTRA_TARGETS)
 	rm -rf yosys-win32-vcxsrc-$(YOSYS_VER){,.zip}
 	set -e; for f in `ls $(filter %.cc %.cpp,$(GENFILES)) $(addsuffix .cc,$(basename $(OBJS))) $(addsuffix .cpp,$(basename $(OBJS))) 2> /dev/null`; do \

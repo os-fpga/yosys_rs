@@ -69,7 +69,7 @@
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>_YOSYS_;_WIN32;YOSYS_VERIFIC;_CRT_SECURE_NO_WARNINGS;ENABLE_VERIFIC=1;DISABLE_VERIFIC_EXTENSIONS=1;WIN32;YOSYS_ENABLE_VERIFIC;VERIFIC_VHDL_SUPPORT;VERIFIC_DIR="..\Release";ABCEXTERNAL="abc.exe";_DEBUG;_CONSOLE;_LIB;"_ITERATOR_DEBUG_LEVEL=2";%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\Raptor_Tools\verific_rs\database;..\Raptor_Tools\verific_rs\util;..\Raptor_Tools\verific_rs\containers;..\Raptor_Tools\verific_rs\verilog;..\Raptor_Tools\verific_rs\hier_tree;..\Raptor_Tools\verific_rs\vhdl</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\;..\Raptor_Tools\verific_rs\database;..\Raptor_Tools\verific_rs\util;..\Raptor_Tools\verific_rs\containers;..\Raptor_Tools\verific_rs\verilog;..\Raptor_Tools\verific_rs\hier_tree;..\Raptor_Tools\verific_rs\vhdl</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
@@ -90,7 +90,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>_YOSYS_;_WIN32;YOSYS_VERIFIC;_CRT_SECURE_NO_WARNINGS;ENABLE_VERIFIC=1;DISABLE_VERIFIC_EXTENSIONS=1;WIN32;YOSYS_ENABLE_VERIFIC;VERIFIC_VHDL_SUPPORT;VERIFIC_DIR="..\Release";ABCEXTERNAL="abc.exe";_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\Raptor_Tools\verific_rs\database;..\Raptor_Tools\verific_rs\util;..\Raptor_Tools\verific_rs\containers;..\Raptor_Tools\verific_rs\verilog;..\Raptor_Tools\verific_rs\hier_tree;..\Raptor_Tools\verific_rs\vhdl</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\Raptor_Tools\verific_rs\database;..\Raptor_Tools\verific_rs\util;..\Raptor_Tools\verific_rs\containers;..\Raptor_Tools\verific_rs\verilog;..\Raptor_Tools\verific_rs\hier_tree;..\Raptor_Tools\verific_rs\vhdl;.\</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
@@ -119,7 +119,6 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="frontends\verific\verificsva.cc" />
-    <ClCompile Include="yosys-config.cc" />
     <ClInclude Include="backends/rtlil/rtlil_backend.h" />
     <ClInclude Include="frontends/aiger/aigerparse.h" />
     <ClInclude Include="frontends/ast/ast.h" />
@@ -491,4 +490,4 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
-</Project>
+</Project>
