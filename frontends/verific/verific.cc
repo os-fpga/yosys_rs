@@ -123,16 +123,22 @@ string get_full_netlist_name(Netlist *nl)
 }
 
 void set_instance_parameters(Design *design) {
-	for (auto module : design->selected_modules()) {
+   	for (auto module : design->selected_modules()) {
 		for (auto cell : module->cells_) {
 			auto it = moduleToParamsMap.find(cell.second->type);
 			if (it != moduleToParamsMap.end()) {
 				MapIter mIter;
 				const char *k, *v;
 				FOREACH_MAP_ITEM(it->second, mIter, &k, &v) {
+					std::vector<bool> bits;
 					if (verific_verbose)
 						log("Setting parameter %s to %s for %s cell.\n", k, v, cell.second->name.c_str());
-					Const paramValue = Const(std::string(v));
+					size_t len = strlen(v);
+					for(int i= len-1; i>=0; --i){
+						bits.push_back(v[i]-'0');
+					}
+
+					Const paramValue = Const(bits);
 					IdString paramName = IdString(std::string("\\") + k);
 					cell.second->setParam(paramName, paramValue);
 				}
@@ -140,6 +146,7 @@ void set_instance_parameters(Design *design) {
 		}
 	}
 }
+
 
 class YosysStreamCallBackHandler : public VerificStreamCallBackHandler
 {
@@ -1988,7 +1995,7 @@ VerificClocking::VerificClocking(VerificImporter *importer, Net *net, bool sva_a
 		gclk = true;
 }
 
-Cell *VerificClocking::addDff(IdString name, SigSpec sig_d, SigSpec sig_q, Const init_value)
+RTLIL::Cell *VerificClocking::addDff(IdString name, SigSpec sig_d, SigSpec sig_q, Const init_value)
 {
 	log_assert(GetSize(sig_d) == GetSize(sig_q));
 
@@ -2051,7 +2058,7 @@ Cell *VerificClocking::addDff(IdString name, SigSpec sig_d, SigSpec sig_q, Const
 	return module->addDff(name, clock_sig, sig_d, sig_q, posedge);
 }
 
-Cell *VerificClocking::addAdff(IdString name, RTLIL::SigSpec sig_arst, SigSpec sig_d, SigSpec sig_q, Const arst_value)
+RTLIL::Cell *VerificClocking::addAdff(IdString name, RTLIL::SigSpec sig_arst, SigSpec sig_d, SigSpec sig_q, Const arst_value)
 {
 	log_assert(gclk == false);
 	log_assert(disable_sig == State::S0);
@@ -2063,7 +2070,7 @@ Cell *VerificClocking::addAdff(IdString name, RTLIL::SigSpec sig_arst, SigSpec s
 	return module->addAdff(name, clock_sig, sig_arst, sig_d, sig_q, arst_value, posedge);
 }
 
-Cell *VerificClocking::addDffsr(IdString name, RTLIL::SigSpec sig_set, RTLIL::SigSpec sig_clr, SigSpec sig_d, SigSpec sig_q)
+RTLIL::Cell *VerificClocking::addDffsr(IdString name, RTLIL::SigSpec sig_set, RTLIL::SigSpec sig_clr, SigSpec sig_d, SigSpec sig_q)
 {
 	log_assert(gclk == false);
 	log_assert(disable_sig == State::S0);
@@ -2075,7 +2082,7 @@ Cell *VerificClocking::addDffsr(IdString name, RTLIL::SigSpec sig_set, RTLIL::Si
 	return module->addDffsr(name, clock_sig, sig_set, sig_clr, sig_d, sig_q, posedge);
 }
 
-Cell *VerificClocking::addAldff(IdString name, RTLIL::SigSpec sig_aload, RTLIL::SigSpec sig_adata, SigSpec sig_d, SigSpec sig_q)
+RTLIL::Cell *VerificClocking::addAldff(IdString name, RTLIL::SigSpec sig_aload, RTLIL::SigSpec sig_adata, SigSpec sig_d, SigSpec sig_q)
 {
 	log_assert(disable_sig == State::S0);
 
