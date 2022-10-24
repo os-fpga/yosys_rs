@@ -2612,7 +2612,7 @@ struct VerificPass : public Pass {
 			RuntimeFlags::SetVar("vhdl_allow_any_ram_in_loop", 1);
 
 			RuntimeFlags::SetVar("vhdl_support_variable_slice", 1);
-			RuntimeFlags::SetVar("vhdl_ignore_assertion_statements", 0);
+			RuntimeFlags::SetVar("vhdl_ignore_assertion_statements", 1);
 
 			RuntimeFlags::SetVar("vhdl_preserve_assignments", 1);
 			//RuntimeFlags::SetVar("vhdl_preserve_comments", 1);
