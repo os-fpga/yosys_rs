@@ -2595,7 +2595,7 @@ struct VerificPass : public Pass {
 		log("Get/set Verific runtime flags.\n");
 		log("\n");
 		log("\n");
-#if defined(YOSYS_ENABLE_VERIFIC) and defined(YOSYSHQ_VERIFIC_EXTENSIONS)
+#if defined(YOSYS_ENABLE_VERIFIC) && defined(YOSYSHQ_VERIFIC_EXTENSIONS)
 		VerificExtensions::Help();
 #endif	
 		log("Use YosysHQ Tabby CAD Suite if you need Yosys+Verific.\n");
