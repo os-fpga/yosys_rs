@@ -1282,10 +1282,7 @@ input S;
 output reg [WIDTH-1:0] Y;
 
 always @* begin
-	if (S)
-		Y = B;
-	else
-		Y = A;
+	assign Y = S ? B : A;
 end
 
 endmodule
@@ -1696,6 +1693,23 @@ assign Y = 'bx;
 
 endmodule
 
+// --------------------------------------------------------
+`ifdef SIMLIB_FF
+module \$anyinit (D, Q);
+
+parameter WIDTH = 0;
+
+input [WIDTH-1:0] D;
+output reg [WIDTH-1:0] Q;
+
+initial Q <= 'bx;
+
+always @($global_clk) begin
+	Q <= D;
+end
+
+endmodule
+`endif
 // --------------------------------------------------------
 
 module \$allconst (Y);

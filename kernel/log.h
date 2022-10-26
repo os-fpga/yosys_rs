@@ -237,7 +237,7 @@ void log_check_expected();
 
 const char *log_signal(const RTLIL::SigSpec &sig, bool autoint = true);
 const char *log_const(const RTLIL::Const &value, bool autoint = true);
-const char *log_id(RTLIL::IdString id);
+const char *log_id(const RTLIL::IdString &id);
 
 template<typename T> static inline const char *log_id(T *obj, const char *nullstr = nullptr) {
 	if (nullstr && obj == nullptr)
@@ -409,6 +409,18 @@ static inline void log_dump_val_worker(dict<K, T, OPS> &v) {
 
 template<typename K, typename OPS>
 static inline void log_dump_val_worker(pool<K, OPS> &v) {
+	log("{");
+	bool first = true;
+	for (auto &it : v) {
+		log(first ? " " : ", ");
+		log_dump_val_worker(it);
+		first = false;
+	}
+	log(" }");
+}
+
+template<typename K>
+static inline void log_dump_val_worker(std::vector<K> &v) {
 	log("{");
 	bool first = true;
 	for (auto &it : v) {

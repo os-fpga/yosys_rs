@@ -574,6 +574,7 @@ struct ShowWorker
 	{
 		ct.setup_internals();
 		ct.setup_internals_mem();
+		ct.setup_internals_anyinit();
 		ct.setup_stdcells();
 		ct.setup_stdcells_mem();
 		ct.setup_design(design);
@@ -824,6 +825,7 @@ struct ShowPass : public Pass {
 
 		for (auto filename : libfiles) {
 			std::ifstream f;
+			rewrite_filename(filename);
 			f.open(filename.c_str());
 			yosys_input_files.insert(filename);
 			if (f.fail())
