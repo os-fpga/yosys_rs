@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <string.h>
 
+
 #ifndef _WIN32
 #  include <unistd.h>
 #  include <dirent.h>
@@ -122,17 +123,25 @@ string get_full_netlist_name(Netlist *nl)
 	return nl->CellBaseName();
 }
 
-void set_instance_parameters(Design *design) {
+void set_instance_parameters(Design *design)
+{
 	for (auto module : design->selected_modules()) {
 		for (auto cell : module->cells_) {
 			auto it = moduleToParamsMap.find(cell.second->type);
 			if (it != moduleToParamsMap.end()) {
 				MapIter mIter;
 				const char *k, *v;
-				FOREACH_MAP_ITEM(it->second, mIter, &k, &v) {
+				FOREACH_MAP_ITEM(it->second, mIter, &k, &v)
+				{
+					std::vector<bool> bits;
 					if (verific_verbose)
 						log("Setting parameter %s to %s for %s cell.\n", k, v, cell.second->name.c_str());
-					Const paramValue = Const(std::string(v));
+					size_t len = strlen(v);
+					for (int i = len - 1; i >= 0; --i) {
+						bits.push_back(v[i] == '1');
+					}
+
+					Const paramValue = Const(bits);
 					IdString paramName = IdString(std::string("\\") + k);
 					cell.second->setParam(paramName, paramValue);
 				}
