@@ -19,6 +19,7 @@
 
 #include "kernel/yosys.h"
 #include "libs/sha1/sha1.h"
+#include <csignal>
 
 
 #ifdef PRODUCTION_BUILD
@@ -197,8 +198,16 @@ void yosys_atexit()
 #endif
 }
 
+void signalHandler(int sigNum) {
+	std::cerr << "Interrupt signal (" << sigNum << ") received.\n";
+	yosys_shutdown();
+
+	exit(sigNum);
+}
+
 int main(int argc, char **argv)
 {
+	signal(SIGINT, signalHandler);
 #ifdef PRODUCTION_BUILD
 	License_Manager license(License_Manager::LicensedProductName::YOSYS_RS);
 #endif

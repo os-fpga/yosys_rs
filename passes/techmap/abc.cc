@@ -1129,7 +1129,7 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 		std::ifstream ifs;
 		ifs.open(buffer);
 		if (ifs.fail())
-			log_error("ERROR: something went wrong in DE LUT mapper");
+			log_error("Something went wrong in DE LUT mapper.\n");
 
 		bool builtin_lib = liberty_files.empty() && genlib_files.empty();
 		RTLIL::Design *mapped_design = new RTLIL::Design;

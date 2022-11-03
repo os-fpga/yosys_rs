@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <string.h>
 
+
 #ifndef _WIN32
 #  include <unistd.h>
 #  include <dirent.h>
@@ -87,6 +88,7 @@ string verific_error_msg;
 int verific_sva_fsm_limit;
 
 vector<string> verific_incdirs, verific_libdirs, verific_libexts;
+std::map<IdString, const Map*> moduleToParamsMap;
 
 void msg_func(msg_type_t msg_type, const char *message_id, linefile_type linefile, const char *msg, va_list args)
 {
@@ -119,6 +121,33 @@ string get_full_netlist_name(Netlist *nl)
 	}
 
 	return nl->CellBaseName();
+}
+
+void set_instance_parameters(Design *design)
+{
+	for (auto module : design->selected_modules()) {
+		for (auto cell : module->cells_) {
+			auto it = moduleToParamsMap.find(cell.second->type);
+			if (it != moduleToParamsMap.end()) {
+				MapIter mIter;
+				const char *k, *v;
+				FOREACH_MAP_ITEM(it->second, mIter, &k, &v)
+				{
+					std::vector<bool> bits;
+					if (verific_verbose)
+						log("Setting parameter %s to %s for %s cell.\n", k, v, cell.second->name.c_str());
+					size_t len = strlen(v);
+					for (int i = len - 1; i >= 0; --i) {
+						bits.push_back(v[i] == '1');
+					}
+
+					Const paramValue = Const(bits);
+					IdString paramName = IdString(std::string("\\") + k);
+					cell.second->setParam(paramName, paramValue);
+				}
+			}
+		}
+	}
 }
 
 class YosysStreamCallBackHandler : public VerificStreamCallBackHandler
@@ -1074,6 +1103,9 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 	if (is_blackbox(nl)) {
 		log("Importing blackbox module %s.\n", RTLIL::id2cstr(module->name));
 		module->set_bool_attribute(ID::blackbox);
+		if (nl->GetParameters()) {
+			moduleToParamsMap[module->name] = nl->GetParameters();
+		}
 	} else {
 		log("Importing module %s.\n", RTLIL::id2cstr(module->name));
 	}
@@ -1172,6 +1204,7 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 			memory->name = RTLIL::escape_id(net->Name());
 			log_assert(module->count_id(memory->name) == 0);
 			module->memories[memory->name] = memory;
+            import_attributes(memory->attributes, net, nl);
 
 			int number_of_bits = net->Size();
 			int bits_in_word = number_of_bits;
@@ -2312,6 +2345,8 @@ void verific_import(Design *design, const std::map<std::string,std::string> &par
 		nl_todo.erase(it);
 	}
 
+	set_instance_parameters(design);
+
 	hier_tree::DeleteHierarchicalTree();
 	veri_file::Reset();
 #ifdef VERIFIC_VHDL_SUPPORT
@@ -2561,6 +2596,7 @@ struct VerificPass : public Pass {
 					"binaries of YosysHQ Tabby CAD Suite.\n");
 
 		log_header(design, "Executing VERIFIC (loading SystemVerilog and VHDL designs using Verific).\n");
+		RuntimeFlags::SetVar("veri_loop_limit",50000);
 
 		if (set_verific_global_flags)
 		{
@@ -2585,7 +2621,7 @@ struct VerificPass : public Pass {
 			RuntimeFlags::SetVar("vhdl_allow_any_ram_in_loop", 1);
 
 			RuntimeFlags::SetVar("vhdl_support_variable_slice", 1);
-			RuntimeFlags::SetVar("vhdl_ignore_assertion_statements", 0);
+			RuntimeFlags::SetVar("vhdl_ignore_assertion_statements", 1);
 
 			RuntimeFlags::SetVar("vhdl_preserve_assignments", 1);
 			//RuntimeFlags::SetVar("vhdl_preserve_comments", 1);
@@ -3112,6 +3148,8 @@ struct VerificPass : public Pass {
 				}
 				nl_todo.erase(it);
 			}
+
+			set_instance_parameters(design);
 
 			hier_tree::DeleteHierarchicalTree();
 			veri_file::Reset();
