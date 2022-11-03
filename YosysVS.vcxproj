@@ -105,13 +105,13 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>..\Raptor_Tools\verific_rs\database;..\Raptor_Tools\verific_rs\util;..\Raptor_Tools\verific_rs\containers;..\Raptor_Tools\verific_rs\verilog;..\Raptor_Tools\verific_rs\hier_tree;..\Raptor_Tools\verific_rs\vhdl</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\;..\Raptor_Tools\verific_rs\database;..\Raptor_Tools\verific_rs\util;..\Raptor_Tools\verific_rs\containers;..\Raptor_Tools\verific_rs\verilog;..\Raptor_Tools\verific_rs\hier_tree;..\Raptor_Tools\verific_rs\vhdl</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_YOSYS_;_WIN32;YOSYS_VERIFIC;_CRT_SECURE_NO_WARNINGS;ENABLE_VERIFIC=1;DISABLE_VERIFIC_EXTENSIONS=1;WIN32;YOSYS_ENABLE_VERIFIC;VERIFIC_VHDL_SUPPORT;VERIFIC_DIR="..\Release";ABCEXTERNAL="abc.exe";_CONSOLE;_LIB;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <WholeProgramOptimization>false</WholeProgramOptimization>
     </ClCompile>
     <Link>
-      <AdditionalLibraryDirectories>..\Release\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>..\x64\Release\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>synth-rs.lib;verilog.lib;hdl_encrypt.lib;database.lib;hdl_file_sort.lib;util.lib;vhdl.lib;verilog_nl.lib;hier_tree.lib;containers.lib;commands.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalOptions>/WHOLEARCHIVE:synth-rs.lib %(AdditionalOptions)</AdditionalOptions>
       <LinkTimeCodeGeneration>Default</LinkTimeCodeGeneration>
@@ -490,4 +490,4 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
-</Project>
+</Project>
