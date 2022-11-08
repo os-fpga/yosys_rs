@@ -21,12 +21,15 @@
  *
  */
 
-/* This is a specific code from rapid Silicon to handle VHDL netlist output.
- * It is a copy/paste of the Verilog version (yosys/backends/verilog) and o
- * nly the "structural" parts have been modified to allow the VHDL ouptut of structural netlist.
+/* Copyright (C) Rapid Silicon
+ *
+ * This is a specific code from rapid Silicon to handle VHDL netlist output.
+ * It is a copy/paste of the Verilog version (yosys/backends/verilog) and 
+ * only the "structural" parts have been modified to allow the VHDL ouptut of structural netlist.
  * It is currently customized for specific cells which have been hard-coded like :
  * shr, adder_carry, TDP36K, RS_DSP2_MULT, sh_dff, latchsre, dffnsre, dffsre. 
- * There is a remaining tricky part to adress is during port map association of an instance like :
+ * Things are generally straighforward when coming from Verilog code except when we want to adress 
+ * port map association of an instance like :
  *     Cell (...
  *           o1 => (s1 & s2 & s3)
  *   where 'o1' is the actual output of a cell instance and '(s1 & s2 & s3)' a complex 
@@ -447,18 +450,23 @@ void vhdl_dump_sigchunk(std::ostream &f, const RTLIL::SigChunk &chunk, bool no_d
 			f << stringf("%s", id(chunk.wire->name).c_str());
 		} else if (chunk.width == 1) {
 			if (chunk.wire->upto)
-				f << stringf("%s(%d)", id(chunk.wire->name).c_str(), (chunk.wire->width - chunk.offset - 1) + chunk.wire->start_offset);
+				f << stringf("%s(%d)", id(chunk.wire->name).c_str(), 
+                                             (chunk.wire->width - chunk.offset - 1) + 
+                                             chunk.wire->start_offset);
 			else
-				f << stringf("%s(%d)", id(chunk.wire->name).c_str(), chunk.offset + chunk.wire->start_offset);
+				f << stringf("%s(%d)", id(chunk.wire->name).c_str(), 
+                                             chunk.offset + chunk.wire->start_offset);
 		} else {
 			if (chunk.wire->upto)
 				f << stringf("%s(%d upto %d)", id(chunk.wire->name).c_str(),
-						(chunk.wire->width - (chunk.offset + chunk.width - 1) - 1) + chunk.wire->start_offset,
-						(chunk.wire->width - chunk.offset - 1) + chunk.wire->start_offset);
+					     (chunk.wire->width - 
+                                             (chunk.offset + chunk.width - 1) - 1) + 
+                                             chunk.wire->start_offset, (chunk.wire->width - 
+                                             chunk.offset - 1) + chunk.wire->start_offset);
 			else
 				f << stringf("%s(%d downto %d)", id(chunk.wire->name).c_str(),
-						(chunk.offset + chunk.width - 1) + chunk.wire->start_offset,
-						chunk.offset + chunk.wire->start_offset);
+					    (chunk.offset + chunk.width - 1) + chunk.wire->start_offset,
+					    chunk.offset + chunk.wire->start_offset);
 		}
 	}
 }
@@ -1900,6 +1908,168 @@ bool vhdl_dump_cell_expr(std::ostream &f, std::string indent, RTLIL::Cell *cell)
 	return false;
 }
 
+void vhdl_dump_sigchunk_intermediate(std::ostream &f, const RTLIL::SigChunk &chunk, string portName,
+                                     int& left, int& right, bool no_decimal = false)
+{
+    int width = 0;
+
+    if (chunk.wire == NULL) {
+
+         // Impossible
+         //
+         vhdl_dump_const(f, chunk.data, chunk.width, chunk.offset, no_decimal);
+
+    } else {
+
+         if (chunk.width == chunk.wire->width && chunk.offset == 0) {
+
+             width = chunk.width - 1;
+
+             f << stringf("%s", id(chunk.wire->name).c_str());
+
+         } else if (chunk.width == 1) {
+
+             width = 1;
+
+             if (chunk.wire->upto) {
+
+                 f << stringf("%s(%d)", id(chunk.wire->name).c_str(), 
+                                             (chunk.wire->width - chunk.offset - 1) + 
+                                             chunk.wire->start_offset);
+             } else {
+                 f << stringf("%s(%d)", id(chunk.wire->name).c_str(), 
+                                             chunk.offset + chunk.wire->start_offset);
+             }
+         } else {
+               if (chunk.wire->upto) {
+                  f << stringf("%s(%d upto %d)", id(chunk.wire->name).c_str(),
+                                             (chunk.wire->width - 
+                                             (chunk.offset + chunk.width - 1) - 1) + 
+                                             chunk.wire->start_offset, (chunk.wire->width - 
+                                             chunk.offset - 1) + chunk.wire->start_offset);
+
+                  width = ((chunk.wire->width -chunk.offset - 1) + chunk.wire->start_offset) -
+                          ((chunk.wire->width - (chunk.offset + chunk.width - 1) - 1) + 
+                           chunk.wire->start_offset); 
+               } else {
+                      f << stringf("%s(%d downto %d)", id(chunk.wire->name).c_str(),
+                                            (chunk.offset + chunk.width - 1) + chunk.wire->start_offset,                                            chunk.offset + chunk.wire->start_offset);
+                     width = (chunk.offset + chunk.width - 1) + chunk.wire->start_offset - 
+                             (chunk.offset + chunk.wire->start_offset);
+              }
+         }
+     }
+
+     f << " <= ";
+
+     if (left >= right) {
+        int newLeft = left - width ;
+        f << stringf("%s (%d downto %d) ", portName.c_str(), left, newLeft);
+        left = newLeft-1;
+     } else {
+        int newLeft = left + width ;
+        f << stringf("%s (%d upto %d) ", portName.c_str(), left, newLeft);
+        left = newLeft+1;
+     }
+}
+
+void processIntermediateAssignment(std::ostream &f, const string &portName,
+                                   int left, int right, const RTLIL::SigSpec &actual)
+{
+// titi
+     if (actual.is_chunk()) {
+
+        f << "  ";
+        vhdl_dump_sigchunk(f, actual.as_chunk(), false /* no_decimal*/ );
+        f << stringf(" <= %s ;\n", portName.c_str());
+
+     } else {
+        f << " \n";
+        f << "  -- From output concat expression\n";
+        for (auto it = actual.chunks().rbegin(); it != actual.chunks().rend(); ++it) {
+           f << "  ";
+           vhdl_dump_sigchunk_intermediate(f, *it, portName, left, right, true);
+           f << ";\n";
+        }
+        f << " \n";
+     }
+}
+
+void vhdl_dump_cell_intermediate_assignments(std::ostream &f, RTLIL::Cell *cell)
+{
+     std::string instanceName = cellname(cell);
+
+     string cellName = id(cell->type, false);
+
+     if (cellName == "TDP36K") {
+	for (auto it = cell->connections().begin(); it != cell->connections().end(); ++it) {
+           const RTLIL::SigSpec actual = it->second;
+
+           if (id(it->first) == "RDATA_A1_o") {
+             string portName = instanceName + "_" + id(it->first);
+             processIntermediateAssignment (f, portName, 17, 0, actual);
+             continue;
+           }
+           if (id(it->first) == "RDATA_B1_o") {
+             string portName = instanceName + "_" + id(it->first);
+             processIntermediateAssignment (f, portName, 17, 0, actual);
+             continue;
+           }
+           if (id(it->first) == "RDATA_A2_o") {
+             string portName = instanceName + "_" + id(it->first);
+             processIntermediateAssignment (f, portName, 17, 0, actual);
+             continue;
+           }
+           if (id(it->first) == "RDATA_B2_o") {
+             string portName = instanceName + "_" + id(it->first);
+             processIntermediateAssignment (f, portName, 17, 0, actual);
+             continue;
+           }
+        }
+        return;
+     }
+
+     if (cellName == "RS_DSP2_MULT") {
+	for (auto it = cell->connections().begin(); it != cell->connections().end(); ++it) {
+
+           const RTLIL::SigSpec actual = it->second;
+
+           if (id(it->first) == "z") {
+             string portName = instanceName + "_" + id(it->first);
+             processIntermediateAssignment (f, portName, 37, 0, actual);
+             continue;
+           }
+        }
+        return;
+     }
+
+}
+
+void vhdl_dump_cell_intermediate_outputs(std::ostream &f, std::string indent, RTLIL::Cell *cell)
+{
+     std::string instanceName = cellname(cell);
+
+     string cellName = id(cell->type, false);
+
+     if (cellName == "TDP36K") {
+       f << stringf("%s" "signal %s_RDATA_A1_o : std_logic_vector (17 downto 0);\n", indent.c_str(),
+                    instanceName.c_str());
+       f << stringf("%s" "signal %s_RDATA_B1_o : std_logic_vector (17 downto 0);\n", indent.c_str(),
+                    instanceName.c_str());
+       f << stringf("%s" "signal %s_RDATA_A2_o : std_logic_vector (17 downto 0);\n", indent.c_str(),
+                    instanceName.c_str());
+       f << stringf("%s" "signal %s_RDATA_B2_o : std_logic_vector (17 downto 0);\n", indent.c_str(),
+                    instanceName.c_str());
+       return;
+     }
+
+     if (cellName == "RS_DSP2_MULT") {
+       f << stringf("%s" "signal %s_z : std_logic_vector (37 downto 0);\n", indent.c_str(),
+                    instanceName.c_str());
+       return;
+     }
+}
+
 void vhdl_dump_cell(std::ostream &f, std::string indent, RTLIL::Cell *cell)
 {
 	// Handled by vhdl_dump_memory
@@ -1943,6 +2113,7 @@ void vhdl_dump_cell(std::ostream &f, std::string indent, RTLIL::Cell *cell)
 	// ================================================
 	// Process "generic map" part of cell instantiation
 	//
+#if 0
 	if (!defparam && cell->parameters.size() > 0) {
 		f << stringf("     generic map (");
 		for (auto it = cell->parameters.begin(); it != cell->parameters.end(); ++it) {
@@ -1952,7 +2123,8 @@ void vhdl_dump_cell(std::ostream &f, std::string indent, RTLIL::Cell *cell)
 			vhdl_dump_const(f, it->second);
 		}
 		f << stringf("\n%s" "   )\n", indent.c_str());
-	}
+        }
+#endif
 
 	// ================================================
 	// Processing "port map" association in instance
@@ -2019,6 +2191,33 @@ void vhdl_dump_cell(std::ostream &f, std::string indent, RTLIL::Cell *cell)
 		   if (vectorize) {
                      f << stringf("\"\" & ");
 		   }
+
+		   if ((cellName == "TDP36K") &&
+                       (portName == "RDATA_A1_o")) {
+                     f << stringf("%s_%s", cell_name.c_str(), portName.c_str());
+                     continue;
+                   }
+		   if ((cellName == "TDP36K") &&
+                       (portName == "RDATA_B1_o")) {
+                     f << stringf("%s_%s", cell_name.c_str(), portName.c_str());
+                     continue;
+                   }
+		   if ((cellName == "TDP36K") &&
+                       (portName == "RDATA_A2_o")) {
+                     f << stringf("%s_%s", cell_name.c_str(), portName.c_str());
+                     continue;
+                   }
+		   if ((cellName == "TDP36K") &&
+                       (portName == "RDATA_B2_o")) {
+                     f << stringf("%s_%s", cell_name.c_str(), portName.c_str());
+                     continue;
+                   }
+
+		   if ((cellName == "RS_DSP2_MULT") &&
+                       (portName == "z")) {
+                     f << stringf("%s_%s", cell_name.c_str(), portName.c_str());
+                     continue;
+                   }
 
                    vhdl_dump_sigspec(f, it->second, true /* no_decimal !!! */);
 		}
@@ -2228,10 +2427,12 @@ void vhdl_dump_process(std::ostream &f, std::string indent, RTLIL::Process *proc
 void printComponent_TDP36K(std::ostream &f, std::string indent)
 {
 	f << stringf("%s" "component TDP36K\n", indent.c_str());
+#if 0
         f << stringf("%s" " generic (\n", indent.c_str());
         f << stringf("%s" "    MODE_BITS : std_logic_vector (80 downto 0);\n", indent.c_str());
         f << stringf("%s" "    INIT_i : std_ulogic_vector (36863 downto 0)\n", indent.c_str());
         f << stringf("%s" "  );\n", indent.c_str());
+#endif
         f << stringf("%s" "  port (\n", indent.c_str());
         f << stringf("%s" "    RESET_ni : in std_logic := '0';\n", indent.c_str());
         f << stringf("%s" "    WEN_A1_i : in std_logic;\n", indent.c_str());
@@ -2271,9 +2472,11 @@ void printComponent_TDP36K(std::ostream &f, std::string indent)
 void printComponent_RS_DSP2_MULT(std::ostream &f, std::string indent)
 {
         f << stringf("%s" "component RS_DSP2_MULT\n", indent.c_str());
+#if 0
         f << stringf("%s" " generic (\n", indent.c_str());
         f << stringf("%s" "    MODE_BITS : std_logic_vector (79 downto 0)\n", indent.c_str());
         f << stringf("%s" "  );\n", indent.c_str());
+#endif
         f << stringf("%s" "  port (\n", indent.c_str());
         f << stringf("%s" "    a : in std_logic_vector (19 downto 0);\n", indent.c_str());
         f << stringf("%s" "    b : in std_logic_vector (17 downto 0);\n", indent.c_str());
@@ -2507,6 +2710,12 @@ void vhdl_dump_module(std::ostream &f, std::string indent, RTLIL::Module *module
 
 	for (auto w : module->wires())
 		vhdl_dump_signal(f, indent + "  ", w);
+
+        // Dump intermediate signals for specific cell outputs
+	for (auto cell : module->cells()) {
+		vhdl_dump_cell_intermediate_outputs(f, indent + "  ", cell);
+        }
+
 	f << stringf("\n");
 
 	for (auto &mem : Mem::get_all_memories(module)) {
@@ -2525,6 +2734,10 @@ void vhdl_dump_module(std::ostream &f, std::string indent, RTLIL::Module *module
 
 	for (auto it = module->connections().begin(); it != module->connections().end(); ++it)
 		vhdl_dump_conn(f, indent + "  ", it->first, it->second);
+
+	for (auto cell : module->cells()) {
+		vhdl_dump_cell_intermediate_assignments(f, cell);
+	}
 
 	f << stringf("%s" "end arch;\n", indent.c_str());
 
