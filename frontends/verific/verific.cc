@@ -138,6 +138,8 @@ void set_instance_parameters(Design *design)
 						log("Setting parameter %s to %s for %s cell.\n", k, v, cell.second->name.c_str());
 					size_t len = strlen(v);
 					for (int i = len - 1; i >= 0; --i) {
+						if (v[i] == 'b')
+							break;
 						bits.push_back(v[i] == '1');
 					}
 
