@@ -123,6 +123,19 @@ string get_full_netlist_name(Netlist *nl)
 	return nl->CellBaseName();
 }
 
+
+void set_module_parameters(const Map* parameters, RTLIL::Module* mod) {
+	MapIter mIter;
+	const char *k, *v;
+	FOREACH_MAP_ITEM(parameters, mIter, &k, &v)
+	{
+		if (verific_verbose)
+			log("Setting parameter %s to %s for %s module.\n", k, v, mod->name.c_str());
+		IdString paramName = IdString(std::string("\\") + k);
+		mod->avail_parameters(paramName);
+	}
+}
+
 void set_instance_parameters(Design *design)
 {
 	for (auto module : design->selected_modules()) {
@@ -1105,8 +1118,10 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 	if (is_blackbox(nl)) {
 		log("Importing blackbox module %s.\n", RTLIL::id2cstr(module->name));
 		module->set_bool_attribute(ID::blackbox);
-		if (nl->GetParameters()) {
-			moduleToParamsMap[module->name] = nl->GetParameters();
+		auto params = nl->GetParameters();
+		if (params) {
+			moduleToParamsMap[module->name] = params;
+			set_module_parameters(params, module);
 		}
 	} else {
 		log("Importing module %s.\n", RTLIL::id2cstr(module->name));
