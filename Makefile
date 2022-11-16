@@ -518,6 +518,16 @@ CXXFLAGS += -I$(GHDL_INCLUDE_DIR) -DYOSYS_ENABLE_GHDL
 LDLIBS += $(GHDL_LIB_DIR)/libghdl.a $(file <$(GHDL_LIB_DIR)/libghdl.link)
 endif
 
+ifeq ($(PRODUCTION_BUILD),1)
+LDLIBS += $(EXTRA_LDLIBS)
+CXXFLAGS += $(EXTRA_CXX_FLAGS)
+LDFLAGS += $(EXTRA_LD_FLAGS)
+OBJS += $(EXTRA_OBJS)
+else
+LDLIBS += $(EXTRA_LDLIBS)
+CXXFLAGS += $(EXTRA_CXX_FLAGS)
+endif
+
 ifeq ($(ENABLE_VERIFIC),1)
 VERIFIC_DIR ?= /usr/local/src/verific_lib
 VERIFIC_COMPONENTS ?= verilog database util containers hier_tree
@@ -539,13 +549,6 @@ LDLIBS += $(patsubst %,$(VERIFIC_DIR)/%/*-mac.a,$(VERIFIC_COMPONENTS)) -lz
 else
 LDLIBS += $(patsubst %,$(VERIFIC_DIR)/%/*-linux.a,$(VERIFIC_COMPONENTS)) -lz
 endif
-endif
-
-ifeq ($(PRODUCTION_BUILD),1)
-LDLIBS += $(EXTRA_LDLIBS)
-CXXFLAGS += $(EXTRA_CXX_FLAGS)
-LDFLAGS += $(EXTRA_LD_FLAGS)
-OBJS += $(EXTRA_OBJS)
 endif
 
 ifeq ($(ENABLE_PROTOBUF),1)
