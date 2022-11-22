@@ -6,13 +6,15 @@ msvc="$1-$2"
 yosysver="$2"
 gitsha="$3"
 
-echo "namespace Yosys { extern const char *yosys_verific_version_str; const char *yosys_verific_version_str=\"Yosys_verific_rs Windows Version $yosysver(git hash $gitsha ) )\"; }" > kernel/version.cc
+echo "namespace Yosys { extern const char *yosys_verific_version_str; const char *yosys_verific_version_str=\"Yosys_verific_rs Windows Version $yosysver(git hash $gitsha ) )\";
+		extern const char *yosys_version_str; const char *yosys_version_str=\"$yosysver\";}" > kernel/version.cc
 
 rm -rf YosysVS-Tpl-v2.zip YosysVS
-wget https://yosyshq.net/yosys/nogit/YosysVS-Tpl-v2.zip
-wget https://www.zlib.net/fossils/zlib-1.2.11.tar.gz
 
-unzip YosysVS-Tpl-v2.zip
+#this commands executed in yosys/action.ps1
+#wget https://yosyshq.net/yosys/nogit/YosysVS-Tpl-v2.zip
+#wget https://www.zlib.net/fossils/zlib-1.2.11.tar.gz
+
 rm -f YosysVS-Tpl-v2.zip
 tar xvfz zlib-1.2.11.tar.gz
 
@@ -25,10 +27,7 @@ ls libs/zlib/*.c | sed 's,.*:,,; s,//*,/,g; s,/[^/]*/\.\./,/,g; y, \\,\n\n,;' | 
 
 
 tar -cf - -T srcfiles.txt | tar -xf - -C ./
-#cp -r share ./
 
-echo "namespace Yosys { extern const char *yosys_version_str; const char *yosys_version_str=\"Yosys" \
-		"$yosysver (git sha1 $gitsha, Visual Studio)\"; }" >> ./kernel/version.cc
 
 cat > readme-git.txt << EOT
 Want to use a git working copy for the yosys source code?

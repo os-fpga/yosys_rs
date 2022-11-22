@@ -1,4 +1,7 @@
 
+ifeq ($(OS),Windows_NT)
+CONFIG := cygwin
+else
 CONFIG := clang
 # CONFIG := gcc
 # CONFIG := gcc-4.8
@@ -8,7 +11,7 @@ CONFIG := clang
 # CONFIG := mxe
 # CONFIG := msys2-32
 # CONFIG := msys2-64
-
+endif
 # features (the more the better)
 ENABLE_TCL := 1
 ENABLE_ABC := 1
@@ -17,8 +20,8 @@ ENABLE_PLUGINS := 1
 ENABLE_READLINE := 1
 ENABLE_EDITLINE := 0
 ENABLE_GHDL := 0
-ENABLE_VERIFIC := 0
-DISABLE_VERIFIC_EXTENSIONS := 0
+ENABLE_VERIFIC := 1
+DISABLE_VERIFIC_EXTENSIONS := 1 
 DISABLE_VERIFIC_VHDL := 0
 ENABLE_COVER := 1
 ENABLE_LIBYOSYS := 0
@@ -56,10 +59,16 @@ SANITIZER =
 # SANITIZER = cfi
 
 PROGRAM_PREFIX :=
-
+ifeq ($(OS),Windows_NT)
+PATH = /cygdrive/c/cygwin64/bin
+ENABLE_PLUGINS := 0
+ENABLE_TCL := 0
+EXE := .exe
+else
 OS := $(shell uname -s)
 PREFIX ?= /usr/local
 INSTALL_SUDO :=
+endif
 
 ifneq ($(wildcard Makefile.conf),)
 include Makefile.conf
@@ -80,7 +89,7 @@ EXTRA_OBJS =
 EXTRA_TARGETS =
 TARGETS = $(PROGRAM_PREFIX)yosys$(EXE) $(PROGRAM_PREFIX)yosys-config
 
-PRETTY = 1
+PRETTY = 1 
 SMALL = 0
 
 # Unit test
@@ -103,7 +112,11 @@ PKG_CONFIG ?= pkg-config
 SED ?= sed
 BISON ?= bison
 STRIP ?= strip
+ifeq ($(OS), Windows_NT)
+AWK ?= awk.exe
+else
 AWK ?= awk
+endif
 
 ifeq ($(OS), Darwin)
 PLUGIN_LDFLAGS += -undefined dynamic_lookup
@@ -144,7 +157,7 @@ YOSYS_VER := 0.18+10
 # back to calling git directly.
 TARBALL_GIT_REV := $(shell cat $(YOSYS_SRC)/.gitcommit)
 ifeq ($(TARBALL_GIT_REV),$$Format:%h$$)
-GIT_REV := $(shell git ls-remote $(YOSYS_SRC) HEAD -q | $(AWK) 'BEGIN {R = "UNKNOWN"}; ($$2 == "HEAD") {R = substr($$1, 1, 9); exit} END {print R}')
+GIT_REV := $(shell git ls-remote $(YOSYS_SRC) HEAD -q | $( AWK ) 'BEGIN {R = "UNKNOWN"}; ($$2 == "HEAD") {R = substr($$1, 1, 9); exit} END {print R}')
 else
 GIT_REV := $(TARBALL_GIT_REV)
 endif
@@ -519,7 +532,11 @@ LDLIBS += $(GHDL_LIB_DIR)/libghdl.a $(file <$(GHDL_LIB_DIR)/libghdl.link)
 endif
 
 ifeq ($(ENABLE_VERIFIC),1)
+ifeq ($(OS), Windows_NT)
+VERIFIC_DIR ?= ../Raptor_Tools/verific_rs
+else
 VERIFIC_DIR ?= /usr/local/src/verific_lib
+endif
 VERIFIC_COMPONENTS ?= verilog database util containers hier_tree
 ifneq ($(DISABLE_VERIFIC_VHDL),1)
 VERIFIC_COMPONENTS += vhdl
@@ -590,7 +607,7 @@ endef
 ifeq ($(PRETTY), 1)
 P_STATUS = 0
 P_OFFSET = 0
-P_UPDATE = $(eval P_STATUS=$(shell echo $(OBJS) $(PROGRAM_PREFIX)yosys$(EXE) | $(AWK) 'BEGIN { RS = " "; I = $(P_STATUS)+0; } $$1 == "$@" && NR > I { I = NR; } END { print I; }'))
+P_UPDATE = $(eval P_STATUS=$(cmd //C pwsh.exe echo $(OBJS) $(PROGRAM_PREFIX)yosys$(EXE) | $(AWK) 'BEGIN { RS = " "; I = $(P_STATUS)+0; } $$1 == "$@" && NR > I { I = NR; } END { print I; }'))
 P_SHOW = [$(shell $(AWK) "BEGIN { N=$(words $(OBJS) $(PROGRAM_PREFIX)yosys$(EXE)); printf \"%3d\", $(P_OFFSET)+90*$(P_STATUS)/N; exit; }")%]
 P = @echo "$(if $(findstring $@,$(TARGETS) $(EXTRA_TARGETS)),$(eval P_OFFSET = 10))$(call P_UPDATE)$(call P_SHOW) Building $@";
 Q = @
@@ -984,10 +1001,12 @@ qtcreator:
 	{ echo .; find backends frontends kernel libs passes -type f \( -name '*.h' -o -name '*.hh' \) -printf '%h\n' | sort -u; } > qtcreator.includes
 	touch qtcreator.config qtcreator.creator
 
-genfiles: $(GENFILES) zlib
+genfiles: $(GENFILES) $(EXTRA_TARGETS) zlib
+	set -e; for f in `ls $(filter %.cc %.cpp,$(GENFILES)) $(addsuffix .cc,$(basename $(OBJS))) $(addsuffix .cpp,$(basename $(OBJS))) 2> /dev/null`; do \
+		echo "Analyse: $$f" >&2; cpp -std=c++11 -MM -I. -D_YOSYS_ $$f; done | sed 's,.*:,,; s,//*,/,g; s,/[^/]*/\.\./,/,g; y, \\,\n\n,;' | grep '^[^/]' | sort -u | grep -v kernel/version_ > srcfiles.txt
 
 zlib:
-	bash misc/create_msvc.sh yosys_verific_rs $(YOSYS_VER) $(GIT_REV)
+	bash.exe misc/create_msvc.sh yosys_verific_rs $(YOSYS_VER) $(GIT_REV)
 
 vcxsrc: $(GENFILES) $(EXTRA_TARGETS)
 	rm -rf yosys-win32-vcxsrc-$(YOSYS_VER){,.zip}

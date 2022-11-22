@@ -15,8 +15,10 @@ ifneq ($(DISABLE_VERIFIC_VHDL),1)
 	$(Q) cp -r $(VERIFIC_DIR)/vhdl_packages/vdbs_1993/. share/verific.new/vhdl_vdbs_1993
 	$(Q) cp -r $(VERIFIC_DIR)/vhdl_packages/vdbs_2008/. share/verific.new/vhdl_vdbs_2008
 endif
-	$(Q) chmod -R a+rX share/verific.new
-	$(Q) mv share/verific.new share/verific
 
+ifneq ($(OS), Windows_NT)
+	$(Q) chmod -R a+rX share/verific.new
+endif
+	$(Q) mv share/verific.new share/verific
 endif
 
