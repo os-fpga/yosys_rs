@@ -1,0 +1,28 @@
+{
+    "description": "EPFL suite of benchmarks to run with Yosys.",
+    "tool": "yosys",
+    "yosys":
+        {
+            "yosys_path": "yosys/install/bin/yosys",
+            "yosys_template_script": "scripts/synth/yosys/yosys_template_synth_rs_optional.ys",
+            "verific": true,
+            "synth_rs" :
+                {
+                    "-tech": "genesis",
+                    "-goal": "area",
+                    "-de": true,
+                    "-no_dsp": true,
+                    "-no_bram": true,
+                    "-verilog" : "synthesized.v"
+                }
+        },
+    "num_process": 8,
+    "timeout": 21600,
+    "benchmarks": [
+        {
+            "name": "adder",
+            "rtl_path": "RTL_Benchmark/Verilog/EPFL/adder/rtl",
+            "top_module": "top"
+        }
+    ]
+}
