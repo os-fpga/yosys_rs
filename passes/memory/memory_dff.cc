@@ -582,12 +582,29 @@ struct MemoryDffWorker
 			log("address FF has fully-defined init value, not supported.\n");
 			return;
 		}
+		/*
+		 * Aram: We should check only the corresponding Write port.
 		for (int i = 0; i < GetSize(mem.wr_ports); i++) {
 			auto &wport = mem.wr_ports[i];
 			if (!wport.clk_enable || wport.clk != ff.sig_clk || wport.clk_polarity != ff.pol_clk) {
 				log("address FF clock is not compatible with write clock.\n");
 				return;
 			}
+		}
+		*/
+		bool clk_matched = false;
+		int wpIdx = 0;
+		for (int i = 0; i < GetSize(mem.wr_ports); i++) {
+			auto &wport = mem.wr_ports[i];
+			if (!(!wport.clk_enable || wport.clk != ff.sig_clk || wport.clk_polarity != ff.pol_clk)) {
+				clk_matched = true;
+				wpIdx = i;
+				break;
+			}
+		}
+		if (!clk_matched) {
+			log("address FF clock is not compatible with write clock.\n");
+			return;
 		}
 		// Now we're commited to merge it.
 		merger.mark_input_ff(bits);
@@ -598,8 +615,12 @@ struct MemoryDffWorker
 		port.addr = ff.sig_d;
 		port.clk_enable = true;
 		port.clk_polarity = ff.pol_clk;
+		/*
+		 * Aram: Set transparency_mask only for the matched port.
 		for (int i = 0; i < GetSize(mem.wr_ports); i++)
 			port.transparency_mask[i] = true;
+		*/
+		port.transparency_mask[wpIdx] = true;
 		mem.emit();
 		log("merged address FF to cell.\n");
 	}
