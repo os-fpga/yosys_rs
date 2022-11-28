@@ -2382,9 +2382,10 @@ struct VerilogBackend : public Backend {
 										"`pragma protect key_keyowner=\"Verific\"\n"
 										"`pragma protect key_keyname=\"key1\"\n"
 										"`pragma protect key_public_key\n"
-										"MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDkRq28uVJ64yGZqOJrWPHJASe54e31P1ULNIw6\n"
-										"wa9KiOcrrvH/rTq7wZ9xK3Y0xwmZjOfh/uf89+gwHBQWGMMMmZpPt6A3jR08oM0RmJpwOL4fAsFB\n"
-										"kcgM7BOLt3gppbHQrZryRxXXkyFIoBSJAYTGuu4pfkOzNH7O0zUNwhfMzwIDAQAB\n";
+										"MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDNGfZnex1aV/Ix6DCN/UgPJ4P6\n"
+										"3inDlt7JEiuzEomgIaYGI0PoknjtdQc/B0APWyH8QHg9w+4toF+FKaSF1JCiSzaL\n"
+										"eZ1vDhRatxA3usv+QIQ5VlHgFDWJO4xMMHtbgQbaN4drNTp88Y3nda/asoLK6uov\n"
+										"pdT0s2+xvESsnb2ydQIDAQAB\n";
 
 		std::string s_begin 		= "`pragma protect begin\n";
 		std::string s_end 			= "`pragma protect end\n";
@@ -2400,11 +2401,12 @@ struct VerilogBackend : public Backend {
 		bool beg_end = true;
 
 		bool do_once = true;
-		
 		// Lia commentnery chmoranas
-		for (std::string line; std::getline(ss, line);){
-			//std::cout << "9" << std::endl;
+		for (std::string line; std::getline(ss, line, '\n');){
 			if (line.empty()){
+				buf += line; continue;				
+			}
+			if (line.find(',') != std::string::npos && line.rfind(',', 0) == 0){
 				buf += line; continue;				
 			}
 			if (line.find(s_generate) != std::string::npos){
@@ -2415,7 +2417,12 @@ struct VerilogBackend : public Backend {
 			}
 			// first statment is checking if string contains word "module", second statment is checking if string starts with word "module"
 			if (line.find(s_module) != std::string::npos && line.rfind(s_module, 0) == 0){
-				buf += line + "\n"; continue;
+				if (line.find(';') != std::string::npos){
+					buf += line + "\n"; continue;
+				}
+				else{
+					buf += line; continue;
+				}
 			}
 			if (line.find(s_inp) != std::string::npos){
 				if (!beg_end){
@@ -2454,10 +2461,10 @@ struct VerilogBackend : public Backend {
 		//GetMyStream_a(buf.c_str());
 		//const char *file_name ="decrypt_test.sv";
 		const char *out_buf = "encrypted.v";
-		char *out_file_name = Strings::save(out_buf, "p") ;
+		char *out_file_name = Strings::save(out_buf, "p");
 
 		Verific::hdl_encrypt::RegisterFlexStreamCallBack(GetMyStream_a);
-		//Verific::hdl_encrypt::EncryptVerilogFile(buf.c_str(), out_file_name, &iee);
+		Verific::hdl_encrypt::EncryptVerilogFile(buf.c_str(), out_file_name, &iee);
 		//Verific::hdl_encrypt::EncryptVerilogFile(buf.c_str(), file_name, &iee);
     	std::cout << ">>> Encrypting file " << "OUR_VERILOG.v" << " into " << out_file_name << std::endl ;
 
@@ -2473,7 +2480,7 @@ struct VerilogBackend : public Backend {
     	yyout = 0 ; // Reset yyout
     	std::fclose(f) ; // Close the output file
 */
-		Verific::hdl_encrypt::Encrypt();
+		//Verific::hdl_encrypt::Encrypt();
 
 		if (!veri_file::Analyze(out_file_name, veri_file::SYSTEM_VERILOG)) {
     	    //Strings::free(out_file_name) ;
