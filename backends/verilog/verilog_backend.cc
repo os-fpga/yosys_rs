@@ -2171,7 +2171,7 @@ void dump_module(std::stringstream &f, std::string indent, RTLIL::Module *module
 	for (auto w : module->wires())
 		dump_wire(ss_in_out, ss_wire_reg, indent + "  ", w);
 	f << ss_in_out.str();
-	// if in module we have keep_hierarchy attribute, we add protect attributes and protect_begin
+	// if in module we have rs_protected attribute, we add protect attributes and protect_begin
 	if (enc_verilog)
 		formating_encrypt_file(f, 1);
 	f << ss_wire_reg.str();
@@ -2188,7 +2188,7 @@ void dump_module(std::stringstream &f, std::string indent, RTLIL::Module *module
 	for (auto it = module->connections().begin(); it != module->connections().end(); ++it)
 		dump_conn(f, indent + "  ", it->first, it->second);
 
-	// if in module we have keep_hierarchy attribute, we add protect_end
+	// if in module we have rs_protected attribute, we add protect_end
 	if (enc_verilog)
 		formating_encrypt_file(f, 2);
 
