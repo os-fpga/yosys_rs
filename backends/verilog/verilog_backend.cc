@@ -2198,6 +2198,23 @@ void dump_module(std::stringstream &f, std::string indent, RTLIL::Module *module
 	active_initdata.clear();
 }
 
+void read_file_save_and_delete(std::ostream &f,const char* out_file_name)
+{
+	std::string line;
+	std::ifstream myfile (out_file_name);
+	if (myfile.is_open()) {
+		while (getline (myfile,line)) {
+			f << line << "\n";
+		}
+		myfile.close();
+	} else {
+		log_error("Unable to open file\n");
+	}
+
+	if (std::remove(out_file_name) != 0)
+		log_error("%s file could not be removed", out_file_name);
+}
+
 struct VerilogBackend : public Backend {
 	VerilogBackend() : Backend("verilog", "write design to Verilog file") { }
 	void help() override
@@ -2435,6 +2452,8 @@ struct VerilogBackend : public Backend {
 		Verific::hdl_encrypt::RegisterFlexStreamCallBack(get_verific_stream);
 		
 		Verific::hdl_encrypt::EncryptVerilogFile(ss_str.str().c_str(), out_file_name, &iee);
+
+		read_file_save_and_delete(*f, out_file_name);
 		Verific::Strings::free(out_file_name);
 
 		auto_name_map.clear();
