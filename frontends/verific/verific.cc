@@ -22,6 +22,7 @@
 #include "kernel/celltypes.h"
 #include "kernel/log.h"
 #include "libs/sha1/sha1.h"
+#include "ieee_1735.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -1114,6 +1115,7 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 	module = new RTLIL::Module;
 	module->name = module_name;
 	design->add(module);
+	RTLIL::IdString protectId("$rs_protected");
 
 	if (is_blackbox(nl)) {
 		log("Importing blackbox module %s.\n", RTLIL::id2cstr(module->name));
@@ -1139,6 +1141,9 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 
 	FOREACH_PORT_OF_NETLIST(nl, mi, port)
 	{
+		if (port->IsProtected()) {
+			module->set_bool_attribute(protectId);
+		}
 		if (port->Bus())
 			continue;
 
@@ -1168,6 +1173,9 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 
 	FOREACH_PORTBUS_OF_NETLIST(nl, mi, portbus)
 	{
+		if (portbus->IsProtected()) {
+			module->set_bool_attribute(protectId);
+		}
 		if (verific_verbose)
 			log("  importing portbus %s.\n", portbus->Name());
 
@@ -1215,6 +1223,9 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 
 	FOREACH_NET_OF_NETLIST(nl, mi, net)
 	{
+		if (net->IsProtected()) {
+			module->set_bool_attribute(protectId);
+		}
 		if (net->IsRamNet())
 		{
 			RTLIL::Memory *memory = new RTLIL::Memory;
@@ -1340,6 +1351,9 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 
 	FOREACH_NETBUS_OF_NETLIST(nl, mi, netbus)
 	{
+		if (netbus->IsProtected()) {
+			module->set_bool_attribute(protectId);
+		}
 		bool found_new_net = false;
 		for (int i = netbus->LeftIndex();; i += netbus->IsUp() ? +1 : -1) {
 			net = netbus->ElementAtIndex(i);
@@ -1479,6 +1493,9 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 
 	FOREACH_INSTANCE_OF_NETLIST(nl, mi, inst)
 	{
+		if (inst->IsProtected()) {
+			module->set_bool_attribute(protectId);
+		}
 		RTLIL::IdString inst_name = module->uniquify(mode_names || inst->IsUserDeclared() ? RTLIL::escape_id(inst->Name()) : new_verific_id(inst));
 
 		if (verific_verbose)
@@ -2601,6 +2618,7 @@ struct VerificPass : public Pass {
 #ifdef YOSYS_ENABLE_VERIFIC
 	void execute(std::vector<std::string> args, RTLIL::Design *design) override
 	{
+		ieee_1735 protect;
 		static bool set_verific_global_flags = true;
 
 		if (check_noverific_env())
@@ -2614,6 +2632,7 @@ struct VerificPass : public Pass {
 
 		log_header(design, "Executing VERIFIC (loading SystemVerilog and VHDL designs using Verific).\n");
 		RuntimeFlags::SetVar("veri_loop_limit",50000);
+		veri_file::SetPragmaProtectObject(&protect);
 
 		if (set_verific_global_flags)
 		{
