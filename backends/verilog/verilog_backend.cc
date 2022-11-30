@@ -28,24 +28,18 @@
 #include "kernel/ff.h"
 #include "kernel/mem.h"
 #include <string>
-#include <iostream>
 #include <sstream>
 #include <set>
 #include <map>
 #include "ieee_1735.h"
 #include "hdl_encrypt.h"
-#include "Protect.h"
 #include "VerificStream.h"
-#include "veri_file.h"
 #include "Strings.h"
-#include "VeriModule.h"
-
-
 
 USING_YOSYS_NAMESPACE
 PRIVATE_NAMESPACE_BEGIN
 
-bool verbose, enableopt, norename, noattr, attr2comment, noexpr, nodec, nohex, nostr, extmem, defparam, decimal, siminit, systemverilog, simple_lhs, enc_verilog;
+bool verbose, enableopt, norename, noattr, attr2comment, noexpr, nodec, nohex, nostr, extmem, defparam, decimal, siminit, systemverilog, simple_lhs;
 int auto_name_counter, auto_name_offset, auto_name_digits, extmem_counter;
 std::map<RTLIL::IdString, int> auto_name_map;
 std::set<RTLIL::IdString> reg_wires;
@@ -405,21 +399,27 @@ void dump_attributes(std::stringstream &f, std::string indent, dict<RTLIL::IdStr
 	}
 }
 
-void dump_wire(std::stringstream &f, std::string indent, RTLIL::Wire *wire)
+void dump_wire(std::stringstream &f1, std::stringstream &f2, std::string indent, RTLIL::Wire *wire)
 {
-	dump_attributes(f, indent, wire->attributes, '\n', /*modattr=*/false, /*regattr=*/reg_wires.count(wire->name));
 #if 0
-	if (wire->port_input && !wire->port_output)
-		f << stringf("%s" "input %s", indent.c_str(), reg_wires.count(wire->name) ? "reg " : "");
-	else if (!wire->port_input && wire->port_output)
-		f << stringf("%s" "output %s", indent.c_str(), reg_wires.count(wire->name) ? "reg " : "");
-	else if (wire->port_input && wire->port_output)
-		f << stringf("%s" "inout %s", indent.c_str(), reg_wires.count(wire->name) ? "reg " : "");
-	else
-		f << stringf("%s" "%s ", indent.c_str(), reg_wires.count(wire->name) ? "reg" : "wire");
-	if (wire->width != 1)
-		f << stringf("[%d:%d] ", wire->width - 1 + wire->start_offset, wire->start_offset);
-	f << stringf("%s;\n", id(wire->name).c_str());
+	if (wire->port_input && !wire->port_output){
+		dump_attributes(f1, indent, wire->attributes, '\n', /*modattr=*/false, /*regattr=*/reg_wires.count(wire->name));
+		f1 << stringf("%s" "input %s", indent.c_str(), reg_wires.count(wire->name) ? "reg " : "");
+	} else if (!wire->port_input && wire->port_output){
+		dump_attributes(f1, indent, wire->attributes, '\n', /*modattr=*/false, /*regattr=*/reg_wires.count(wire->name));
+		f1 << stringf("%s" "output %s", indent.c_str(), reg_wires.count(wire->name) ? "reg " : "");
+	} else if (wire->port_input && wire->port_output){
+		dump_attributes(f1, indent, wire->attributes, '\n', /*modattr=*/false, /*regattr=*/reg_wires.count(wire->name));
+		f1 << stringf("%s" "inout %s", indent.c_str(), reg_wires.count(wire->name) ? "reg " : "");
+	} else {
+		dump_attributes(f2, indent, wire->attributes, '\n', /*modattr=*/false, /*regattr=*/reg_wires.count(wire->name));
+		f2 << stringf("%s" "%s ", indent.c_str(), reg_wires.count(wire->name) ? "reg" : "wire");
+	}
+	if (wire->width != 1){
+		dump_attributes(f2, indent, wire->attributes, '\n', /*modattr=*/false, /*regattr=*/reg_wires.count(wire->name));
+		f2 << stringf("[%d:%d] ", wire->width - 1 + wire->start_offset, wire->start_offset);
+	}
+	f2 << stringf("%s;\n", id(wire->name).c_str());
 #else
 	// do not use Verilog-2k "output reg" syntax in Verilog export
 	std::string range = "";
@@ -429,21 +429,30 @@ void dump_wire(std::stringstream &f, std::string indent, RTLIL::Wire *wire)
 		else
 			range = stringf(" [%d:%d]", wire->width - 1 + wire->start_offset, wire->start_offset);
 	}
-	if (wire->port_input && !wire->port_output)
-		f << stringf("%s" "input%s %s;\n", indent.c_str(), range.c_str(), id(wire->name).c_str());
-	if (!wire->port_input && wire->port_output)
-		f << stringf("%s" "output%s %s;\n", indent.c_str(), range.c_str(), id(wire->name).c_str());
-	if (wire->port_input && wire->port_output)
-		f << stringf("%s" "inout%s %s;\n", indent.c_str(), range.c_str(), id(wire->name).c_str());
+	if (wire->port_input && !wire->port_output){
+		dump_attributes(f2, indent, wire->attributes, '\n', /*modattr=*/false, /*regattr=*/reg_wires.count(wire->name));
+		f1 << stringf("%s" "input%s %s;\n", indent.c_str(), range.c_str(), id(wire->name).c_str());
+	}
+	if (!wire->port_input && wire->port_output){
+		dump_attributes(f2, indent, wire->attributes, '\n', /*modattr=*/false, /*regattr=*/reg_wires.count(wire->name));
+		f1 << stringf("%s" "output%s %s;\n", indent.c_str(), range.c_str(), id(wire->name).c_str());
+	}
+	if (wire->port_input && wire->port_output){
+		dump_attributes(f2, indent, wire->attributes, '\n', /*modattr=*/false, /*regattr=*/reg_wires.count(wire->name));
+		f1 << stringf("%s" "inout%s %s;\n", indent.c_str(), range.c_str(), id(wire->name).c_str());
+	}
 	if (reg_wires.count(wire->name)) {
-		f << stringf("%s" "reg%s %s", indent.c_str(), range.c_str(), id(wire->name).c_str());
+		dump_attributes(f2, indent, wire->attributes, '\n', /*modattr=*/false, /*regattr=*/reg_wires.count(wire->name));
+		f2 << stringf("%s" "reg%s %s", indent.c_str(), range.c_str(), id(wire->name).c_str());
 		if (wire->attributes.count(ID::init)) {
-			f << stringf(" = ");
-			dump_const(f, wire->attributes.at(ID::init));
+			f2 << stringf(" = ");
+			dump_const(f2, wire->attributes.at(ID::init));
 		}
-		f << stringf(";\n");
-	} else
-		f << stringf("%s" "wire%s %s;\n", indent.c_str(), range.c_str(), id(wire->name).c_str());
+		f2 << stringf(";\n");
+	} else {
+		dump_attributes(f2, indent, wire->attributes, '\n', /*modattr=*/false, /*regattr=*/reg_wires.count(wire->name));
+		f2 << stringf("%s" "wire%s %s;\n", indent.c_str(), range.c_str(), id(wire->name).c_str());
+	}
 #endif
 }
 
@@ -1941,7 +1950,7 @@ void case_body_find_regs(RTLIL::CaseRule *cs)
 }
 
 void dump_process(std::stringstream &f, std::string indent, RTLIL::Process *proc, bool find_regs = false)
-{	
+{
 	if (find_regs) {
 		case_body_find_regs(&proc->root_case);
 		for (auto it = proc->syncs.begin(); it != proc->syncs.end(); ++it)
@@ -2016,6 +2025,58 @@ void dump_process(std::stringstream &f, std::string indent, RTLIL::Process *proc
 	}
 }
 
+std::istringstream* ss;
+
+Verific::verific_stream *get_verific_stream(const char* file_name)
+{
+	using namespace Verific;
+	if (!file_name) return 0 ;
+
+	ss = new std::istringstream();
+	ss->str(std::string(file_name));
+	std::istream* is = static_cast<std::istream*>(ss);
+	verific_stream *stream = new verific_istream(is);
+
+	if (stream->fail()) {
+	    // Something bad happned:
+	    delete stream ;
+	    stream = 0 ;
+	}
+
+	return stream ; // This object will be absorbed by Verific lexer.
+}
+
+void formating_encrypt_file (std::stringstream &f, int state)
+{
+	// this attributes are nedded for encryption
+	std::string attrs 	= "  `pragma protect author = \"Verific\"\n"
+							"`pragma protect author_info = \"Verific Corporation\"\n"
+							"`pragma protect key_method = \"rsa\"\n"
+							"`pragma protect data_method = \"aes128-cbc\"\n"
+							"`pragma protect key_keyowner=\"Verific\"\n"
+							"`pragma protect key_keyname=\"key1\"\n"
+							"`pragma protect key_public_key\n"
+							"MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDNGfZnex1aV/Ix6DCN/UgPJ4P6\n"
+							"3inDlt7JEiuzEomgIaYGI0PoknjtdQc/B0APWyH8QHg9w+4toF+FKaSF1JCiSzaL\n"
+							"eZ1vDhRatxA3usv+QIQ5VlHgFDWJO4xMMHtbgQbaN4drNTp88Y3nda/asoLK6uov\n"
+							"pdT0s2+xvESsnb2ydQIDAQAB\n";
+	// this string signals the beginning of the code to be encrypted
+	std::string s_begin = "`pragma protect begin\n";
+	// this string signals the end of the code which will be encrypted
+	std::string s_end 	= "`pragma protect end\n";
+
+	// switch case is geting state from dump_module for adding attributes
+	switch (state){
+		case 1:
+			f << attrs;
+			f << s_begin;
+			break;
+		case 2:
+			f << s_end;
+			break;
+	}
+}
+
 void dump_module(std::stringstream &f, std::string indent, RTLIL::Module *module)
 {
 	reg_wires.clear();
@@ -2071,7 +2132,16 @@ void dump_module(std::stringstream &f, std::string indent, RTLIL::Module *module
 		}
 	}
 
-	dump_attributes(f, indent, module->attributes, '\n', /*modattr=*/true);
+	// creation of a new string stream for module attributes to understand whether we will encrypt the module?
+	std::stringstream ss_module_attr;
+	dump_attributes(ss_module_attr, indent, module->attributes, '\n', /*modattr=*/true);
+
+	bool enc_verilog = false;
+	for (auto it_attr : module->attributes){
+		if (strcmp(it_attr.first.c_str(), "$rs_protected") == 0)
+			enc_verilog = true;
+	}
+
 	f << stringf("%s" "module %s(", indent.c_str(), id(module->name, false).c_str());
 	bool keep_running = true;
 	int cnt = 0;
@@ -2094,8 +2164,17 @@ void dump_module(std::stringstream &f, std::string indent, RTLIL::Module *module
 		f << indent + "  " << "reg " << id(initial_id) << " = 0;\n";
 	}
 
+	// creation of a new string stream for inputs/outputs and wires/registers
+	// this will help us to sort inputs/outputs and wires/registers
+	std::stringstream ss_in_out;
+	std::stringstream ss_wire_reg;
 	for (auto w : module->wires())
-		dump_wire(f, indent + "  ", w);
+		dump_wire(ss_in_out, ss_wire_reg, indent + "  ", w);
+	f << ss_in_out.str();
+	// if in module we have keep_hierarchy attribute, we add protect attributes and protect_begin
+	if (enc_verilog)
+		formating_encrypt_file(f, 1);
+	f << ss_wire_reg.str();
 
 	for (auto &mem : Mem::get_all_memories(module))
 		dump_memory(f, indent + "  ", mem);
@@ -2109,34 +2188,15 @@ void dump_module(std::stringstream &f, std::string indent, RTLIL::Module *module
 	for (auto it = module->connections().begin(); it != module->connections().end(); ++it)
 		dump_conn(f, indent + "  ", it->first, it->second);
 
+	// if in module we have keep_hierarchy attribute, we add protect_end
+	if (enc_verilog)
+		formating_encrypt_file(f, 2);
+
 	f << stringf("%s" "endmodule\n", indent.c_str());
 	active_module = NULL;
 	active_sigmap.clear();
 	active_initdata.clear();
 }
-
-std::istringstream* ss = nullptr;
-
-using namespace Verific ;
-verific_stream *GetMyStream_a(const char* file_name)
-	{	
-	    if (!file_name) return 0 ;
-		
-	    // Return a newly allocated object of 'verific_zip_stream' class:
-		ss = new std::istringstream();
-		//std::istringstream ss(std::string(file_name));
-		ss->str(std::string(file_name));
-		std::istream* is = static_cast<std::istream*>(ss);
-    	verific_stream *stream = new verific_istream(is);
-	
-	    if (stream->fail()) {
-	        // Something bad happned:
-	        delete stream ;
-	        stream = 0 ;
-	    }
-	
-	    return stream ; // This object will be absorbed by Verific lexer.
-	}
 
 struct VerilogBackend : public Backend {
 	VerilogBackend() : Backend("verilog", "write design to Verilog file") { }
@@ -2229,9 +2289,9 @@ struct VerilogBackend : public Backend {
 		log("this command is called on a design with RTLIL processes.\n");
 		log("\n");
 	}
-	
-	void execute(std::ostream *&f, std::string filename, std::vector<std::string> args, RTLIL::Design *design) override		
-	{   
+
+	void execute(std::ostream *&f, std::string filename, std::vector<std::string> args, RTLIL::Design *design) override
+	{
 		verbose = false;
 		enableopt = false;
 		norename = false;
@@ -2246,10 +2306,9 @@ struct VerilogBackend : public Backend {
 		decimal = false;
 		siminit = false;
 		simple_lhs = false;
-		enc_verilog = false;
 		auto_prefix = "";
 
-		std::stringstream ss;
+		std::stringstream ss_str;
 
 		bool blackboxes = false;
 		bool selected = false;
@@ -2333,10 +2392,6 @@ struct VerilogBackend : public Backend {
 				enableopt = true;
 				continue;
 			}
-			if (arg == "-enc_verilog") {
-				enc_verilog = true;
-				continue;
-			}
 			break;
 		}
 		extra_args(f, filename, args, argidx);
@@ -2358,7 +2413,7 @@ struct VerilogBackend : public Backend {
 			design->sort();
 		}
 
-		ss << stringf("/* Generated by %s */\n", yosys_version_str);
+		ss_str << stringf("/* Generated by %s */\n", yosys_version_str);
 		for (auto module : design->modules()) {
 			if (module->get_blackbox_attribute() != blackboxes)
 				continue;
@@ -2368,185 +2423,19 @@ struct VerilogBackend : public Backend {
 				continue;
 			}
 			log("Dumping module `%s'.\n", module->name.c_str());
-			dump_module(ss, "", module);
+			dump_module(ss_str, "", module);
 		}
 
-		std::cout<<"\n\n\n\n*********************************************************************\n\n\n\n"<<std::endl;
-		
+		// making new object of ieee_1735
 		Verific::ieee_1735 iee;
-	
-		std::string attrs 			= "  `pragma protect author = \"Verific\"\n"
-										"`pragma protect author_info = \"Verific Corporation\"\n"
-										"`pragma protect key_method = \"rsa\"\n"
-										"`pragma protect data_method = \"aes128-cbc\"\n"
-										"`pragma protect key_keyowner=\"Verific\"\n"
-										"`pragma protect key_keyname=\"key1\"\n"
-										"`pragma protect key_public_key\n"
-										"MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDkRq28uVJ64yGZqOJrWPHJASe54e31P1ULNIw6\n"
-										"wa9KiOcrrvH/rTq7wZ9xK3Y0xwmZjOfh/uf89+gwHBQWGMMMmZpPt6A3jR08oM0RmJpwOL4fAsFB\n"
-										"kcgM7BOLt3gppbHQrZryRxXXkyFIoBSJAYTGuu4pfkOzNH7O0zUNwhfMzwIDAQAB\n";
-
-		std::string s_begin 		= "`pragma protect begin\n";
-		std::string s_end 			= "`pragma protect end\n";
-		std::string s_inp 			= "input";
-		std::string s_outp 			= "output";
-		std::string s_keep 			= "keep_hierachy";
-		std::string s_module 		= "module";
-		std::string s_endmodule 	= "endmodule";
-		std::string s_generate 		= "/* Generated";
+		// name for file encrypted netlist file
+		const char *out_buf = filename.c_str();
+		// saving name in hdl_encrypt settings
+		char *out_file_name = Verific::Strings::save(out_buf, "p");
+		Verific::hdl_encrypt::RegisterFlexStreamCallBack(get_verific_stream);
 		
-		std::string buf = "";
-
-		bool beg_end = true;
-
-		bool do_once = true;
-		
-		// Lia commentnery chmoranas
-		for (std::string line; std::getline(ss, line);){
-			//std::cout << "9" << std::endl;
-			if (line.empty()){
-				buf += line; continue;				
-			}
-			if (line.find(s_generate) != std::string::npos){
-				buf += line + "\n"; continue;				
-			}
-			if (line.find(s_keep) != std::string::npos){
-				buf += line; continue;				
-			}
-			// first statment is checking if string contains word "module", second statment is checking if string starts with word "module"
-			if (line.find(s_module) != std::string::npos && line.rfind(s_module, 0) == 0){
-				buf += line + "\n"; continue;
-			}
-			if (line.find(s_inp) != std::string::npos){
-				if (!beg_end){
-					buf += s_end; beg_end = true;
-				}
-				buf += line; continue;
-			}else if ((line.find(s_outp)) != std::string::npos){
-				if (!beg_end){
-					buf += s_end; beg_end = true;
-				}
-				buf += line; continue;
-			}else if ((line.find(s_endmodule)) != std::string::npos){
-				buf += "  " + s_end; beg_end = true; buf += line; buf += "\n"; continue;
-			}else{
-				if (beg_end){
-					buf += "\n";
-					if (do_once){
-						buf += attrs; do_once = false;
-					}
-					buf += s_begin;	beg_end = false;
-				}
-				buf += line += "\n";
-			}
-		}
-		std::cout << buf << std::endl;
-			
-		*f << ss.str();
-		
-		/*//buf += ss.str().substr(posBegin, posEnd - posBegin) + end + ss.str().substr(posEnd); // VOCHneraryal posEnd toxy
-		buf += ss.str().substr(posBegin, posEnd) + end + ss.str().substr(posEnd); // VOCHneraryal posEnd toxy
-		const char *out_buf = "encrypted.v";
-*/
-		//std::cout << buf << std::endl;
-
-		
-		//GetMyStream_a(buf.c_str());
-		//const char *file_name ="decrypt_test.sv";
-		const char *out_buf = "encrypted.v";
-		char *out_file_name = Strings::save(out_buf, "p") ;
-
-		Verific::hdl_encrypt::RegisterFlexStreamCallBack(GetMyStream_a);
-		//Verific::hdl_encrypt::EncryptVerilogFile(buf.c_str(), out_file_name, &iee);
-		//Verific::hdl_encrypt::EncryptVerilogFile(buf.c_str(), file_name, &iee);
-    	std::cout << ">>> Encrypting file " << "OUR_VERILOG.v" << " into " << out_file_name << std::endl ;
-
-/*
-		SetProtectObject(&iee) ;
-    	// Set the file to yyout so that ECHO writes into it and
-    	yyout = f ;
-
-    	// Call the lexer to have it preprocess and write into yyout
-    	(void) yylex() ;
-
-    	(void) EndFlex() ;
-    	yyout = 0 ; // Reset yyout
-    	std::fclose(f) ; // Close the output file
-*/
-		Verific::hdl_encrypt::Encrypt();
-
-		if (!veri_file::Analyze(out_file_name, veri_file::SYSTEM_VERILOG)) {
-    	    //Strings::free(out_file_name) ;
-    	}else{
-    		veri_file::PrettyPrint("ieee1735_encrypt_verilog.golden.new", 0) ;
-    		//Strings::free(out_file_name) ;
-		}
-
-/*
-		if (!hdl_encrypt::EncryptVerilogFile(buf.c_str(), out_file_name, &iee)) {
-    	    std::cout << ">>> The file " << out_file_name << " cannot be encrypted." << std::endl ;
-    	    Strings::free(out_file_name) ;
-    	}else{
-			Verific::veri_file::SetPragmaProtectObject(&iee);
-			if (!veri_file::Analyze(out_file_name, veri_file::SYSTEM_VERILOG)) {
-    		    Strings::free(out_file_name) ;
-    		}else{
-    			veri_file::PrettyPrint("ieee1735_encrypt_verilog.golden.new", 0) ;
-    			Strings::free(out_file_name) ;
-			}
-		}
-*/
-		//if (!veri_file::Analyze("/nfs_scratch/scratch/Vorak/lia/workspace/Raptor/yosys_verific_rs/result_22-11-2022T15-06-22/test.json/wrapper_adder_columns/encrypted.v", veri_file::SYSTEM_VERILOG)) {
-        //	std::cout << "ERROR: Failed to Analyze encrypted design" << std::endl;
-    	//}
-		
-    
-		// Verify that continuous assignment in the original design is found after encryption + decryption
-    	//std::ofstream out_file ;
-    	//out_file.open("ieee1735_decrypt_verilog.golden.new") ;
-    	//VeriModule *mod = veri_file::GetModule("wrapper_adder_columns") ;
-    	//VERIFIC_ASSERT(mod) ;
-    	//Array *mitems = mod->GetModuleItems() ;
-    	//VeriModuleItem *item ;
-    	//unsigned i ;
-    	//FOREACH_ARRAY_ITEM(mitems, i, item) {
-    	//    if (item->GetClassId() == ID_VERICONTINUOUSASSIGN) {
-    	//        out_file << "Successfully decrypted assign statement" << std::endl ;
-    	//        VeriContinuousAssign *assign = static_cast<VeriContinuousAssign*>(item) ;
-    	//        Array *net_assigns = assign->GetNetAssigns() ;
-    	//        VERIFIC_ASSERT(net_assigns->Size() == 1) ;
-    	//        VeriNetRegAssign *net_assign = (VeriNetRegAssign *) net_assigns->At(0) ;
-    	//        VeriIdRef *lhs = (VeriIdRef *) net_assign->GetLValExpr() ;
-    	//        VERIFIC_ASSERT(lhs->GetClassId() == ID_VERIIDREF) ;
-    	//        out_file << "lhs = " << lhs->GetName() << std::endl ;
-    	//        VeriIdRef *rhs = (VeriIdRef *) net_assign->GetRValExpr() ;
-    	//        VERIFIC_ASSERT(rhs->GetClassId() == ID_VERIIDREF) ;
-    	//        out_file << "rhs = " << rhs->GetName() << std::endl ;
-    	//    }
-    	//}
-	
-    	//out_file.close() ;
-
-
-   		//out_file.close() ;
-		
-		
-		    	
-		//VeriModule *mod = veri_file::GetModule("top") ;
-
-		//out_file.close();
-
-    	/*VeriModule *mod = veri_file::GetModule("top") ;
-		out_file<<*mod;
-		Verific::VeriModule::PrettyPrint(out_file, 1);
-		//delete ss; ss = nullptr;
-*/
-		//std::cout << out_buf;
-
-		//*f << out_buf;
-		//*f << ss.str();
-		
-		std::cout<<"\n\n\n\n*********************************************************************\n\n" <<  "\n\n"<<std::endl;
+		Verific::hdl_encrypt::EncryptVerilogFile(ss_str.str().c_str(), out_file_name, &iee);
+		Verific::Strings::free(out_file_name);
 
 		auto_name_map.clear();
 		reg_wires.clear();
