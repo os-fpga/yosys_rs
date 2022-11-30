@@ -2313,6 +2313,8 @@ struct VerilogBackend : public Backend {
 
 	void execute(std::ostream *&f, std::string filename, std::vector<std::string> args, RTLIL::Design *design) override
 	{
+		log_header(design, "Executing Verilog backend.\n");
+
 		verbose = false;
 		enableopt = false;
 		norename = false;
