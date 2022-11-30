@@ -32,6 +32,13 @@
 #include <set>
 #include <map>
 
+#ifdef YOSYS_ENABLE_VERIFIC
+#include "ieee_1735.h"
+#include "hdl_encrypt.h"
+#include "VerificStream.h"
+#include "Strings.h"
+#endif
+
 USING_YOSYS_NAMESPACE
 PRIVATE_NAMESPACE_BEGIN
 
@@ -186,7 +193,7 @@ bool is_reg_wire(RTLIL::SigSpec sig, std::string &reg_name)
 	return true;
 }
 
-void dump_const(std::ostream &f, const RTLIL::Const &data, int width = -1, int offset = 0, bool no_decimal = false, bool escape_comment = false)
+void dump_const(std::stringstream &f, const RTLIL::Const &data, int width = -1, int offset = 0, bool no_decimal = false, bool escape_comment = false)
 {
 	bool set_signed = (data.flags & RTLIL::CONST_FLAG_SIGNED) != 0;
 	if (width < 0)
@@ -310,7 +317,7 @@ void dump_const(std::ostream &f, const RTLIL::Const &data, int width = -1, int o
 	}
 }
 
-void dump_reg_init(std::ostream &f, SigSpec sig)
+void dump_reg_init(std::stringstream &f, SigSpec sig)
 {
 	Const initval;
 	bool gotinit = false;
@@ -330,7 +337,7 @@ void dump_reg_init(std::ostream &f, SigSpec sig)
 	}
 }
 
-void dump_sigchunk(std::ostream &f, const RTLIL::SigChunk &chunk, bool no_decimal = false)
+void dump_sigchunk(std::stringstream &f, const RTLIL::SigChunk &chunk, bool no_decimal = false)
 {
 	if (chunk.wire == NULL) {
 		dump_const(f, chunk.data, chunk.width, chunk.offset, no_decimal);
@@ -355,7 +362,7 @@ void dump_sigchunk(std::ostream &f, const RTLIL::SigChunk &chunk, bool no_decima
 	}
 }
 
-void dump_sigspec(std::ostream &f, const RTLIL::SigSpec &sig)
+void dump_sigspec(std::stringstream &f, const RTLIL::SigSpec &sig)
 {
 	if (GetSize(sig) == 0) {
 		// See IEEE 1364-2005 Clause 5.1.14.
@@ -375,7 +382,7 @@ void dump_sigspec(std::ostream &f, const RTLIL::SigSpec &sig)
 	}
 }
 
-void dump_attributes(std::ostream &f, std::string indent, dict<RTLIL::IdString, RTLIL::Const> &attributes, char term = '\n', bool modattr = false, bool regattr = false, bool as_comment = false)
+void dump_attributes(std::stringstream &f, std::string indent, dict<RTLIL::IdString, RTLIL::Const> &attributes, char term = '\n', bool modattr = false, bool regattr = false, bool as_comment = false)
 {
 	if (noattr)
 		return;
@@ -395,21 +402,27 @@ void dump_attributes(std::ostream &f, std::string indent, dict<RTLIL::IdString, 
 	}
 }
 
-void dump_wire(std::ostream &f, std::string indent, RTLIL::Wire *wire)
+void dump_wire(std::stringstream &f1, std::stringstream &f2, std::string indent, RTLIL::Wire *wire)
 {
-	dump_attributes(f, indent, wire->attributes, '\n', /*modattr=*/false, /*regattr=*/reg_wires.count(wire->name));
 #if 0
-	if (wire->port_input && !wire->port_output)
-		f << stringf("%s" "input %s", indent.c_str(), reg_wires.count(wire->name) ? "reg " : "");
-	else if (!wire->port_input && wire->port_output)
-		f << stringf("%s" "output %s", indent.c_str(), reg_wires.count(wire->name) ? "reg " : "");
-	else if (wire->port_input && wire->port_output)
-		f << stringf("%s" "inout %s", indent.c_str(), reg_wires.count(wire->name) ? "reg " : "");
-	else
-		f << stringf("%s" "%s ", indent.c_str(), reg_wires.count(wire->name) ? "reg" : "wire");
-	if (wire->width != 1)
-		f << stringf("[%d:%d] ", wire->width - 1 + wire->start_offset, wire->start_offset);
-	f << stringf("%s;\n", id(wire->name).c_str());
+	if (wire->port_input && !wire->port_output){
+		dump_attributes(f1, indent, wire->attributes, '\n', /*modattr=*/false, /*regattr=*/reg_wires.count(wire->name));
+		f1 << stringf("%s" "input %s", indent.c_str(), reg_wires.count(wire->name) ? "reg " : "");
+	} else if (!wire->port_input && wire->port_output){
+		dump_attributes(f1, indent, wire->attributes, '\n', /*modattr=*/false, /*regattr=*/reg_wires.count(wire->name));
+		f1 << stringf("%s" "output %s", indent.c_str(), reg_wires.count(wire->name) ? "reg " : "");
+	} else if (wire->port_input && wire->port_output){
+		dump_attributes(f1, indent, wire->attributes, '\n', /*modattr=*/false, /*regattr=*/reg_wires.count(wire->name));
+		f1 << stringf("%s" "inout %s", indent.c_str(), reg_wires.count(wire->name) ? "reg " : "");
+	} else {
+		dump_attributes(f2, indent, wire->attributes, '\n', /*modattr=*/false, /*regattr=*/reg_wires.count(wire->name));
+		f2 << stringf("%s" "%s ", indent.c_str(), reg_wires.count(wire->name) ? "reg" : "wire");
+	}
+	if (wire->width != 1){
+		dump_attributes(f2, indent, wire->attributes, '\n', /*modattr=*/false, /*regattr=*/reg_wires.count(wire->name));
+		f2 << stringf("[%d:%d] ", wire->width - 1 + wire->start_offset, wire->start_offset);
+	}
+	f2 << stringf("%s;\n", id(wire->name).c_str());
 #else
 	// do not use Verilog-2k "output reg" syntax in Verilog export
 	std::string range = "";
@@ -419,25 +432,34 @@ void dump_wire(std::ostream &f, std::string indent, RTLIL::Wire *wire)
 		else
 			range = stringf(" [%d:%d]", wire->width - 1 + wire->start_offset, wire->start_offset);
 	}
-	if (wire->port_input && !wire->port_output)
-		f << stringf("%s" "input%s %s;\n", indent.c_str(), range.c_str(), id(wire->name).c_str());
-	if (!wire->port_input && wire->port_output)
-		f << stringf("%s" "output%s %s;\n", indent.c_str(), range.c_str(), id(wire->name).c_str());
-	if (wire->port_input && wire->port_output)
-		f << stringf("%s" "inout%s %s;\n", indent.c_str(), range.c_str(), id(wire->name).c_str());
+	if (wire->port_input && !wire->port_output){
+		dump_attributes(f2, indent, wire->attributes, '\n', /*modattr=*/false, /*regattr=*/reg_wires.count(wire->name));
+		f1 << stringf("%s" "input%s %s;\n", indent.c_str(), range.c_str(), id(wire->name).c_str());
+	}
+	if (!wire->port_input && wire->port_output){
+		dump_attributes(f2, indent, wire->attributes, '\n', /*modattr=*/false, /*regattr=*/reg_wires.count(wire->name));
+		f1 << stringf("%s" "output%s %s;\n", indent.c_str(), range.c_str(), id(wire->name).c_str());
+	}
+	if (wire->port_input && wire->port_output){
+		dump_attributes(f2, indent, wire->attributes, '\n', /*modattr=*/false, /*regattr=*/reg_wires.count(wire->name));
+		f1 << stringf("%s" "inout%s %s;\n", indent.c_str(), range.c_str(), id(wire->name).c_str());
+	}
 	if (reg_wires.count(wire->name)) {
-		f << stringf("%s" "reg%s %s", indent.c_str(), range.c_str(), id(wire->name).c_str());
+		dump_attributes(f2, indent, wire->attributes, '\n', /*modattr=*/false, /*regattr=*/reg_wires.count(wire->name));
+		f2 << stringf("%s" "reg%s %s", indent.c_str(), range.c_str(), id(wire->name).c_str());
 		if (wire->attributes.count(ID::init)) {
-			f << stringf(" = ");
-			dump_const(f, wire->attributes.at(ID::init));
+			f2 << stringf(" = ");
+			dump_const(f2, wire->attributes.at(ID::init));
 		}
-		f << stringf(";\n");
-	} else
-		f << stringf("%s" "wire%s %s;\n", indent.c_str(), range.c_str(), id(wire->name).c_str());
+		f2 << stringf(";\n");
+	} else {
+		dump_attributes(f2, indent, wire->attributes, '\n', /*modattr=*/false, /*regattr=*/reg_wires.count(wire->name));
+		f2 << stringf("%s" "wire%s %s;\n", indent.c_str(), range.c_str(), id(wire->name).c_str());
+	}
 #endif
 }
 
-void dump_memory(std::ostream &f, std::string indent, Mem &mem)
+void dump_memory(std::stringstream &f, std::string indent, Mem &mem)
 {
 	std::string mem_id = id(mem.memid);
 
@@ -545,11 +567,11 @@ void dump_memory(std::ostream &f, std::string indent, Mem &mem)
 		if (port.clk_enable)
 		{
 			{
-				std::ostringstream os;
+				std::stringstream os;
 				dump_sigspec(os, port.clk);
 				clk_domain_str = stringf("%sedge %s", port.clk_polarity ? "pos" : "neg", os.str().c_str());
 				if (port.arst != State::S0) {
-					std::ostringstream os2;
+					std::stringstream os2;
 					dump_sigspec(os2, port.arst);
 					clk_domain_str += stringf(", posedge %s", os2.str().c_str());
 					clk_to_arst_cond[clk_domain_str] = os2.str();
@@ -581,7 +603,7 @@ void dump_memory(std::ostream &f, std::string indent, Mem &mem)
 				bool has_indent = false;
 
 				if (port.arst != State::S0) {
-					std::ostringstream os;
+					std::stringstream os;
 					os << stringf("%s <= ", temp_id.c_str());
 					dump_sigspec(os, port.arst_value);
 					os << ";\n";
@@ -589,17 +611,17 @@ void dump_memory(std::ostream &f, std::string indent, Mem &mem)
 				}
 
 				if (port.srst != State::S0 && !port.ce_over_srst) {
-					std::ostringstream os;
+					std::stringstream os;
 					os << stringf("if (");
 					dump_sigspec(os, port.srst);
 					os << stringf(")\n");
 					clk_to_lof_body[clk_domain_str].push_back(os.str());
-					std::ostringstream os2;
+					std::stringstream os2;
 					os2 << stringf("%s" "%s <= ", indent.c_str(), temp_id.c_str());
 					dump_sigspec(os2, port.srst_value);
 					os2 << ";\n";
 					clk_to_lof_body[clk_domain_str].push_back(os2.str());
-					std::ostringstream os3;
+					std::stringstream os3;
 					if (port.en == State::S1) {
 						os3 << "else begin\n";
 					} else {
@@ -610,7 +632,7 @@ void dump_memory(std::ostream &f, std::string indent, Mem &mem)
 					clk_to_lof_body[clk_domain_str].push_back(os3.str());
 					has_indent = true;
 				} else if (port.en != State::S1) {
-					std::ostringstream os;
+					std::stringstream os;
 					os << stringf("if (");
 					dump_sigspec(os, port.en);
 					os << stringf(") begin\n");
@@ -621,7 +643,7 @@ void dump_memory(std::ostream &f, std::string indent, Mem &mem)
 				for (int sub = 0; sub < (1 << port.wide_log2); sub++)
 				{
 					SigSpec addr = port.sub_addr(sub);
-					std::ostringstream os;
+					std::stringstream os;
 					if (has_indent)
 						os << indent;
 					os << temp_id;
@@ -656,7 +678,7 @@ void dump_memory(std::ostream &f, std::string indent, Mem &mem)
 							while (epos < ewidth && wport.en[epos + wsub * mem.width] == wport.en[pos + wsub * mem.width])
 								epos++;
 
-							std::ostringstream os;
+							std::stringstream os;
 							if (has_indent)
 								os << indent;
 							os << "if (";
@@ -670,7 +692,7 @@ void dump_memory(std::ostream &f, std::string indent, Mem &mem)
 							os << ")\n";
 							clk_to_lof_body[clk_domain_str].push_back(os.str());
 
-							std::ostringstream os2;
+							std::stringstream os2;
 							if (has_indent)
 								os2 << indent;
 							os2 << indent;
@@ -692,14 +714,14 @@ void dump_memory(std::ostream &f, std::string indent, Mem &mem)
 
 				if (port.srst != State::S0 && port.ce_over_srst)
 				{
-					std::ostringstream os;
+					std::stringstream os;
 					if (has_indent)
 						os << indent;
 					os << stringf("if (");
 					dump_sigspec(os, port.srst);
 					os << stringf(")\n");
 					clk_to_lof_body[clk_domain_str].push_back(os.str());
-					std::ostringstream os2;
+					std::stringstream os2;
 					if (has_indent)
 						os2 << indent;
 					os2 << stringf("%s" "%s <= ", indent.c_str(), temp_id.c_str());
@@ -713,14 +735,14 @@ void dump_memory(std::ostream &f, std::string indent, Mem &mem)
 
 				if (!port.init_value.is_fully_undef())
 				{
-					std::ostringstream os;
+					std::stringstream os;
 					dump_sigspec(os, port.init_value);
 					std::string line = stringf("initial %s = %s;\n", temp_id.c_str(), os.str().c_str());
 					clk_to_lof_body[""].push_back(line);
 				}
 
 				{
-					std::ostringstream os;
+					std::stringstream os;
 					dump_sigspec(os, port.data);
 					std::string line = stringf("assign %s = %s;\n", os.str().c_str(), temp_id.c_str());
 					clk_to_lof_body[""].push_back(line);
@@ -736,14 +758,14 @@ void dump_memory(std::ostream &f, std::string indent, Mem &mem)
 				std::string temp_id = next_auto_id();
 				lof_reg_declarations.push_back( stringf("reg [%d:0] %s;\n", port.addr.size() - 1 - port.wide_log2, temp_id.c_str()) );
 				{
-					std::ostringstream os;
+					std::stringstream os;
 					dump_sigspec(os, port.addr.extract_end(port.wide_log2));
 					std::string line = stringf("%s <= %s;\n", temp_id.c_str(), os.str().c_str());
 					clk_to_lof_body[clk_domain_str].push_back(line);
 				}
 				for (int sub = 0; sub < (1 << port.wide_log2); sub++)
 				{
-					std::ostringstream os;
+					std::stringstream os;
 					os << "assign ";
 					dump_sigspec(os, port.data.extract(sub * mem.width, mem.width));
 					os << stringf(" = %s[", mem_id.c_str());;
@@ -770,7 +792,7 @@ void dump_memory(std::ostream &f, std::string indent, Mem &mem)
 			{
 				SigSpec addr = port.sub_addr(sub);
 
-				std::ostringstream os, os2;
+				std::stringstream os, os2;
 				dump_sigspec(os, port.data.extract(sub * mem.width, mem.width));
 				dump_sigspec(os2, addr);
 				std::string line = stringf("assign %s = %s[%s];\n", os.str().c_str(), mem_id.c_str(), os2.str().c_str());
@@ -937,7 +959,7 @@ void dump_memory(std::ostream &f, std::string indent, Mem &mem)
 	}
 }
 
-void dump_cell_expr_port(std::ostream &f, RTLIL::Cell *cell, std::string port, bool gen_signed = true)
+void dump_cell_expr_port(std::stringstream &f, RTLIL::Cell *cell, std::string port, bool gen_signed = true)
 {
 	if (gen_signed && cell->parameters.count("\\" + port + "_SIGNED") > 0 && cell->parameters["\\" + port + "_SIGNED"].as_bool()) {
 		f << stringf("$signed(");
@@ -983,7 +1005,7 @@ no_special_reg_name:
 	}
 }
 
-void dump_cell_expr_uniop(std::ostream &f, std::string indent, RTLIL::Cell *cell, std::string op)
+void dump_cell_expr_uniop(std::stringstream &f, std::string indent, RTLIL::Cell *cell, std::string op)
 {
 	f << stringf("%s" "assign ", indent.c_str());
 	dump_sigspec(f, cell->getPort(ID::Y));
@@ -993,7 +1015,7 @@ void dump_cell_expr_uniop(std::ostream &f, std::string indent, RTLIL::Cell *cell
 	f << stringf(";\n");
 }
 
-void dump_cell_expr_binop(std::ostream &f, std::string indent, RTLIL::Cell *cell, std::string op)
+void dump_cell_expr_binop(std::stringstream &f, std::string indent, RTLIL::Cell *cell, std::string op)
 {
 	f << stringf("%s" "assign ", indent.c_str());
 	dump_sigspec(f, cell->getPort(ID::Y));
@@ -1005,7 +1027,7 @@ void dump_cell_expr_binop(std::ostream &f, std::string indent, RTLIL::Cell *cell
 	f << stringf(";\n");
 }
 
-bool dump_cell_expr(std::ostream &f, std::string indent, RTLIL::Cell *cell)
+bool dump_cell_expr(std::stringstream &f, std::string indent, RTLIL::Cell *cell)
 {
 	if (cell->type == ID($_NOT_)) {
 		f << stringf("%s" "assign ", indent.c_str());
@@ -1744,7 +1766,7 @@ bool dump_cell_expr(std::ostream &f, std::string indent, RTLIL::Cell *cell)
 	return false;
 }
 
-void dump_cell(std::ostream &f, std::string indent, RTLIL::Cell *cell)
+void dump_cell(std::stringstream &f, std::string indent, RTLIL::Cell *cell)
 {
 	// Handled by dump_memory
 	if (cell->is_mem_cell())
@@ -1827,7 +1849,7 @@ void dump_cell(std::ostream &f, std::string indent, RTLIL::Cell *cell)
 	}
 }
 
-void dump_conn(std::ostream &f, std::string indent, const RTLIL::SigSpec &left, const RTLIL::SigSpec &right)
+void dump_conn(std::stringstream &f, std::string indent, const RTLIL::SigSpec &left, const RTLIL::SigSpec &right)
 {
 	if (simple_lhs) {
 		int offset = 0;
@@ -1848,9 +1870,9 @@ void dump_conn(std::ostream &f, std::string indent, const RTLIL::SigSpec &left, 
 	}
 }
 
-void dump_proc_switch(std::ostream &f, std::string indent, RTLIL::SwitchRule *sw);
+void dump_proc_switch(std::stringstream &f, std::string indent, RTLIL::SwitchRule *sw);
 
-void dump_case_body(std::ostream &f, std::string indent, RTLIL::CaseRule *cs, bool omit_trailing_begin = false)
+void dump_case_body(std::stringstream &f, std::string indent, RTLIL::CaseRule *cs, bool omit_trailing_begin = false)
 {
 	int number_of_stmts = cs->switches.size() + cs->actions.size();
 
@@ -1877,7 +1899,7 @@ void dump_case_body(std::ostream &f, std::string indent, RTLIL::CaseRule *cs, bo
 		f << stringf("%s" "end\n", indent.c_str());
 }
 
-void dump_proc_switch(std::ostream &f, std::string indent, RTLIL::SwitchRule *sw)
+void dump_proc_switch(std::stringstream &f, std::string indent, RTLIL::SwitchRule *sw)
 {
 	if (sw->signal.size() == 0) {
 		f << stringf("%s" "begin\n", indent.c_str());
@@ -1930,7 +1952,7 @@ void case_body_find_regs(RTLIL::CaseRule *cs)
 	}
 }
 
-void dump_process(std::ostream &f, std::string indent, RTLIL::Process *proc, bool find_regs = false)
+void dump_process(std::stringstream &f, std::string indent, RTLIL::Process *proc, bool find_regs = false)
 {
 	if (find_regs) {
 		case_body_find_regs(&proc->root_case);
@@ -2006,7 +2028,62 @@ void dump_process(std::ostream &f, std::string indent, RTLIL::Process *proc, boo
 	}
 }
 
-void dump_module(std::ostream &f, std::string indent, RTLIL::Module *module)
+std::istringstream* ss;
+bool enc_verilog_global = false;
+
+#ifdef YOSYS_ENABLE_VERIFIC
+Verific::verific_stream *get_verific_stream(const char* file_name)
+{
+	using namespace Verific;
+	if (!file_name) return 0 ;
+
+	ss = new std::istringstream();
+	ss->str(std::string(file_name));
+	std::istream* is = static_cast<std::istream*>(ss);
+	verific_stream *stream = new verific_istream(is);
+
+	if (stream->fail()) {
+	    // Something bad happned:
+	    delete stream ;
+	    stream = 0 ;
+	}
+
+	return stream ; // This object will be absorbed by Verific lexer.
+}
+#endif
+
+void formating_encrypt_file (std::stringstream &f, int state)
+{
+	// this attributes are nedded for encryption
+	std::string attrs 	= "  `pragma protect author = \"Verific\"\n"
+							"`pragma protect author_info = \"Verific Corporation\"\n"
+							"`pragma protect key_method = \"rsa\"\n"
+							"`pragma protect data_method = \"aes128-cbc\"\n"
+							"`pragma protect key_keyowner=\"Verific\"\n"
+							"`pragma protect key_keyname=\"key1\"\n"
+							"`pragma protect key_public_key\n"
+							"MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDNGfZnex1aV/Ix6DCN/UgPJ4P6\n"
+							"3inDlt7JEiuzEomgIaYGI0PoknjtdQc/B0APWyH8QHg9w+4toF+FKaSF1JCiSzaL\n"
+							"eZ1vDhRatxA3usv+QIQ5VlHgFDWJO4xMMHtbgQbaN4drNTp88Y3nda/asoLK6uov\n"
+							"pdT0s2+xvESsnb2ydQIDAQAB\n";
+	// this string signals the beginning of the code to be encrypted
+	std::string s_begin = "`pragma protect begin\n";
+	// this string signals the end of the code which will be encrypted
+	std::string s_end 	= "`pragma protect end\n";
+
+	// switch case is geting state from dump_module for adding attributes
+	switch (state){
+		case 1:
+			f << attrs;
+			f << s_begin;
+			break;
+		case 2:
+			f << s_end;
+			break;
+	}
+}
+
+void dump_module(std::stringstream &f, std::string indent, RTLIL::Module *module)
 {
 	reg_wires.clear();
 	reset_auto_counter(module);
@@ -2061,7 +2138,19 @@ void dump_module(std::ostream &f, std::string indent, RTLIL::Module *module)
 		}
 	}
 
-	dump_attributes(f, indent, module->attributes, '\n', /*modattr=*/true);
+	// creation of a new string stream for module attributes to understand whether we will encrypt the module?
+	std::stringstream ss_module_attr;
+	dump_attributes(ss_module_attr, indent, module->attributes, '\n', /*modattr=*/true);
+
+	bool enc_verilog = false;
+	for (auto it_attr : module->attributes) {
+		if (strcmp(it_attr.first.c_str(), "$rs_protected") == 0) {
+			enc_verilog_global = true;
+			enc_verilog = true;
+			break;
+		}
+	}
+
 	f << stringf("%s" "module %s(", indent.c_str(), id(module->name, false).c_str());
 	bool keep_running = true;
 	int cnt = 0;
@@ -2084,8 +2173,17 @@ void dump_module(std::ostream &f, std::string indent, RTLIL::Module *module)
 		f << indent + "  " << "reg " << id(initial_id) << " = 0;\n";
 	}
 
+	// creation of a new string stream for inputs/outputs and wires/registers
+	// this will help us to sort inputs/outputs and wires/registers
+	std::stringstream ss_in_out;
+	std::stringstream ss_wire_reg;
 	for (auto w : module->wires())
-		dump_wire(f, indent + "  ", w);
+		dump_wire(ss_in_out, ss_wire_reg, indent + "  ", w);
+	f << ss_in_out.str();
+	// if in module we have rs_protected attribute, we add protect attributes and protect_begin
+	if (enc_verilog)
+		formating_encrypt_file(f, 1);
+	f << ss_wire_reg.str();
 
 	for (auto &mem : Mem::get_all_memories(module))
 		dump_memory(f, indent + "  ", mem);
@@ -2099,10 +2197,31 @@ void dump_module(std::ostream &f, std::string indent, RTLIL::Module *module)
 	for (auto it = module->connections().begin(); it != module->connections().end(); ++it)
 		dump_conn(f, indent + "  ", it->first, it->second);
 
+	// if in module we have rs_protected attribute, we add protect_end
+	if (enc_verilog)
+		formating_encrypt_file(f, 2);
+
 	f << stringf("%s" "endmodule\n", indent.c_str());
 	active_module = NULL;
 	active_sigmap.clear();
 	active_initdata.clear();
+}
+
+void read_file_save_and_delete(std::ostream &f,const char* out_file_name)
+{
+	std::string line;
+	std::ifstream myfile (out_file_name);
+	if (myfile.is_open()) {
+		while (getline (myfile,line)) {
+			f << line << "\n";
+		}
+		myfile.close();
+	} else {
+		log_error("Unable to open file\n");
+	}
+
+	if (std::remove(out_file_name) != 0)
+		log_error("%s file could not be removed", out_file_name);
 }
 
 struct VerilogBackend : public Backend {
@@ -2196,6 +2315,7 @@ struct VerilogBackend : public Backend {
 		log("this command is called on a design with RTLIL processes.\n");
 		log("\n");
 	}
+
 	void execute(std::ostream *&f, std::string filename, std::vector<std::string> args, RTLIL::Design *design) override
 	{
 		log_header(design, "Executing Verilog backend.\n");
@@ -2215,6 +2335,8 @@ struct VerilogBackend : public Backend {
 		siminit = false;
 		simple_lhs = false;
 		auto_prefix = "";
+
+		std::stringstream ss_str;
 
 		bool blackboxes = false;
 		bool selected = false;
@@ -2319,7 +2441,7 @@ struct VerilogBackend : public Backend {
 			design->sort();
 		}
 
-		*f << stringf("/* Generated by %s */\n", yosys_version_str);
+		ss_str << stringf("/* Generated by %s */\n", yosys_version_str);
 		for (auto module : design->modules()) {
 			if (module->get_blackbox_attribute() != blackboxes)
 				continue;
@@ -2329,9 +2451,28 @@ struct VerilogBackend : public Backend {
 				continue;
 			}
 			log("Dumping module `%s'.\n", module->name.c_str());
-			dump_module(*f, "", module);
+			dump_module(ss_str, "", module);
 		}
 
+#ifdef YOSYS_ENABLE_VERIFIC
+		if (enc_verilog_global) {
+			// making new object of ieee_1735
+			Verific::ieee_1735 iee;
+			// name for file encrypted netlist file
+			const char *out_buf = filename.c_str();
+			// saving name in hdl_encrypt settings
+			char *out_file_name = Verific::Strings::save(out_buf, "p");
+			Verific::hdl_encrypt::RegisterFlexStreamCallBack(get_verific_stream);
+
+			Verific::hdl_encrypt::EncryptVerilogFile(ss_str.str().c_str(), out_file_name, &iee);
+
+			read_file_save_and_delete(*f, out_file_name);
+			Verific::Strings::free(out_file_name);
+		} else
+#endif
+			*f << ss_str.str();
+
+		enc_verilog_global = false;
 		auto_name_map.clear();
 		reg_wires.clear();
 	}
