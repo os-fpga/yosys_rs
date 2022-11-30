@@ -22,7 +22,6 @@
 #include "kernel/celltypes.h"
 #include "kernel/log.h"
 #include "libs/sha1/sha1.h"
-#include "ieee_1735.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -49,6 +48,7 @@ USING_YOSYS_NAMESPACE
 #include "VeriModule.h"
 #include "VeriWrite.h"
 #include "VeriLibrary.h"
+#include "ieee_1735.h"
 
 #ifdef VERIFIC_VHDL_SUPPORT
 #include "vhdl_file.h"

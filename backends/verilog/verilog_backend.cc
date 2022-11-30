@@ -31,10 +31,13 @@
 #include <sstream>
 #include <set>
 #include <map>
+
+#ifdef YOSYS_ENABLE_VERIFIC
 #include "ieee_1735.h"
 #include "hdl_encrypt.h"
 #include "VerificStream.h"
 #include "Strings.h"
+#endif
 
 USING_YOSYS_NAMESPACE
 PRIVATE_NAMESPACE_BEGIN
@@ -2028,6 +2031,7 @@ void dump_process(std::stringstream &f, std::string indent, RTLIL::Process *proc
 std::istringstream* ss;
 bool enc_verilog_global = false;
 
+#ifdef YOSYS_ENABLE_VERIFIC
 Verific::verific_stream *get_verific_stream(const char* file_name)
 {
 	using namespace Verific;
@@ -2046,6 +2050,7 @@ Verific::verific_stream *get_verific_stream(const char* file_name)
 
 	return stream ; // This object will be absorbed by Verific lexer.
 }
+#endif
 
 void formating_encrypt_file (std::stringstream &f, int state)
 {
@@ -2449,6 +2454,7 @@ struct VerilogBackend : public Backend {
 			dump_module(ss_str, "", module);
 		}
 
+#ifdef YOSYS_ENABLE_VERIFIC
 		if (enc_verilog_global) {
 			// making new object of ieee_1735
 			Verific::ieee_1735 iee;
@@ -2462,9 +2468,9 @@ struct VerilogBackend : public Backend {
 
 			read_file_save_and_delete(*f, out_file_name);
 			Verific::Strings::free(out_file_name);
-		} else {
+		} else
+#endif
 			*f << ss_str.str();
-		}
 
 		enc_verilog_global = false;
 		auto_name_map.clear();
