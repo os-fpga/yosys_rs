@@ -2026,6 +2026,7 @@ void dump_process(std::stringstream &f, std::string indent, RTLIL::Process *proc
 }
 
 std::istringstream* ss;
+bool enc_verilog_global = false;
 
 Verific::verific_stream *get_verific_stream(const char* file_name)
 {
@@ -2137,9 +2138,12 @@ void dump_module(std::stringstream &f, std::string indent, RTLIL::Module *module
 	dump_attributes(ss_module_attr, indent, module->attributes, '\n', /*modattr=*/true);
 
 	bool enc_verilog = false;
-	for (auto it_attr : module->attributes){
-		if (strcmp(it_attr.first.c_str(), "$rs_protected") == 0)
+	for (auto it_attr : module->attributes) {
+		if (strcmp(it_attr.first.c_str(), "$rs_protected") == 0) {
+			enc_verilog_global = true;
 			enc_verilog = true;
+			break;
+		}
 	}
 
 	f << stringf("%s" "module %s(", indent.c_str(), id(module->name, false).c_str());
@@ -2443,19 +2447,24 @@ struct VerilogBackend : public Backend {
 			dump_module(ss_str, "", module);
 		}
 
-		// making new object of ieee_1735
-		Verific::ieee_1735 iee;
-		// name for file encrypted netlist file
-		const char *out_buf = filename.c_str();
-		// saving name in hdl_encrypt settings
-		char *out_file_name = Verific::Strings::save(out_buf, "p");
-		Verific::hdl_encrypt::RegisterFlexStreamCallBack(get_verific_stream);
-		
-		Verific::hdl_encrypt::EncryptVerilogFile(ss_str.str().c_str(), out_file_name, &iee);
+		if (enc_verilog_global) {
+			// making new object of ieee_1735
+			Verific::ieee_1735 iee;
+			// name for file encrypted netlist file
+			const char *out_buf = filename.c_str();
+			// saving name in hdl_encrypt settings
+			char *out_file_name = Verific::Strings::save(out_buf, "p");
+			Verific::hdl_encrypt::RegisterFlexStreamCallBack(get_verific_stream);
 
-		read_file_save_and_delete(*f, out_file_name);
-		Verific::Strings::free(out_file_name);
+			Verific::hdl_encrypt::EncryptVerilogFile(ss_str.str().c_str(), out_file_name, &iee);
 
+			read_file_save_and_delete(*f, out_file_name);
+			Verific::Strings::free(out_file_name);
+		} else {
+			*f << ss_str.str();
+		}
+
+		enc_verilog_global = false;
 		auto_name_map.clear();
 		reg_wires.clear();
 	}
