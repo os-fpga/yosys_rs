@@ -1035,7 +1035,7 @@ struct RTLIL::Design
 	unsigned int hashidx_;
 	unsigned int hash() const { return hashidx_; }
 
-	bool protected_verilog = false;
+	bool protected_rtl = false;
 
 	pool<RTLIL::Monitor*> monitors;
 	dict<std::string, std::string> scratchpad;
@@ -1063,8 +1063,8 @@ struct RTLIL::Design
 		return modules_.count(id) != 0;
 	}
 
-	void enable_protected_verilog() { protected_verilog = true; }
-	bool get_protected_verilog() { return protected_verilog; }
+	void set_protcted_rtl() { protected_rtl = true; }
+	bool is_protected_rtl() { return protected_rtl; }
 
 	void add(RTLIL::Module *module);
 	void add(RTLIL::Binding *binding);

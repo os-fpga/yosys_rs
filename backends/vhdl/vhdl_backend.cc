@@ -2839,6 +2839,9 @@ struct VhdlBackend : public Backend {
 	}
 	void execute(std::ostream *&f, std::string filename, std::vector<std::string> args, RTLIL::Design *design) override
 	{
+		if (design->is_protected_rtl())
+			log_error("Dumping VHDL file is not supported in case of encrypted RTL\n");
+
 		log_header(design, "Executing Vhdl backend.\n");
 
 		verbose = false;

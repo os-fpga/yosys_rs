@@ -1143,7 +1143,7 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 	{
 		if (port->IsProtected()) {
 			module->set_bool_attribute(protectId);
-			design->enable_protected_verilog();
+			design->set_protcted_rtl();
 		}
 		if (port->Bus())
 			continue;
@@ -1176,7 +1176,7 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 	{
 		if (portbus->IsProtected()) {
 			module->set_bool_attribute(protectId);
-			design->enable_protected_verilog();
+			design->set_protcted_rtl();
 		}
 		if (verific_verbose)
 			log("  importing portbus %s.\n", portbus->Name());
@@ -1227,7 +1227,7 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 	{
 		if (net->IsProtected()) {
 			module->set_bool_attribute(protectId);
-			design->enable_protected_verilog();
+			design->set_protcted_rtl();
 		}
 		if (net->IsRamNet())
 		{
@@ -1356,7 +1356,7 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 	{
 		if (netbus->IsProtected()) {
 			module->set_bool_attribute(protectId);
-			design->enable_protected_verilog();
+			design->set_protcted_rtl();
 		}
 		bool found_new_net = false;
 		for (int i = netbus->LeftIndex();; i += netbus->IsUp() ? +1 : -1) {
@@ -1499,7 +1499,7 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 	{
 		if (inst->IsProtected()) {
 			module->set_bool_attribute(protectId);
-			design->enable_protected_verilog();
+			design->set_protcted_rtl();
 		}
 		RTLIL::IdString inst_name = module->uniquify(mode_names || inst->IsUserDeclared() ? RTLIL::escape_id(inst->Name()) : new_verific_id(inst));
 

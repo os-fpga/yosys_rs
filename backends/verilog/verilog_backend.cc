@@ -2142,12 +2142,6 @@ void dump_module(std::stringstream &f, std::string indent, RTLIL::Module *module
 	std::stringstream ss_module_attr;
 	dump_attributes(ss_module_attr, indent, module->attributes, '\n', /*modattr=*/true);
 
-	bool enc_verilog = false;
-	if (design->get_protected_verilog()) {
-		enc_verilog_global = true;
-		enc_verilog = true;
-	}
-
 	f << stringf("%s" "module %s(", indent.c_str(), id(module->name, false).c_str());
 	bool keep_running = true;
 	int cnt = 0;
@@ -2178,7 +2172,7 @@ void dump_module(std::stringstream &f, std::string indent, RTLIL::Module *module
 		dump_wire(ss_in_out, ss_wire_reg, indent + "  ", w);
 	f << ss_in_out.str();
 	// if in module we have rs_protected attribute, we add protect attributes and protect_begin
-	if (enc_verilog)
+	if (enc_verilog_global)
 		formating_encrypt_file(f, 1);
 	f << ss_wire_reg.str();
 
@@ -2195,7 +2189,7 @@ void dump_module(std::stringstream &f, std::string indent, RTLIL::Module *module
 		dump_conn(f, indent + "  ", it->first, it->second);
 
 	// if in module we have rs_protected attribute, we add protect_end
-	if (enc_verilog)
+	if (enc_verilog_global)
 		formating_encrypt_file(f, 2);
 
 	f << stringf("%s" "endmodule\n", indent.c_str());
@@ -2316,6 +2310,9 @@ struct VerilogBackend : public Backend {
 	void execute(std::ostream *&f, std::string filename, std::vector<std::string> args, RTLIL::Design *design) override
 	{
 		log_header(design, "Executing Verilog backend.\n");
+
+        if (design->is_protected_rtl())
+            enc_verilog_global = true;
 
 		verbose = false;
 		enableopt = false;

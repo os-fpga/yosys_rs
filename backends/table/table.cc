@@ -50,6 +50,9 @@ struct TableBackend : public Backend {
 	}
 	void execute(std::ostream *&f, std::string filename, std::vector<std::string> args, RTLIL::Design *design) override
 	{
+		if (design->is_protected_rtl())
+			log_error("Dumping TABLE file is not supported in case of encrypted RTL\n");
+
 		log_header(design, "Executing TABLE backend.\n");
 
 		size_t argidx;
