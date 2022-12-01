@@ -242,11 +242,14 @@ struct FlattenWorker
 			if (tpl->get_blackbox_attribute(ignore_wb))
 				continue;
 
+			/*
+			 * Disable this functionality for now.
 			RTLIL::IdString protectId("$rs_protected");
 			if (cell->get_bool_attribute(protectId) || tpl->get_bool_attribute(protectId)) {
 				used_modules.insert(tpl);
 				continue;
 			}
+			*/
 
 			if (cell->get_bool_attribute(ID::keep_hierarchy) || tpl->get_bool_attribute(ID::keep_hierarchy)) {
 				log("Keeping %s.%s (found keep_hierarchy attribute).\n", log_id(module), log_id(cell));
