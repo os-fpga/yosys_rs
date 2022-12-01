@@ -2083,7 +2083,7 @@ void formating_encrypt_file (std::stringstream &f, int state)
 	}
 }
 
-void dump_module(std::stringstream &f, std::string indent, RTLIL::Module *module)
+void dump_module(std::stringstream &f, std::string indent, RTLIL::Module *module, RTLIL::Design *design)
 {
 	reg_wires.clear();
 	reset_auto_counter(module);
@@ -2143,12 +2143,9 @@ void dump_module(std::stringstream &f, std::string indent, RTLIL::Module *module
 	dump_attributes(ss_module_attr, indent, module->attributes, '\n', /*modattr=*/true);
 
 	bool enc_verilog = false;
-	for (auto it_attr : module->attributes) {
-		if (strcmp(it_attr.first.c_str(), "$rs_protected") == 0) {
-			enc_verilog_global = true;
-			enc_verilog = true;
-			break;
-		}
+	if (design->get_protected_verilog()) {
+		enc_verilog_global = true;
+		enc_verilog = true;
 	}
 
 	f << stringf("%s" "module %s(", indent.c_str(), id(module->name, false).c_str());
@@ -2451,7 +2448,7 @@ struct VerilogBackend : public Backend {
 				continue;
 			}
 			log("Dumping module `%s'.\n", module->name.c_str());
-			dump_module(ss_str, "", module);
+			dump_module(ss_str, "", module, design);
 		}
 
 #ifdef YOSYS_ENABLE_VERIFIC
