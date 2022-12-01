@@ -2311,8 +2311,8 @@ struct VerilogBackend : public Backend {
 	{
 		log_header(design, "Executing Verilog backend.\n");
 
-        if (design->is_protected_rtl())
-            enc_verilog_global = true;
+		if (design->is_protected_rtl())
+			enc_verilog_global = true;
 
 		verbose = false;
 		enableopt = false;
