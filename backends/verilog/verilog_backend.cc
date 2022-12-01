@@ -2083,7 +2083,7 @@ void formating_encrypt_file (std::stringstream &f, int state)
 	}
 }
 
-void dump_module(std::stringstream &f, std::string indent, RTLIL::Module *module, RTLIL::Design *design)
+void dump_module(std::stringstream &f, std::string indent, RTLIL::Module *module)
 {
 	reg_wires.clear();
 	reset_auto_counter(module);
@@ -2445,7 +2445,7 @@ struct VerilogBackend : public Backend {
 				continue;
 			}
 			log("Dumping module `%s'.\n", module->name.c_str());
-			dump_module(ss_str, "", module, design);
+			dump_module(ss_str, "", module);
 		}
 
 #ifdef YOSYS_ENABLE_VERIFIC
