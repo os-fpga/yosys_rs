@@ -23,6 +23,8 @@
 
 #if !defined(_WIN32) || defined(__MINGW32__)
 #  include <sys/time.h>
+#else
+#  include <WinSock2.h>
 #endif
 
 #if defined(__linux__) || defined(__FreeBSD__)
