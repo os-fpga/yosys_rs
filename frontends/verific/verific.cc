@@ -1117,16 +1117,15 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 	design->add(module);
 	RTLIL::IdString protectId("$rs_protected");
 
-	// making vector of string with out TDP BRams names
+	// making vector of string with TDP BRams names
 	std::vector <std::string> tdp_names = {"RS_TDP36K", "TDP36K"};
-	// getting name of BRam from vector of TDP BRam types
 	for (auto &it : tdp_names){
-		// if module_name conteins out BRam type name
+		// if module_name conteins BRam type name
+		// discard everything leaving only the BRam name
+		// changing module_name with new generated name
 		std::size_t pos_of_name = module_name.find(it);
 		if (pos_of_name == 1) {
-			// discard everything leaving only the name BRam
 			std::string module_new_name = module_name.substr(0, pos_of_name + it.size());
-			// changing module_name with new generated name
 			design->rename(module, module_new_name);
 		}
 	}
@@ -1828,14 +1827,14 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 			}
 			inst_type = "\\" + sha1_if_contain_spaces(inst_type);
 
-			// getting name of BRam from vector of TDP BRam types
+			
 			for (auto &it : tdp_names){
-				// if inst_type conteins out BRam type name
+				// if module_name conteins BRam type name
+				// discard everything leaving only the BRam name
+				// changing module_name with new generated name
 				std::size_t pos_of_name = inst_type.find(it);
 				if (pos_of_name == 1) {
-					// discard everything leaving only the name BRam
 					std::string inst_type_new_name = inst_type.substr(0, pos_of_name + it.size());
-					// changing inst_type with new generated name
 					inst_type = inst_type_new_name;
 				}
 			}
