@@ -1122,11 +1122,10 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 	// getting name of BRam from vector of TDP BRam types
 	for (auto &it : tdp_names){
 		// if module_name conteins out BRam type name
-		if (module_name.find(it) != std::string::npos) {
-			// getting position of BRam name in module_name
-		    std::size_t found = module_name.find(it);
+		std::size_t pos_of_name = module_name.find(it);
+		if (pos_of_name == 1) {
 			// discard everything leaving only the name BRam
-			std::string module_new_name = module_name.substr(0, found + it.size());
+			std::string module_new_name = module_name.substr(0, pos_of_name + it.size());
 			// changing module_name with new generated name
 			design->rename(module, module_new_name);
 		}
@@ -1832,11 +1831,10 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 			// getting name of BRam from vector of TDP BRam types
 			for (auto &it : tdp_names){
 				// if inst_type conteins out BRam type name
-				if (inst_type.find(it) != std::string::npos) {
-					// getting position of BRam name in inst_type
-				    std::size_t found = inst_type.find(it);
+				std::size_t pos_of_name = inst_type.find(it);
+				if (pos_of_name == 1) {
 					// discard everything leaving only the name BRam
-					std::string inst_type_new_name = inst_type.substr(0, found + it.size());
+					std::string inst_type_new_name = inst_type.substr(0, pos_of_name + it.size());
 					// changing inst_type with new generated name
 					inst_type = inst_type_new_name;
 				}
