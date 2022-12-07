@@ -1194,6 +1194,9 @@ struct FirrtlBackend : public Backend {
 	}
 	void execute(std::ostream *&f, std::string filename, std::vector<std::string> args, RTLIL::Design *design) override
 	{
+		if (design->is_protected_rtl())
+			log_error("Dumping FIRRTL file is not supported in case of encrypted RTL\n");
+
 		size_t argidx = args.size();	// We aren't expecting any arguments.
 
 		// If we weren't explicitly passed a filename, use the last argument (if it isn't a flag).

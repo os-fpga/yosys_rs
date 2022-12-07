@@ -591,6 +591,9 @@ struct JsonBackend : public Backend {
 	}
 	void execute(std::ostream *&f, std::string filename, std::vector<std::string> args, RTLIL::Design *design) override
 	{
+		if (design->is_protected_rtl())
+			log_error("Dumping JSON file is not supported in case of encrypted RTL\n");
+
 		bool aig_mode = false;
 		bool compat_int_mode = false;
 
@@ -641,6 +644,9 @@ struct JsonPass : public Pass {
 	}
 	void execute(std::vector<std::string> args, RTLIL::Design *design) override
 	{
+		if (design->is_protected_rtl())
+			log_error("Dumping JSON file is not supported in case of encrypted RTL\n");
+
 		std::string filename;
 		bool aig_mode = false;
 		bool compat_int_mode = false;

@@ -165,6 +165,9 @@ struct SpiceBackend : public Backend {
 	}
 	void execute(std::ostream *&f, std::string filename, std::vector<std::string> args, RTLIL::Design *design) override
 	{
+		if (design->is_protected_rtl())
+			log_error("Dumping SPICE file is not supported in case of encrypted RTL\n");
+
 		std::string top_module_name;
 		RTLIL::Module *top_module = NULL;
 		bool big_endian = false, use_inames = false;

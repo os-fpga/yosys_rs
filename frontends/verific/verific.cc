@@ -48,6 +48,7 @@ USING_YOSYS_NAMESPACE
 #include "VeriModule.h"
 #include "VeriWrite.h"
 #include "VeriLibrary.h"
+#include "ieee_1735.h"
 
 #ifdef VERIFIC_VHDL_SUPPORT
 #include "vhdl_file.h"
@@ -123,6 +124,19 @@ string get_full_netlist_name(Netlist *nl)
 	return nl->CellBaseName();
 }
 
+
+void set_module_parameters(const Map* parameters, RTLIL::Module* mod) {
+	MapIter mIter;
+	const char *k, *v;
+	FOREACH_MAP_ITEM(parameters, mIter, &k, &v)
+	{
+		if (verific_verbose)
+			log("Setting parameter %s to %s for %s module.\n", k, v, mod->name.c_str());
+		IdString paramName = IdString(std::string("\\") + k);
+		mod->avail_parameters(paramName);
+	}
+}
+
 void set_instance_parameters(Design *design)
 {
 	for (auto module : design->selected_modules()) {
@@ -138,6 +152,8 @@ void set_instance_parameters(Design *design)
 						log("Setting parameter %s to %s for %s cell.\n", k, v, cell.second->name.c_str());
 					size_t len = strlen(v);
 					for (int i = len - 1; i >= 0; --i) {
+						if (v[i] == 'b')
+							break;
 						bits.push_back(v[i] == '1');
 					}
 
@@ -1099,12 +1115,28 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 	module = new RTLIL::Module;
 	module->name = module_name;
 	design->add(module);
+	RTLIL::IdString protectId("$rs_protected");
+
+	// making vector of string with TDP BRams names
+	std::vector <std::string> tdp_names = {"RS_TDP36K", "TDP36K"};
+	for (auto &it : tdp_names){
+		// if module_name conteins BRam type name
+		// discard everything leaving only the BRam name
+		// changing module_name with new generated name
+		std::size_t pos_of_name = module_name.find(it);
+		if (pos_of_name == 1) {
+			std::string module_new_name = module_name.substr(0, pos_of_name + it.size());
+			design->rename(module, module_new_name);
+		}
+	}
 
 	if (is_blackbox(nl)) {
 		log("Importing blackbox module %s.\n", RTLIL::id2cstr(module->name));
 		module->set_bool_attribute(ID::blackbox);
-		if (nl->GetParameters()) {
-			moduleToParamsMap[module->name] = nl->GetParameters();
+		auto params = nl->GetParameters();
+		if (params) {
+			moduleToParamsMap[module->name] = params;
+			set_module_parameters(params, module);
 		}
 	} else {
 		log("Importing module %s.\n", RTLIL::id2cstr(module->name));
@@ -1122,6 +1154,10 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 
 	FOREACH_PORT_OF_NETLIST(nl, mi, port)
 	{
+		if (port->IsProtected()) {
+			module->set_bool_attribute(protectId);
+			design->set_protcted_rtl();
+		}
 		if (port->Bus())
 			continue;
 
@@ -1151,6 +1187,10 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 
 	FOREACH_PORTBUS_OF_NETLIST(nl, mi, portbus)
 	{
+		if (portbus->IsProtected()) {
+			module->set_bool_attribute(protectId);
+			design->set_protcted_rtl();
+		}
 		if (verific_verbose)
 			log("  importing portbus %s.\n", portbus->Name());
 
@@ -1198,6 +1238,10 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 
 	FOREACH_NET_OF_NETLIST(nl, mi, net)
 	{
+		if (net->IsProtected()) {
+			module->set_bool_attribute(protectId);
+			design->set_protcted_rtl();
+		}
 		if (net->IsRamNet())
 		{
 			RTLIL::Memory *memory = new RTLIL::Memory;
@@ -1323,6 +1367,10 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 
 	FOREACH_NETBUS_OF_NETLIST(nl, mi, netbus)
 	{
+		if (netbus->IsProtected()) {
+			module->set_bool_attribute(protectId);
+			design->set_protcted_rtl();
+		}
 		bool found_new_net = false;
 		for (int i = netbus->LeftIndex();; i += netbus->IsUp() ? +1 : -1) {
 			net = netbus->ElementAtIndex(i);
@@ -1462,6 +1510,10 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 
 	FOREACH_INSTANCE_OF_NETLIST(nl, mi, inst)
 	{
+		if (inst->IsProtected()) {
+			module->set_bool_attribute(protectId);
+			design->set_protcted_rtl();
+		}
 		RTLIL::IdString inst_name = module->uniquify(mode_names || inst->IsUserDeclared() ? RTLIL::escape_id(inst->Name()) : new_verific_id(inst));
 
 		if (verific_verbose)
@@ -1774,6 +1826,18 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 				inst_type += ")";
 			}
 			inst_type = "\\" + sha1_if_contain_spaces(inst_type);
+
+			
+			for (auto &it : tdp_names){
+				// if module_name conteins BRam type name
+				// discard everything leaving only the BRam name
+				// changing module_name with new generated name
+				std::size_t pos_of_name = inst_type.find(it);
+				if (pos_of_name == 1) {
+					std::string inst_type_new_name = inst_type.substr(0, pos_of_name + it.size());
+					inst_type = inst_type_new_name;
+				}
+			}
 		}
 
 		RTLIL::Cell *cell = module->addCell(inst_name, inst_type);
@@ -2584,6 +2648,7 @@ struct VerificPass : public Pass {
 #ifdef YOSYS_ENABLE_VERIFIC
 	void execute(std::vector<std::string> args, RTLIL::Design *design) override
 	{
+		ieee_1735 protect;
 		static bool set_verific_global_flags = true;
 
 		if (check_noverific_env())
@@ -2597,6 +2662,7 @@ struct VerificPass : public Pass {
 
 		log_header(design, "Executing VERIFIC (loading SystemVerilog and VHDL designs using Verific).\n");
 		RuntimeFlags::SetVar("veri_loop_limit",50000);
+		veri_file::SetPragmaProtectObject(&protect);
 
 		if (set_verific_global_flags)
 		{

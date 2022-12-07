@@ -434,6 +434,9 @@ struct RTLILBackend : public Backend {
 	}
 	void execute(std::ostream *&f, std::string filename, std::vector<std::string> args, RTLIL::Design *design) override
 	{
+		if (design->is_protected_rtl())
+			log_error("Dumping RTLIL file is not supported in case of encrypted RTL\n");
+
 		bool selected = false;
 
 		log_header(design, "Executing RTLIL backend.\n");
@@ -468,6 +471,9 @@ struct IlangBackend : public Backend {
 	}
 	void execute(std::ostream *&f, std::string filename, std::vector<std::string> args, RTLIL::Design *design) override
 	{
+		if (design->is_protected_rtl())
+			log_error("Dumping RTLIL file is not supported in case of encrypted RTL\n");
+
 		RTLILBackend.execute(f, filename, args, design);
 	}
 } IlangBackend;
@@ -499,6 +505,9 @@ struct DumpPass : public Pass {
 	}
 	void execute(std::vector<std::string> args, RTLIL::Design *design) override
 	{
+		if (design->is_protected_rtl())
+			log_error("Dumping RTLIL file is not supported in case of encrypted RTL\n");
+
 		std::string filename;
 		bool flag_m = false, flag_n = false, append = false;
 
