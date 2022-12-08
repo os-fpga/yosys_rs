@@ -1396,8 +1396,10 @@ struct BtorBackend : public Backend {
 	}
 	void execute(std::ostream *&f, std::string filename, std::vector<std::string> args, RTLIL::Design *design) override
 	{
-		if (design->is_protected_rtl())
-			log_error("Dumping BTOR file is not supported in case of encrypted RTL\n");
+		if (design->is_protected_rtl()){
+			log_warning("Dumping BTOR file is not supported in case of encrypted RTL\n");
+			return;
+		}
 
 		bool verbose = false, single_bad = false, cover_mode = false, print_internal_names = false;
 		string info_filename;

@@ -3282,8 +3282,10 @@ struct CxxrtlBackend : public Backend {
 
 	void execute(std::ostream *&f, std::string filename, std::vector<std::string> args, RTLIL::Design *design) override
 	{
-		if (design->is_protected_rtl())
+		if (design->is_protected_rtl()){
 			log_error("Dumping CXXRTL file is not supported in case of encrypted RTL\n");
+			return;
+		}
 
 		bool print_wire_types = false;
 		bool print_debug_wire_types = false;

@@ -430,8 +430,10 @@ struct JnyBackend : public Backend {
 
     void execute(std::ostream *&f, std::string filename, std::vector<std::string> args, RTLIL::Design *design) override {
 
-        if (design->is_protected_rtl())
-            log_error("Dumping JNY file is not supported in case of encrypted RTL\n");
+        if (design->is_protected_rtl()){
+            log_warning("Dumping JNY file is not supported in case of encrypted RTL\n");
+            return;
+        }
 
         bool connections{true};
         bool attributes{true};
@@ -493,8 +495,10 @@ struct JnyPass : public Pass {
         log("\n");
     }
     void execute(std::vector<std::string> args, RTLIL::Design *design) override {
-        if (design->is_protected_rtl())
-            log_error("Dumping JNY file is not supported in case of encrypted RTL\n");
+        if (design->is_protected_rtl()){
+            log_warning("Dumping JNY file is not supported in case of encrypted RTL\n");
+            return;
+        }
 
         std::string filename{};
 

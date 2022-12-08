@@ -765,8 +765,10 @@ struct SimplecBackend : public Backend {
 	}
 	void execute(std::ostream *&f, std::string filename, std::vector<std::string> args, RTLIL::Design *design) override
 	{
-		if (design->is_protected_rtl())
-			log_error("Dumping SIMPLEC file is not supported in case of encrypted RTL\n");
+		if (design->is_protected_rtl()){
+			log_warning("Dumping SIMPLEC file is not supported in case of encrypted RTL\n");
+			return;
+		}
 
 		reserved_cids.clear();
 		id2cid.clear();
