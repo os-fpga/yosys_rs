@@ -1117,6 +1117,19 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 	design->add(module);
 	RTLIL::IdString protectId("$rs_protected");
 
+	// making vector of string with TDP BRams names
+	std::vector <std::string> tdp_names = {"RS_TDP36K", "TDP36K"};
+	for (auto &it : tdp_names){
+		// if module_name conteins BRam type name
+		// discard everything leaving only the BRam name
+		// changing module_name with new generated name
+		std::size_t pos_of_name = module_name.find(it);
+		if (pos_of_name == 1) {
+			std::string module_new_name = module_name.substr(0, pos_of_name + it.size());
+			design->rename(module, module_new_name);
+		}
+	}
+
 	if (is_blackbox(nl)) {
 		log("Importing blackbox module %s.\n", RTLIL::id2cstr(module->name));
 		module->set_bool_attribute(ID::blackbox);
@@ -1813,6 +1826,18 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 				inst_type += ")";
 			}
 			inst_type = "\\" + sha1_if_contain_spaces(inst_type);
+
+			
+			for (auto &it : tdp_names){
+				// if module_name conteins BRam type name
+				// discard everything leaving only the BRam name
+				// changing module_name with new generated name
+				std::size_t pos_of_name = inst_type.find(it);
+				if (pos_of_name == 1) {
+					std::string inst_type_new_name = inst_type.substr(0, pos_of_name + it.size());
+					inst_type = inst_type_new_name;
+				}
+			}
 		}
 
 		RTLIL::Cell *cell = module->addCell(inst_name, inst_type);
