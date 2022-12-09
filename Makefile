@@ -546,8 +546,7 @@ ifeq ($(OS), Windows_NT)
 VERIFIC_DIR ?= ../Raptor_Tools/verific_rs
 else
 VERIFIC_DIR ?= /usr/local/src/verific_lib
-endif
-VERIFIC_COMPONENTS ?= verilog database util containers hier_tree hdl_encrypt 
+VERIFIC_COMPONENTS ?= verilog database util containers hier_tree hdl_encrypt
 ifneq ($(DISABLE_VERIFIC_VHDL),1)
 VERIFIC_COMPONENTS += vhdl
 CXXFLAGS += -DVERIFIC_VHDL_SUPPORT
