@@ -550,8 +550,10 @@ struct BlifBackend : public Backend {
 	}
 	void execute(std::ostream *&f, std::string filename, std::vector<std::string> args, RTLIL::Design *design) override
 	{
-		if (design->is_protected_rtl())
-			log_error("Dumping BLIF file is not supported in case of encrypted RTL\n");
+		if (design->is_protected_rtl()){
+			log_warning("Dumping BLIF file is not supported in case of encrypted RTL\n");
+			return;
+		}
 
 		std::string top_module_name;
 		std::string buf_type, buf_in, buf_out;

@@ -1601,8 +1601,10 @@ struct Smt2Backend : public Backend {
 	}
 	void execute(std::ostream *&f, std::string filename, std::vector<std::string> args, RTLIL::Design *design) override
 	{
-		if (design->is_protected_rtl())
-			log_error("Dumping SMT2 file is not supported in case of encrypted RTL\n");
+		if (design->is_protected_rtl()){
+			log_warning("Dumping SMT2 file is not supported in case of encrypted RTL\n");
+			return;
+		}
 
 		std::ifstream template_f;
 		bool bvmode = true, memmode = true, wiresmode = false, verbose = false, statebv = false, statedt = false;
