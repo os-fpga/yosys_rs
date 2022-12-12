@@ -16,7 +16,7 @@ ln -sf vhdl_2008/bin vdbs_2008
 ln -sf vhdl_2019/bin vdbs_2019
 
 Set-Location $YosysDir
-#c:\cygwin64\bin\make genfiles SHELL=C:\cygwin64\bin\bash
+c:\cygwin64\bin\make genfiles SHELL=C:\cygwin64\bin\bash
 $env:PATH = $OldPath
 
 Write-Output "Yosys action end"
