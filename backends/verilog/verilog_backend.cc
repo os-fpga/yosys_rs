@@ -2062,10 +2062,10 @@ void formating_encrypt_file (std::stringstream &f, int state)
 							"`pragma protect key_keyowner=\"Verific\"\n"
 							"`pragma protect key_keyname=\"key1\"\n"
 							"`pragma protect key_public_key\n"
-							"MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDNGfZnex1aV/Ix6DCN/UgPJ4P6\n"
-							"3inDlt7JEiuzEomgIaYGI0PoknjtdQc/B0APWyH8QHg9w+4toF+FKaSF1JCiSzaL\n"
-							"eZ1vDhRatxA3usv+QIQ5VlHgFDWJO4xMMHtbgQbaN4drNTp88Y3nda/asoLK6uov\n"
-							"pdT0s2+xvESsnb2ydQIDAQAB\n";
+							"MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDkRq28uVJ64yGZqOJrWPHJASe54e31P1ULNIw6\n"
+							"wa9KiOcrrvH/rTq7wZ9xK3Y0xwmZjOfh/uf89+gwHBQWGMMMmZpPt6A3jR08oM0RmJpwOL4fAsFB\n"
+							"kcgM7BOLt3gppbHQrZryRxXXkyFIoBSJAYTGuu4pfkOzNH7O0zUNwhfMzwIDAQAB\n";
+
 	// this string signals the beginning of the code to be encrypted
 	std::string s_begin = "`pragma protect begin\n";
 	// this string signals the end of the code which will be encrypted
