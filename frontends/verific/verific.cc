@@ -1118,7 +1118,24 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 	RTLIL::IdString protectId("$rs_protected");
 
 	// vector of string primitive names
-	const std::vector <std::string> tdp_names = {"RS_TDP36K", "TDP36K", "\\$lut"};
+	const std::vector <std::string> tdp_names = {
+		/* common primitives */
+		"\\lut","\\_$_mem_v2_asymmetric", "BRAM2x18_TDP", "BRAM2x18_SDP",
+		/* genesis1 primitives */
+		"TDP36K", "RS_DSP1", "RS_DSP2", "RS_DSP2_MULT", "RS_DSP2_MULT_REGIN",
+		"RS_DSP2_MULT_REGOUT", "RS_DSP2_MULT_REGIN_REGOUT", "RS_DSP2_MULTACC_REGOUT",
+		"RS_DSP2_MULTACC_REGIN_REGOUT", "RS_DSP3", "RS_DSP3_MULT", "RS_DSP3_MULT_REGIN",
+		"RS_DSP3_MULT_REGOUT", "RS_DSP3_MULT_REGIN_REGOUT", "RS_DSP3_MULTADD",
+		"RS_DSP3_MULTADD_REGIN", "RS_DSP3_MULTADD_REGOUT", "RS_DSP3_MULTADD_REGIN_REGOUT",
+		"RS_DSP3_MULTACC", "RS_DSP3_MULTACC_REGIN", "RS_DSP3_MULTACC_REGOUT",
+		"RS_DSP3_MULTACC_REGIN_REGOUT",
+		/* genesis2 primitives */
+		"RS_DSP", "RS_DSP_MULT", "RS_DSP_MULT_REGIN",
+		"RS_DSP_MULT_REGOUT", "RS_DSP_MULT_REGIN_REGOUT", "RS_DSP_MULTADD",
+		"RS_DSP_MULTADD_REGIN", "RS_DSP_MULTADD_REGOUT", "RS_DSP_MULTADD_REGIN_REGOUT",
+		"RS_DSP_MULTACC", "RS_DSP_MULTACC_REGIN", "RS_DSP_MULTACC_REGOUT",
+		"RS_DSP_MULTACC_REGIN_REGOUT", "RS_TDP36K"};
+
 	for (auto &it : tdp_names){
 		// if module_name conteins BRam type name
 		// discard everything leaving only the BRam name
