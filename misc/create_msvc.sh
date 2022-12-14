@@ -11,10 +11,11 @@ echo "namespace Yosys { extern const char *yosys_verific_version_str; const char
 
 rm -rf YosysVS-Tpl-v2.zip YosysVS
 
-#this commands executed in yosys/action.ps1
-#wget https://yosyshq.net/yosys/nogit/YosysVS-Tpl-v2.zip
-#wget https://www.zlib.net/fossils/zlib-1.2.11.tar.gz
 
+wget https://yosyshq.net/yosys/nogit/YosysVS-Tpl-v2.zip
+wget https://www.zlib.net/fossils/zlib-1.2.11.tar.gz
+
+unzip YosysVS-Tpl-v2.zip
 rm -f YosysVS-Tpl-v2.zip
 tar xvfz zlib-1.2.11.tar.gz
 

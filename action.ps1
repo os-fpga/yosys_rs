@@ -1,11 +1,12 @@
 Write-Output "action from Yosys starts"
 
-wget https://www.zlib.net/fossils/zlib-1.2.11.tar.gz
+<#wget https://www.zlib.net/fossils/zlib-1.2.11.tar.gz
 wget https://yosyshq.net/yosys/nogit/YosysVS-Tpl-v2.zip
-
+#>
 $OldPath = $env:PATH
 $env:PATH = "c:\cygwin64\bin"
-unzip YosysVS-Tpl-v2.zip
+#unzip YosysVS-Tpl-v2.zip
+
 
 $YosysDir = Get-Location
 Set-Location ../Raptor_Tools/verific_rs/vhdl_packages
