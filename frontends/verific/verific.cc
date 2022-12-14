@@ -1117,8 +1117,8 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 	design->add(module);
 	RTLIL::IdString protectId("$rs_protected");
 
-	// making vector of string with TDP BRams names
-	std::vector <std::string> tdp_names = {"RS_TDP36K", "TDP36K"};
+	// vector of string primitive names
+	const std::vector <std::string> tdp_names = {"RS_TDP36K", "TDP36K", "\\$lut"};
 	for (auto &it : tdp_names){
 		// if module_name conteins BRam type name
 		// discard everything leaving only the BRam name
