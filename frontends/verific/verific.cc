@@ -1117,12 +1117,28 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 	design->add(module);
 	RTLIL::IdString protectId("$rs_protected");
 
-	// making vector of string with TDP BRams names
-	std::vector <std::string> tdp_names = {"RS_TDP36K", "TDP36K"};
-	for (auto &it : tdp_names){
-		// if module_name conteins BRam type name
-		// discard everything leaving only the BRam name
-		// changing module_name with new generated name
+	// vector of string primitive names
+	const std::vector <std::string> primitive_names = {
+		/* common primitives */
+		"\\lut","\\_$_mem_v2_asymmetric", "BRAM2x18_TDP", "BRAM2x18_SDP",
+		/* genesis1 primitives */
+		"TDP36K", "RS_DSP1", "RS_DSP2", "RS_DSP2_MULT", "RS_DSP2_MULT_REGIN",
+		"RS_DSP2_MULT_REGOUT", "RS_DSP2_MULT_REGIN_REGOUT", "RS_DSP2_MULTACC_REGOUT",
+		"RS_DSP2_MULTACC_REGIN_REGOUT", "RS_DSP3", "RS_DSP3_MULT", "RS_DSP3_MULT_REGIN",
+		"RS_DSP3_MULT_REGOUT", "RS_DSP3_MULT_REGIN_REGOUT", "RS_DSP3_MULTADD",
+		"RS_DSP3_MULTADD_REGIN", "RS_DSP3_MULTADD_REGOUT", "RS_DSP3_MULTADD_REGIN_REGOUT",
+		"RS_DSP3_MULTACC", "RS_DSP3_MULTACC_REGIN", "RS_DSP3_MULTACC_REGOUT",
+		"RS_DSP3_MULTACC_REGIN_REGOUT",
+		/* genesis2 primitives */
+		"RS_DSP", "RS_DSP_MULT", "RS_DSP_MULT_REGIN",
+		"RS_DSP_MULT_REGOUT", "RS_DSP_MULT_REGIN_REGOUT", "RS_DSP_MULTADD",
+		"RS_DSP_MULTADD_REGIN", "RS_DSP_MULTADD_REGOUT", "RS_DSP_MULTADD_REGIN_REGOUT",
+		"RS_DSP_MULTACC", "RS_DSP_MULTACC_REGIN", "RS_DSP_MULTACC_REGOUT",
+		"RS_DSP_MULTACC_REGIN_REGOUT", "RS_TDP36K"};
+
+	for (auto &it : primitive_names){
+		// if module_name conteins primitive type name then
+		// discard parameters in the name
 		std::size_t pos_of_name = module_name.find(it);
 		if (pos_of_name == 1) {
 			std::string module_new_name = module_name.substr(0, pos_of_name + it.size());
@@ -1828,10 +1844,9 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 			inst_type = "\\" + sha1_if_contain_spaces(inst_type);
 
 			
-			for (auto &it : tdp_names){
-				// if module_name conteins BRam type name
-				// discard everything leaving only the BRam name
-				// changing module_name with new generated name
+			for (auto &it : primitive_names){
+				// if module_name conteins primitive type name then
+				// discard parameters in the name
 				std::size_t pos_of_name = inst_type.find(it);
 				if (pos_of_name == 1) {
 					std::string inst_type_new_name = inst_type.substr(0, pos_of_name + it.size());
