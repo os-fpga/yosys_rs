@@ -2628,6 +2628,7 @@ void printComponent_dffnsre(std::ostream &f, std::string indent)
 void printComponent_latchsre(std::ostream &f, std::string indent)
 {
         f << stringf("%s" " component latchsre\n", indent.c_str());
+        f << stringf("%s" "  generic (VCS_MODE : boolean := false);\n", indent.c_str());
         f << stringf("%s" "  port (\n", indent.c_str());
         f << stringf("%s" "    S : in std_logic := '0';\n", indent.c_str());
         f << stringf("%s" "    R : in std_logic := '0';\n", indent.c_str());
@@ -2659,7 +2660,9 @@ void printComponent_adder_carry(std::ostream &f, std::string indent)
 void printComponent_dff(std::ostream &f, std::string indent)
 {
         f << stringf("%s" " component dff\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0');\n", indent.c_str());
+        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
         f << stringf("%s" "  port (\n", indent.c_str());
         f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
         f << stringf("%s" "    D : in std_logic := '0';\n", indent.c_str());
@@ -2670,7 +2673,9 @@ void printComponent_dff(std::ostream &f, std::string indent)
 void printComponent_dffn(std::ostream &f, std::string indent)
 {
         f << stringf("%s" " component dffn\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0');\n", indent.c_str());
+        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
         f << stringf("%s" "  port (\n", indent.c_str());
         f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
         f << stringf("%s" "    D : in std_logic := '0';\n", indent.c_str());
@@ -2681,7 +2686,9 @@ void printComponent_dffn(std::ostream &f, std::string indent)
 void printComponent_sdff(std::ostream &f, std::string indent)
 {
         f << stringf("%s" " component sdff\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0');\n", indent.c_str());
+        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
         f << stringf("%s" "  port (\n", indent.c_str());
         f << stringf("%s" "    R : in std_logic := '0';\n", indent.c_str());
         f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
@@ -2693,7 +2700,9 @@ void printComponent_sdff(std::ostream &f, std::string indent)
 void printComponent_sdffn(std::ostream &f, std::string indent)
 {
         f << stringf("%s" " component sdffn\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0');\n", indent.c_str());
+        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
         f << stringf("%s" "  port (\n", indent.c_str());
         f << stringf("%s" "    R : in std_logic := '0';\n", indent.c_str());
         f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
@@ -2705,7 +2714,9 @@ void printComponent_sdffn(std::ostream &f, std::string indent)
 void printComponent_dffr(std::ostream &f, std::string indent)
 {
         f << stringf("%s" " component dffr\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0');\n", indent.c_str());
+        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
         f << stringf("%s" "  port (\n", indent.c_str());
         f << stringf("%s" "    R : in std_logic := '0';\n", indent.c_str());
         f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
@@ -2717,7 +2728,9 @@ void printComponent_dffr(std::ostream &f, std::string indent)
 void printComponent_dffnr(std::ostream &f, std::string indent)
 {
         f << stringf("%s" " component dffnr\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0');\n", indent.c_str());
+        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
         f << stringf("%s" "  port (\n", indent.c_str());
         f << stringf("%s" "    R : in std_logic := '0';\n", indent.c_str());
         f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
@@ -2729,7 +2742,9 @@ void printComponent_dffnr(std::ostream &f, std::string indent)
 void printComponent_dffe(std::ostream &f, std::string indent)
 {
         f << stringf("%s" " component dffe\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0');\n", indent.c_str());
+        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
         f << stringf("%s" "  port (\n", indent.c_str());
         f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
         f << stringf("%s" "    E : in std_logic := '0';\n", indent.c_str());
@@ -2741,7 +2756,9 @@ void printComponent_dffe(std::ostream &f, std::string indent)
 void printComponent_dffne(std::ostream &f, std::string indent)
 {
         f << stringf("%s" " component dffne\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0');\n", indent.c_str());
+        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
         f << stringf("%s" "  port (\n", indent.c_str());
         f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
         f << stringf("%s" "    E : in std_logic := '0';\n", indent.c_str());
@@ -2753,7 +2770,9 @@ void printComponent_dffne(std::ostream &f, std::string indent)
 void printComponent_sdffre(std::ostream &f, std::string indent)
 {
         f << stringf("%s" " component sdffre\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0');\n", indent.c_str());
+        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
         f << stringf("%s" "  port (\n", indent.c_str());
         f << stringf("%s" "    R : in std_logic := '0';\n", indent.c_str());
         f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
@@ -2766,7 +2785,9 @@ void printComponent_sdffre(std::ostream &f, std::string indent)
 void printComponent_sdffnre(std::ostream &f, std::string indent)
 {
         f << stringf("%s" " component sdffnre\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0');\n", indent.c_str());
+        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
         f << stringf("%s" "  port (\n", indent.c_str());
         f << stringf("%s" "    R : in std_logic := '0';\n", indent.c_str());
         f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
@@ -2779,7 +2800,9 @@ void printComponent_sdffnre(std::ostream &f, std::string indent)
 void printComponent_dffre(std::ostream &f, std::string indent)
 {
         f << stringf("%s" " component dffre\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0');\n", indent.c_str());
+        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
         f << stringf("%s" "  port (\n", indent.c_str());
         f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
         f << stringf("%s" "    R : in std_logic := '0';\n", indent.c_str());
@@ -2792,7 +2815,9 @@ void printComponent_dffre(std::ostream &f, std::string indent)
 void printComponent_dffnre(std::ostream &f, std::string indent)
 {
         f << stringf("%s" " component dffnre\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0');\n", indent.c_str());
+        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
         f << stringf("%s" "  port (\n", indent.c_str());
         f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
         f << stringf("%s" "    R : in std_logic := '0';\n", indent.c_str());
@@ -2805,7 +2830,9 @@ void printComponent_dffnre(std::ostream &f, std::string indent)
 void printComponent_latch(std::ostream &f, std::string indent)
 {
         f << stringf("%s" " component latch\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0');\n", indent.c_str());
+        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
         f << stringf("%s" "  port (\n", indent.c_str());
         f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
         f << stringf("%s" "    g : in std_logic := '0';\n", indent.c_str());
@@ -2816,7 +2843,9 @@ void printComponent_latch(std::ostream &f, std::string indent)
 void printComponent_latchn(std::ostream &f, std::string indent)
 {
         f << stringf("%s" " component latchn\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0');\n", indent.c_str());
+        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
         f << stringf("%s" "  port (\n", indent.c_str());
         f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
         f << stringf("%s" "    g : in std_logic := '0';\n", indent.c_str());
@@ -2827,7 +2856,9 @@ void printComponent_latchn(std::ostream &f, std::string indent)
 void printComponent_latchr(std::ostream &f, std::string indent)
 {
         f << stringf("%s" " component latchr\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0');\n", indent.c_str());
+        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
         f << stringf("%s" "  port (\n", indent.c_str());
         f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
         f << stringf("%s" "    r : in std_logic := '0';\n", indent.c_str());
@@ -2839,7 +2870,9 @@ void printComponent_latchr(std::ostream &f, std::string indent)
 void printComponent_latchnr(std::ostream &f, std::string indent)
 {
         f << stringf("%s" " component latchnr\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0');\n", indent.c_str());
+        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
         f << stringf("%s" "  port (\n", indent.c_str());
         f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
         f << stringf("%s" "    r : in std_logic := '0';\n", indent.c_str());
