@@ -25,7 +25,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-
+#include <algorithm>
 
 #ifndef _WIN32
 #  include <unistd.h>
@@ -1118,7 +1118,7 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 	RTLIL::IdString protectId("$rs_protected");
 
 	// vector of string primitive names
-	const std::vector <std::string> primitive_names = {
+	std::vector <std::string> primitive_names = {
 		/* common primitives */
 		"\\lut","\\_$_mem_v2_asymmetric", "BRAM2x18_TDP", "BRAM2x18_SDP",
 		/* genesis1 primitives */
@@ -1136,6 +1136,11 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 		"RS_DSP_MULTACC", "RS_DSP_MULTACC_REGIN", "RS_DSP_MULTACC_REGOUT",
 		"RS_DSP_MULTACC_REGIN_REGOUT", "RS_TDP36K"};
 
+	std::sort(primitive_names.begin(), primitive_names.end(), [] (const std::string& first, const std::string& second)
+	{
+		return first.size() > second.size();
+	});
+
 	for (auto &it : primitive_names){
 		// if module_name conteins primitive type name then
 		// discard parameters in the name
@@ -1143,6 +1148,7 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 		if (pos_of_name == 1) {
 			std::string module_new_name = module_name.substr(0, pos_of_name + it.size());
 			design->rename(module, module_new_name);
+			break;
 		}
 	}
 
@@ -1851,6 +1857,7 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 				if (pos_of_name == 1) {
 					std::string inst_type_new_name = inst_type.substr(0, pos_of_name + it.size());
 					inst_type = inst_type_new_name;
+					break;
 				}
 			}
 		}
