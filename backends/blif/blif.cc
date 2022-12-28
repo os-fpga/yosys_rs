@@ -31,6 +31,14 @@
 USING_YOSYS_NAMESPACE
 PRIVATE_NAMESPACE_BEGIN
 
+std::vector <std::string> primitive_names = {
+	/* genesis2 primitives */
+	"RS_DSP", "RS_DSP_MULT", "RS_DSP_MULT_REGIN",
+	"RS_DSP_MULT_REGOUT", "RS_DSP_MULT_REGIN_REGOUT", "RS_DSP_MULTADD",
+	"RS_DSP_MULTADD_REGIN", "RS_DSP_MULTADD_REGOUT", "RS_DSP_MULTADD_REGIN_REGOUT",
+	"RS_DSP_MULTACC", "RS_DSP_MULTACC_REGIN", "RS_DSP_MULTACC_REGOUT",
+	"RS_DSP_MULTACC_REGIN_REGOUT", "RS_TDP36K"};
+
 struct BlifDumperConfig
 {
 	bool icells_mode;
@@ -64,10 +72,12 @@ struct BlifDumper
 
 	SigMap sigmap;
 	dict<SigBit, int> init_bits;
+	bool littleEndian;
 
 	BlifDumper(std::ostream &f, RTLIL::Module *module, RTLIL::Design *design, BlifDumperConfig *config) :
 			f(f), module(module), design(design), config(config), ct(design), sigmap(module)
 	{
+		littleEndian = true;
 		for (Wire *wire : module->wires())
 			if (wire->attributes.count(ID::init)) {
 				SigSpec initsig = sigmap(wire);
@@ -157,7 +167,13 @@ struct BlifDumper
 						f << stringf("%c", ch);
 				f << stringf("\"\n");
 			} else
-				f << stringf("%s\n", param.second.as_string().c_str());
+				if (littleEndian) {
+					f << stringf("%s\n", param.second.as_string().c_str());
+				} else {
+					std::string bits = param.second.as_string();
+					std::reverse(bits.begin(), bits.end());
+					f << stringf("%s\n", bits.c_str());
+				}
 		}
 	}
 
@@ -408,6 +424,9 @@ struct BlifDumper
 			}
 
 			f << stringf(".%s %s", subckt_or_gate(cell->type.str()), str(cell->type).c_str());
+			if (std::find(primitive_names.begin(), primitive_names.end(), str(cell->type)) != primitive_names.end())
+				littleEndian = false;
+
 			for (auto &conn : cell->connections())
 			{
 				if (conn.second.size() == 1) {
@@ -438,6 +457,8 @@ struct BlifDumper
 				dump_params(".attr", cell->attributes);
 			if (config->param_mode)
 				dump_params(".param", cell->parameters);
+
+			littleEndian = true;
 
 			if (0) {
 		internal_cell:
