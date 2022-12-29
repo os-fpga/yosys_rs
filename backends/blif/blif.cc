@@ -167,6 +167,7 @@ struct BlifDumper
 						f << stringf("%c", ch);
 				f << stringf("\"\n");
 			} else
+				// RapidSilicon: CASTORIP-121
 				if (littleEndian) {
 					f << stringf("%s\n", param.second.as_string().c_str());
 				} else {
