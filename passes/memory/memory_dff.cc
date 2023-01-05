@@ -592,17 +592,14 @@ struct MemoryDffWorker
 			}
 		}
 		*/
-		bool clk_matched = false;
-		int wpIdx = 0;
+		std::vector<int> wpIdxVec;
 		for (int i = 0; i < GetSize(mem.wr_ports); i++) {
 			auto &wport = mem.wr_ports[i];
 			if (!(!wport.clk_enable || wport.clk != ff.sig_clk || wport.clk_polarity != ff.pol_clk)) {
-				clk_matched = true;
-				wpIdx = i;
-				break;
+				wpIdxVec.push_back(i);
 			}
 		}
-		if (!clk_matched) {
+		if (wpIdxVec.empty()) {
 			log("address FF clock is not compatible with write clock.\n");
 			return;
 		}
@@ -620,7 +617,8 @@ struct MemoryDffWorker
 		for (int i = 0; i < GetSize(mem.wr_ports); i++)
 			port.transparency_mask[i] = true;
 		*/
-		port.transparency_mask[wpIdx] = true;
+		for (auto wpIdx : wpIdxVec)
+			port.transparency_mask[wpIdx] = true;
 		mem.emit();
 		log("merged address FF to cell.\n");
 	}
