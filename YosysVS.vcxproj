@@ -82,7 +82,7 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>..\Release\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>synth-rs.lib;verilog.lib;hdl_encrypt.lib;database.lib;hdl_file_sort.lib;util.lib;vhdl.lib;verilog_nl.lib;hier_tree.lib;containers.lib;commands.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>synth-rs.lib;verilog.lib;hdl_encrypt.lib;database.lib;hdl_file_sort.lib;util.lib;vhdl.lib;verilog_nl.lib;hier_tree.lib;containers.lib;commands.lib;libreadver.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalOptions>/WHOLEARCHIVE:synth-rs.lib %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
@@ -117,8 +117,8 @@
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
-      <AdditionalLibraryDirectories>..\x64\Release\;$(SolutionDir)Raptor_Tools\Flex_LM\build\x64-Release;$(SolutionDir)Raptor_Tools\Flex_LM\x64_n6;$(SolutionDir)Raptor_Tools\Flex_LM\x64_n6\activation\lib;C:\Program Files\OpenSSL-Win64\lib;$(SolutionDir)..\out\build\x64-Release\Raptor_Tools\Flex_LM;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>rs_licenseManager.lib;synth-rs.lib;libssl.lib;libcrypto.lib;verilog.lib;hdl_encrypt.lib;database.lib;hdl_file_sort.lib;util.lib;vhdl.lib;verilog_nl.lib;hier_tree.lib;containers.lib;commands.lib;lmgr_trl.lib;libsb.lib;libcrvs.lib;lmgr_dongle_stub.lib;.\activation\lib\libnoact.lib;libredir_std.lib;oldnames.lib;kernel32.lib;user32.lib;netapi32.lib;gdi32.lib;winspool.lib;comdlg32.lib;comctl32.lib;wsock32.lib;advapi32.lib;shell32.lib;Rpcrt4.lib;Ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;Wbemuuid.lib;wintrust.lib;crypt32.lib;Ws2_32.lib;iphlpapi.lib;Psapi.lib;Shlwapi.lib;userenv.lib;msvcrt.lib;vcruntime.lib;legacy_stdio_definitions.lib;legacy_stdio_wide_specifiers.lib;ucrt.lib;Dhcpcsvc.lib;libvcruntime.lib;libpthread.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(OutDir);$(SolutionDir)Raptor_Tools\Flex_LM\build\x64-Release;$(SolutionDir)Raptor_Tools\Flex_LM\x64_n6;$(SolutionDir)Raptor_Tools\Flex_LM\x64_n6\activation\lib;C:\Program Files\OpenSSL-Win64\lib;$(SolutionDir)..\out\build\x64-Release\Raptor_Tools\Flex_LM;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>rs_licenseManager.lib;synth-rs.lib;libssl.lib;libcrypto.lib;verilog.lib;hdl_encrypt.lib;database.lib;hdl_file_sort.lib;util.lib;vhdl.lib;verilog_nl.lib;hier_tree.lib;containers.lib;commands.lib;libreadver.lib;lmgr_trl.lib;libsb.lib;libcrvs.lib;lmgr_dongle_stub.lib;.\activation\lib\libnoact.lib;libredir_std.lib;oldnames.lib;kernel32.lib;user32.lib;netapi32.lib;gdi32.lib;winspool.lib;comdlg32.lib;comctl32.lib;wsock32.lib;advapi32.lib;shell32.lib;Rpcrt4.lib;Ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;Wbemuuid.lib;wintrust.lib;crypt32.lib;Ws2_32.lib;iphlpapi.lib;Psapi.lib;Shlwapi.lib;userenv.lib;msvcrt.lib;vcruntime.lib;legacy_stdio_definitions.lib;legacy_stdio_wide_specifiers.lib;ucrt.lib;Dhcpcsvc.lib;libvcruntime.lib;libpthread.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalOptions>/WHOLEARCHIVE:synth-rs.lib %(AdditionalOptions)</AdditionalOptions>
       <LinkTimeCodeGeneration>Default</LinkTimeCodeGeneration>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
@@ -133,7 +133,6 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\Raptor_Tools\gatelevel_readers\read_verilog\src\read_nl\ieee_1735.cpp" />
     <ClCompile Include="frontends\verific\verificsva.cc" />
     <ClInclude Include="backends/rtlil/rtlil_backend.h" />
     <ClInclude Include="frontends/aiger/aigerparse.h" />
