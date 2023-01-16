@@ -113,7 +113,7 @@ SED ?= sed
 BISON ?= bison
 STRIP ?= strip
 ifeq ($(OS), Windows_NT)
-AWK ?= awk.exe
+AWK ?= gawk
 else
 AWK ?= awk
 endif
@@ -157,7 +157,7 @@ YOSYS_VER := 0.18+10
 # back to calling git directly.
 TARBALL_GIT_REV := $(shell cat $(YOSYS_SRC)/.gitcommit)
 ifeq ($(TARBALL_GIT_REV),$$Format:%h$$)
-GIT_REV := $(shell git ls-remote $(YOSYS_SRC) HEAD -q | $( AWK ) 'BEGIN {R = "UNKNOWN"}; ($$2 == "HEAD") {R = substr($$1, 1, 9); exit} END {print R}')
+GIT_REV := $(shell git ls-remote $(YOSYS_SRC) HEAD -q | $(AWK) 'BEGIN {R = "UNKNOWN"}; ($$2 == "HEAD") {R = substr($$1, 1, 9); exit} END {print R}')
 else
 GIT_REV := $(TARBALL_GIT_REV)
 endif
