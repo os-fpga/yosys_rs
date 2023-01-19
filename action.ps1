@@ -1,5 +1,8 @@
 Write-Output "action from Yosys starts"
 
+Write-Output "PATH : $env:PATH"
+
+
 $OldPATH = $env:PATH
 $env:PATH = (Test-Path -Path "C:\cygwin64\bin") ? "C:\cygwin64\bin\" : "C:\cygwin\bin\"
 $env:PATH -split ";"
@@ -15,8 +18,11 @@ Set-Location -Path ../Raptor_Tools/verific_rs/vhdl_packages
 & $Cygwin $arg "ln -sf vhdl_2019/bin vdbs_2019"
 
 Set-Location -Path $YosysDir
+Write-Output "PATH : $env:PATH"
 & $Cygwin $arg "make genfiles"
 $env:PATH = $OldPath
+
+Write-Output "PATH : $env:PATH"
 
 Write-Output "Yosys action end"
 

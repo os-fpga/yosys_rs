@@ -1,6 +1,8 @@
 
 ifeq ($(OS),Windows_NT)
+SHELL := /usr/bin/bash
 CONFIG := cygwin
+export PATH=$PATH:/usr/bin/
 else
 CONFIG := clang
 # CONFIG := gcc
@@ -60,7 +62,6 @@ SANITIZER =
 
 PROGRAM_PREFIX :=
 ifeq ($(OS),Windows_NT)
-PATH = /cygdrive/c/cygwin64/bin
 ENABLE_PLUGINS := 0
 ENABLE_TCL := 0
 EXE := .exe
