@@ -15,7 +15,7 @@ Set-Location ../Raptor_Tools/verific_rs/vhdl_packages
 & $Cygwin $arg "ln -sf vhdl_2019/bin vdbs_2019"
 
 Set-Location $YosysDir
-& $Cygwin $arg "make genfiles SHELL=$Cygwin"
+& $Cygwin $arg "make genfiles"
 $env:PATH = $OldPath
 
 Write-Output "Yosys action end"
