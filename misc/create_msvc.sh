@@ -20,15 +20,13 @@ rm -f YosysVS-Tpl-v2.zip
 tar xvfz zlib-1.2.11.tar.gz
 
 mkdir -p ./libs/zlib
-mv zlib-1.2.11/* ./libs/zlib/.
-rm -rf zlib-1.2.11
+mv ./zlib-1.2.11/* ./libs/zlib/.
+rm -rf ./zlib-1.2.11
 pushd ./
 ls libs/zlib/*.c | sed 's,.*:,,; s,//*,/,g; s,/[^/]*/\.\./,/,g; y, \\,\n\n,;' | grep '^[^/]'  >> ./srcfiles.txt
 
 
-
 tar -cf - -T srcfiles.txt | tar -xf - -C ./
-
 
 cat > readme-git.txt << EOT
 Want to use a git working copy for the yosys source code?

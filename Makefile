@@ -1010,7 +1010,7 @@ genfiles: $(GENFILES) $(EXTRA_TARGETS) zlib
 		echo "Analyse: $$f" >&2; cpp -std=c++11 -MM -I. -D_YOSYS_ $$f; done | sed 's,.*:,,; s,//*,/,g; s,/[^/]*/\.\./,/,g; y, \\,\n\n,;' | grep '^[^/]' | sort -u | grep -v kernel/version_ > srcfiles.txt
 
 zlib:
-	bash.exe misc/create_msvc.sh yosys_verific_rs $(YOSYS_VER) $(GIT_REV)
+	bash misc/create_msvc.sh yosys_verific_rs $(YOSYS_VER) $(GIT_REV)
 
 vcxsrc: $(GENFILES) $(EXTRA_TARGETS)
 	rm -rf yosys-win32-vcxsrc-$(YOSYS_VER){,.zip}
