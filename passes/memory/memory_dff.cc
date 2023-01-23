@@ -620,6 +620,7 @@ struct MemoryDffWorker
 		for (auto wpIdx : wpIdxVec)
 			port.transparency_mask[wpIdx] = true;
 		mem.emit();
+		mem.set_bool_attribute(RTLIL::escape_id("dff_merge"));
 		log("merged address FF to cell.\n");
 	}
 
