@@ -2025,7 +2025,12 @@ struct MemoryLibMapPass : public Pass {
 		opts.no_auto_block = false;
 		opts.no_auto_huge = false;
 		opts.logic_cost_ram = 1.0;
-		opts.logic_cost_rom = 1.0/16.0;
+		/*Lilit*
+		 * The threshold value for logic_cost_rom has been choosen according 
+		 * to the experiments that have been done by comparing BRAM inference 
+		 * with Vivado in the scope of EDA-1066 issue
+		 */
+		opts.logic_cost_rom = 0.3;
 		log_header(design, "Executing MEMORY_LIBMAP pass (mapping memories to cells).\n");
 
 		size_t argidx;
