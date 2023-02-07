@@ -33,7 +33,7 @@
 #define ABC_COMMAND_CTR "strash; ifraig; scorr; dc2; dretime; strash; &get -n; &dch -f; &nf {D}; &put; buffer; upsize {D}; dnsize {D}; stime -p"
 #define ABC_COMMAND_LUT "strash; ifraig; scorr; dc2; dretime; strash; dch -f; if; mfs2"
 #define ABC_COMMAND_SOP "strash; ifraig; scorr; dc2; dretime; strash; dch -f; cover {I} {P}"
-#define ABC_COMMAND_DFL "strash; ifraig -P 1000; scorr -L 6; dc2; dretime; strash; &get -n; &dch -f; &nf {D}; &put"
+#define ABC_COMMAND_DFL "strash; ifraig -P 1000; scorr -L 6; dc2; strash; &get -n; &dch -f; &nf {D}; &put"
 
 #define ABC_FAST_COMMAND_LIB "strash; dretime; map {D}"
 #define ABC_FAST_COMMAND_CTR "strash; dretime; map {D}; buffer; upsize {D}; dnsize {D}; stime -p"
@@ -2188,12 +2188,21 @@ struct AbcPass : public Pass {
 		// We would need to investigate parallel calls on each "assigned_cells" if
 		// feasible.
 		//
-                                nb++;
                                 if (nb > 200) {
                                   //log("Early exit at 200 iterations\n");
                                   //getchar();
                                   break;
                                 }
+                                // watch "b19" with clock_enable_strategy late needing
+                                // "abc -dff" with partition equals 122K, so we need a
+                                // threshold above 122K.
+                                //
+                                if (GetSize(it.second) > 130000) {
+                                  //log("Early exit because too many instances\n");
+                                  //getchar();
+                                  continue;
+                                }
+                                nb++;
 #endif
 
 				clk_polarity = std::get<0>(it.first);
