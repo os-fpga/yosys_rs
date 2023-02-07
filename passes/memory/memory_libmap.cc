@@ -2002,7 +2002,7 @@ struct MemoryLibMapPass : public Pass {
 		log("    See passes/memory/memlib.md for description of the library format.\n");
 		log("\n");
 		log("  -limit <count>\n");
-		log("    Sets the maximum number of inferred BRAM cells.\n");
+		log("    Set the maximum number for the inferred BRAM cells.\n");
 		log("\n");
 		log("  -D <condition>\n");
 		log("    Enables a condition that can be checked within the library file\n");
@@ -2106,10 +2106,11 @@ struct MemoryLibMapPass : public Pass {
 					} else {
 						counter += std::max(map.cfgs[idx].repl_d, map.cfgs[idx].repl_port);
 					}
-					if(counter <= limit_b)
+					if(counter <= limit_b){
 						map.emit(map.cfgs[idx]);
-					else
+					} else {
 						break;
+					}
 				}
 			}
 		}
