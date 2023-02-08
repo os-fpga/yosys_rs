@@ -2045,7 +2045,7 @@ struct MemoryLibMapPass : public Pass {
 				continue;
 			}
 			if (args[argidx] == "-limit" && argidx+1 < args.size()) {
-				limit_b = stoi(args[++argidx]);
+				limit_b = std::stoi(args[++argidx]);
 				continue;
 			}
 			if (args[argidx] == "-D" && argidx+1 < args.size()) {
