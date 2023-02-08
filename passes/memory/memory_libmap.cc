@@ -20,6 +20,7 @@
 #include "memlib.h"
 
 #include <ctype.h>
+#include <cmath>
 
 #include "kernel/yosys.h"
 #include "kernel/sigtools.h"
@@ -1990,7 +1991,7 @@ struct MemoryLibMapPass : public Pass {
 	{
 		//   |---v---|---v---|---v---|---v---|---v---|---v---|---v---|---v---|---v---|---v---|
 		log("\n");
-		log("    memory_libmap -lib <library_file> [-D <condition>] [selection]\n");
+		log("    memory_libmap -lib <library_file> [-limit <count>] [-D <condition>] [selection]\n");
 		log("\n");
 		log("This pass takes a description of available RAM cell types and maps\n");
 		log("all selected memories to one of them, or leaves them  to be mapped to FFs.\n");
@@ -1999,6 +2000,9 @@ struct MemoryLibMapPass : public Pass {
 		log("    Selects a library file containing RAM cell definitions. This option\n");
 		log("    can be passed more than once to select multiple libraries.\n");
 		log("    See passes/memory/memlib.md for description of the library format.\n");
+		log("\n");
+		log("  -limit <count>\n");
+		log("    Set the maximum number for the inferred BRAM cells.\n");
 		log("\n");
 		log("  -D <condition>\n");
 		log("    Enables a condition that can be checked within the library file\n");
@@ -2020,6 +2024,7 @@ struct MemoryLibMapPass : public Pass {
 	{
 		std::vector<std::string> lib_files;
 		pool<std::string> defines;
+		int limit_b =  0;
 		PassOptions opts;
 		opts.no_auto_distributed = false;
 		opts.no_auto_block = false;
@@ -2037,6 +2042,10 @@ struct MemoryLibMapPass : public Pass {
 		for (argidx = 1; argidx < args.size(); argidx++) {
 			if (args[argidx] == "-lib" && argidx+1 < args.size()) {
 				lib_files.push_back(args[++argidx]);
+				continue;
+			}
+			if (args[argidx] == "-limit" && argidx+1 < args.size()) {
+				limit_b = std::stoi(args[++argidx]);
 				continue;
 			}
 			if (args[argidx] == "-D" && argidx+1 < args.size()) {
@@ -2068,7 +2077,7 @@ struct MemoryLibMapPass : public Pass {
 		extra_args(args, argidx, design);
 
 		Library lib = parse_library(lib_files, defines);
-
+		float counter = 0;
 		for (auto module : design->selected_modules()) {
 			MapWorker worker(module);
 			auto mems = Mem::get_selected_memories(module);
@@ -2092,7 +2101,16 @@ struct MemoryLibMapPass : public Pass {
 				if (idx == -1) {
 					log("using FF mapping for memory %s.%s\n", log_id(module->name), log_id(mem.memid));
 				} else {
-					map.emit(map.cfgs[idx]);
+					if (map.cfgs[idx].def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM18_TDP") || map.cfgs[idx].def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM18_SDP")){
+							counter += ceil((float)std::max(map.cfgs[idx].repl_d, map.cfgs[idx].repl_port)/2);
+					} else {
+						counter += std::max(map.cfgs[idx].repl_d, map.cfgs[idx].repl_port);
+					}
+					if(counter <= limit_b){
+						map.emit(map.cfgs[idx]);
+					} else {
+						break;
+					}
 				}
 			}
 		}
