@@ -2024,7 +2024,7 @@ struct MemoryLibMapPass : public Pass {
 	{
 		std::vector<std::string> lib_files;
 		pool<std::string> defines;
-		int limit_b =  0;
+		int limit_b = -1;
 		PassOptions opts;
 		opts.no_auto_distributed = false;
 		opts.no_auto_block = false;
@@ -2101,15 +2101,19 @@ struct MemoryLibMapPass : public Pass {
 				if (idx == -1) {
 					log("using FF mapping for memory %s.%s\n", log_id(module->name), log_id(mem.memid));
 				} else {
-					if (map.cfgs[idx].def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM18_TDP") || map.cfgs[idx].def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM18_SDP")){
+					if (limit_b != -1) {
+						if (map.cfgs[idx].def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM18_TDP") || map.cfgs[idx].def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM18_SDP")){
 							counter += ceil((float)std::max(map.cfgs[idx].repl_d, map.cfgs[idx].repl_port)/2);
+						} else {
+							counter += std::max(map.cfgs[idx].repl_d, map.cfgs[idx].repl_port);
+						}
+						if(counter <= limit_b){
+							map.emit(map.cfgs[idx]);
+						} else {
+							break;
+						}
 					} else {
-						counter += std::max(map.cfgs[idx].repl_d, map.cfgs[idx].repl_port);
-					}
-					if(counter <= limit_b){
 						map.emit(map.cfgs[idx]);
-					} else {
-						break;
 					}
 				}
 			}
