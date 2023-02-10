@@ -1104,6 +1104,7 @@ void Mem::emulate_priority(int idx1, int idx2, FfInitVals *initvals)
 			if (cache.count(key)) {
 				en1 = cache[key];
 			} else {
+				log_warning("Extra logic is inferred to emulate write priority.\n");
 				SigBit active2 = module->And(NEW_ID, addr_eq, en2);
 				SigBit nactive2 = module->Not(NEW_ID, active2);
 				en1 = cache[key] = module->And(NEW_ID, en1, nactive2);
