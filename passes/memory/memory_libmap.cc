@@ -1149,7 +1149,7 @@ void MemMapping::handle_geom() {
 			for (int i = 0; i < mem.width; i++) {
 				if (word_boundary[i])
 					while (GetSize(swizzle) % unit_width)
-							swizzle.push_back(-1);
+						swizzle.push_back(-1);
 				else if (byte_boundary[i])
 					while (GetSize(swizzle) % effective_byte)
 						swizzle.push_back(-1);
