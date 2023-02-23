@@ -1151,8 +1151,8 @@ void MemMapping::handle_geom() {
 					while (GetSize(swizzle) % unit_width)
 							swizzle.push_back(-1);
 				else if (byte_boundary[i])
-						while (GetSize(swizzle) % effective_byte)
-							swizzle.push_back(-1);
+					while (GetSize(swizzle) % effective_byte)
+						swizzle.push_back(-1);
 				swizzle.push_back(i);
 			}
 			if (word_boundary[0])
@@ -1688,22 +1688,6 @@ void MemMapping::emit_port(const MemConfig &cfg, std::vector<Cell*> &cells, cons
 		if (wpidx != -1) {
 			auto &wport = mem.wr_ports[wpidx];
 			Swizzle port_swz = gen_swizzle(mem, cfg, wport.wide_log2, hw_wr_wide_log2);
-//			if(width == 36)
-//				for(int i = 0; i < port_swz.bits.size() ; i++)
-//					for (int j = 0; j < 2; ++j){
-//						int left = 18*j;
-//						int right = left+17;
-//						while(right > left){
-//							if(!port_swz.bits[i][right].valid)
-//								--right;
-//							if(!port_swz.bits[i][left].valid){
-//								port_swz.bits[i][left].valid = true;
-//								port_swz.bits[i][right].valid = false;
-//							}
-//								++left;
-//						}
-//					}
-//				for(auto& swz : port_swz.bits[i])
 			std::vector<SigSpec> big_wren = generate_demux(mem, wpidx, port_swz);
 			for (int rd = 0; rd < cfg.repl_d; rd++) {
 				auto cell = cells[rd];
