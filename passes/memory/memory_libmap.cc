@@ -1164,7 +1164,8 @@ void MemMapping::handle_geom() {
 					swizzle.push_back(-1);
 
 			// Correct the swizzles for specific case when BRAM will work on MODE_36
-			if(technology != "")
+			// Special handling of parity bit for RapidSilicon BRAM architecture
+			if(technology != ""){
 				if(unit_width == 36 && mem.width > 18){
 					int curr_bit = 0;
 					for (int i = 0; i < 2; ++i){
@@ -1184,6 +1185,7 @@ void MemMapping::handle_geom() {
 						}
 					}
 				}
+			}
 			// Now evaluate the configuration, then keep adding more hard wide bits
 			// and evaluating.
 			int hard_wide_mask = 0;
