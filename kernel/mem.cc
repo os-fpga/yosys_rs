@@ -1575,7 +1575,7 @@ bool Mem::emulate_read_first_ok() {
 		if (port.clk_polarity != clk_polarity)
 			return false;
 	}
-	bool found_read_first = false;
+	bool found_read_first = false; int i=0;
 	for (auto &port: rd_ports) {
 		if (!port.clk_enable)
 			return false;
@@ -1585,9 +1585,18 @@ bool Mem::emulate_read_first_ok() {
 			return false;
 		// No point doing this operation if there is no read-first relationship
 		// in the first place.
+		/* (Ayyaz/Awaise): Below if block check is added for speparating write-first TDP from read-first TDP
+         * for the single clock.
+		 */
+		if (port.transparency_mask[i]){
+			for (int j = 0; j < GetSize(wr_ports); j++){
+				port.transparency_mask[j] = true; 
+			}
+		}
 		for (int j = 0; j < GetSize(wr_ports); j++)
 			if (!port.transparency_mask[j] && !port.collision_x_mask[j])
 				found_read_first = true;
+		i++;
 	}
 	return found_read_first;
 }
