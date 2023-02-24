@@ -35,6 +35,7 @@ using namespace MemLibrary;
 #define FACTOR_MUX 0.5
 #define FACTOR_DEMUX 0.5
 #define FACTOR_EMU 2
+std::string technology = "";
 
 struct PassOptions {
 	bool no_auto_distributed;
@@ -2047,7 +2048,6 @@ struct MemoryLibMapPass : public Pass {
 		std::vector<std::string> lib_files;
 		pool<std::string> defines;
 		int limit_b = -1;
-		std::string technology = "";
 		PassOptions opts;
 		opts.no_auto_distributed = false;
 		opts.no_auto_block = false;
