@@ -35,6 +35,7 @@ using namespace MemLibrary;
 #define FACTOR_MUX 0.5
 #define FACTOR_DEMUX 0.5
 #define FACTOR_EMU 2
+std::string technology = "";
 
 struct PassOptions {
 	bool no_auto_distributed;
@@ -1161,6 +1162,30 @@ void MemMapping::handle_geom() {
 			else
 				while (GetSize(swizzle) % effective_byte)
 					swizzle.push_back(-1);
+
+			// Correct the swizzles for specific case when BRAM will work on MODE_36
+			// Special handling of parity bit for RapidSilicon BRAM architecture
+			if(technology != ""){
+				if(unit_width == 36 && mem.width > 18){
+					int curr_bit = 0;
+					for (int i = 0; i < 2; ++i){
+						int left = (swizzle.size()/2)*i;
+						int right = left+swizzle.size()/2-1;
+						while(right >= left && curr_bit < mem.width){
+							if(swizzle[right] == -1)
+								--right;
+							if(swizzle[left] == -1){
+								swizzle[left] = curr_bit;
+								swizzle[right] = -1;
+							}else{
+								swizzle[left] = curr_bit;
+							}
+							++left;
+							++curr_bit;
+						}
+					}
+				}
+			}
 			// Now evaluate the configuration, then keep adding more hard wide bits
 			// and evaluating.
 			int hard_wide_mask = 0;
@@ -2046,6 +2071,10 @@ struct MemoryLibMapPass : public Pass {
 			}
 			if (args[argidx] == "-limit" && argidx+1 < args.size()) {
 				limit_b = std::stoi(args[++argidx]);
+				continue;
+			}
+			if (args[argidx] == "-tech" && argidx+1 < args.size()) {
+				technology = args[++argidx];
 				continue;
 			}
 			if (args[argidx] == "-D" && argidx+1 < args.size()) {
