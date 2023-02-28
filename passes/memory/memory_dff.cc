@@ -504,6 +504,7 @@ struct MemoryDffWorker
 
 		// OK, it worked.
 		log("merging output FF to cell.\n");
+		mem.set_bool_attribute(RTLIL::escape_id("dff_merge"));
 
 		merger.remove_output_ff(bits);
 		if (ff.has_ce && !ff.pol_ce)
