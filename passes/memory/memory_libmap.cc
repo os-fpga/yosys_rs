@@ -2113,6 +2113,7 @@ struct MemoryLibMapPass : public Pass {
 			auto mems = Mem::get_selected_memories(module);
 			for (auto &mem : mems)
 			{
+				bool wtrans_new = false;
 				MemMapping map(worker, mem, lib, opts);
 				int idx = -1;
 				int best = map.logic_cost;
@@ -2128,7 +2129,25 @@ struct MemoryLibMapPass : public Pass {
 						best = map.cfgs[i].cost;
 					}
 				}
-				if (idx == -1) {
+				// Awais: if wtrans value is New, then TDP read first memory is mapped to soft logic
+				if(!map.cfgs.empty()){
+					for (int wpidx = 0; wpidx < GetSize(mem.wr_ports); wpidx++) {
+						for (auto &cfg: map.cfgs) {
+							auto &wpcfg = cfg.wr_ports[wpidx];
+							for (auto &tdef: wpcfg.def->wrtrans) {
+								if (tdef.kind == WrTransKind::New) {
+									wtrans_new = true;
+								}
+							}
+						}
+					}
+				}
+				/*
+					Awais: If memory is a read first TDP ram, soft logic is infered
+					original: if(idx == -1)
+				*/
+			
+				if (idx == -1 or ((GetSize(mem.rd_ports)>1 or GetSize(mem.wr_ports)>1) and mem.emulate_read_first_ok() and wtrans_new == true)) {
 					log("using FF mapping for memory %s.%s\n", log_id(module->name), log_id(mem.memid));
 				} else {
 					if (limit_b != -1) {
