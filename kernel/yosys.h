@@ -324,11 +324,14 @@ extern RTLIL::Design *yosys_design;
 
 RTLIL::IdString new_id(std::string file, int line, std::string func);
 RTLIL::IdString new_id_suffix(std::string file, int line, std::string func, std::string suffix);
+RTLIL::IdString new_id_no_prefix(std::string file, std::string func, std::string suffix);
 
 #define NEW_ID \
 	YOSYS_NAMESPACE_PREFIX new_id(__FILE__, __LINE__, __FUNCTION__)
 #define NEW_ID_SUFFIX(suffix) \
 	YOSYS_NAMESPACE_PREFIX new_id_suffix(__FILE__, __LINE__, __FUNCTION__, suffix)
+#define NEW_ID_NO_PREFIX(suffix) \
+	YOSYS_NAMESPACE_PREFIX new_id_no_prefix(__FILE__, __FUNCTION__, suffix)
 
 // Create a statically allocated IdString object, using for example ID::A or ID($add).
 //
