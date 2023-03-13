@@ -258,8 +258,43 @@ FfData::FfData(FfInitVals *initvals, Cell *cell_) : FfData(cell_->module, initva
 	}
 }
 
+const std::string sigTostring(RTLIL::SigBit sig) {
+
+          if (sig.wire == NULL) {
+            return ("");
+          }
+
+          std::string str = RTLIL::unescape_id(sig.wire->name);
+
+          if (sig.wire->width != 1) {
+             str += stringf("[%d]", sig.wire->upto ? sig.wire->start_offset+sig.wire->width-sig.offset-1 
+                                  : sig.wire->start_offset+sig.offset);
+	  }
+
+          return str;
+}
+
 FfData FfData::slice(const std::vector<int> &bits) {
-	FfData res(module, initvals, NEW_ID);
+
+	// Rename single bit DFF instance by including Q output wire name
+	//
+        IdString newId;
+
+	if (GetSize(sig_q) == 1) {
+
+          SigBit sigQ = sig_q;
+
+          string FfQname = sigTostring(sigQ);
+
+          string moduleName = log_id(module->name);
+
+          newId = stringf("\\%s:%s_%d", moduleName.c_str(), FfQname.c_str(), autoidx++);
+
+        } else {
+          newId = NEW_ID;
+        }
+
+	FfData res(module, initvals, newId);
 	res.sig_clk = sig_clk;
 	res.sig_ce = sig_ce;
 	res.sig_aload = sig_aload;
@@ -300,6 +335,7 @@ FfData FfData::slice(const std::vector<int> &bits) {
 			res.val_init.bits.push_back(val_init[i]);
 	}
 	res.width = GetSize(res.sig_q);
+
 	return res;
 }
 

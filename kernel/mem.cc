@@ -1358,9 +1358,12 @@ void Mem::emulate_rden(int idx, FfInitVals *initvals) {
 	auto &port = rd_ports[idx];
 	log_assert(port.clk_enable);
 	emulate_rd_ce_over_srst(idx);
-	Wire *new_data = module->addWire(NEW_ID, GetSize(port.data));
-	Wire *prev_data = module->addWire(NEW_ID, GetSize(port.data));
-	Wire *sel = module->addWire(NEW_ID);
+	//Wire *new_data = module->addWire(NEW_ID, GetSize(port.data));
+	Wire *new_data = module->addWire(NEW_ID_NO_PREFIX("new_data"), GetSize(port.data));
+	//Wire *prev_data = module->addWire(NEW_ID, GetSize(port.data));
+	Wire *prev_data = module->addWire(NEW_ID_NO_PREFIX("prev_data"), GetSize(port.data));
+	//Wire *sel = module->addWire(NEW_ID);
+	Wire *sel = module->addWire(NEW_ID_NO_PREFIX("sel"));
 	FfData ff_sel(module, initvals, NEW_ID);
 	FfData ff_data(module, initvals, NEW_ID);
 	ff_sel.width = 1;
@@ -1418,9 +1421,11 @@ void Mem::emulate_rden(int idx, FfInitVals *initvals) {
 void Mem::emulate_reset(int idx, bool emu_init, bool emu_arst, bool emu_srst, FfInitVals *initvals) {
 	auto &port = rd_ports[idx];
 	if (emu_init && !port.init_value.is_fully_undef()) {
-		Wire *sel = module->addWire(NEW_ID);
+		//Wire *sel = module->addWire(NEW_ID);
+		Wire *sel = module->addWire(NEW_ID_NO_PREFIX("emu_init_sel"));
 		FfData ff_sel(module, initvals, NEW_ID);
-		Wire *new_data = module->addWire(NEW_ID, GetSize(port.data));
+		//Wire *new_data = module->addWire(NEW_ID, GetSize(port.data));
+		Wire *new_data = module->addWire(NEW_ID_NO_PREFIX("emu_init_new_data"), GetSize(port.data));
 		ff_sel.width = 1;
 		ff_sel.has_clk = true;
 		ff_sel.sig_clk = port.clk;
@@ -1464,9 +1469,11 @@ void Mem::emulate_reset(int idx, bool emu_init, bool emu_arst, bool emu_srst, Ff
 		port.init_value = Const(State::Sx, GetSize(port.data));
 	}
 	if (emu_arst && port.arst != State::S0) {
-		Wire *sel = module->addWire(NEW_ID);
+		//Wire *sel = module->addWire(NEW_ID);
+		Wire *sel = module->addWire(NEW_ID_NO_PREFIX("emu_arst_sel"));
 		FfData ff_sel(module, initvals, NEW_ID);
-		Wire *new_data = module->addWire(NEW_ID, GetSize(port.data));
+		//Wire *new_data = module->addWire(NEW_ID, GetSize(port.data));
+		Wire *new_data = module->addWire(NEW_ID_NO_PREFIX("emu_arst_new_data"), GetSize(port.data));
 		ff_sel.width = 1;
 		ff_sel.has_clk = true;
 		ff_sel.sig_clk = port.clk;
@@ -1504,9 +1511,11 @@ void Mem::emulate_reset(int idx, bool emu_init, bool emu_arst, bool emu_srst, Ff
 		port.arst = State::S0;
 	}
 	if (emu_srst && port.srst != State::S0) {
-		Wire *sel = module->addWire(NEW_ID);
+		//Wire *sel = module->addWire(NEW_ID);
+		Wire *sel = module->addWire(NEW_ID_NO_PREFIX("emu_srst_sel"));
 		FfData ff_sel(module, initvals, NEW_ID);
-		Wire *new_data = module->addWire(NEW_ID, GetSize(port.data));
+		//Wire *new_data = module->addWire(NEW_ID, GetSize(port.data));
+		Wire *new_data = module->addWire(NEW_ID_NO_PREFIX("emu_srst_new_data"), GetSize(port.data));
 		ff_sel.width = 1;
 		ff_sel.has_clk = true;
 		ff_sel.sig_clk = port.clk;
@@ -1614,10 +1623,13 @@ void Mem::emulate_read_first(FfInitVals *initvals) {
 			rd_ports[i].transparency_mask[j] = true;
 		}
 	for (auto &port: wr_ports) {
-		Wire *new_data = module->addWire(NEW_ID, GetSize(port.data));
-		Wire *new_addr = module->addWire(NEW_ID, GetSize(port.addr));
+		//Wire *new_data = module->addWire(NEW_ID, GetSize(port.data));
+		Wire *new_data = module->addWire(NEW_ID_NO_PREFIX("new_data"), GetSize(port.data));
+		//Wire *new_addr = module->addWire(NEW_ID, GetSize(port.addr));
+		Wire *new_addr = module->addWire(NEW_ID_NO_PREFIX("new_addr"), GetSize(port.addr));
 		auto compressed = port.compress_en();
-		Wire *new_en = module->addWire(NEW_ID, GetSize(compressed.first));
+		//Wire *new_en = module->addWire(NEW_ID, GetSize(compressed.first));
+		Wire *new_en = module->addWire(NEW_ID_NO_PREFIX("new_en"), GetSize(compressed.first));
 		FfData ff_data(module, initvals, NEW_ID);
 		FfData ff_addr(module, initvals, NEW_ID);
 		FfData ff_en(module, initvals, NEW_ID);
