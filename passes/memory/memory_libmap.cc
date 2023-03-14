@@ -1546,6 +1546,9 @@ std::vector<SigSpec> generate_mux(Mem &mem, int rpidx, const Swizzle &swz) {
 }
 
 void MemMapping::emit_port(const MemConfig &cfg, std::vector<Cell*> &cells, const PortVariant &pdef, const char *name, int wpidx, int rpidx, const std::vector<int> &hw_addr_swizzle) {
+	
+	int write_port_size;
+	int read_port_size;
 	for (auto &it: pdef.options)
 		for (auto cell: cells)
 			cell->setParam(stringf("\\PORT_%s_OPTION_%s", name, it.first.c_str()), it.second);
@@ -1689,13 +1692,31 @@ void MemMapping::emit_port(const MemConfig &cfg, std::vector<Cell*> &cells, cons
 		if (effective_byte == 0 || effective_byte > width)
 			effective_byte = width;
 		if (wpidx != -1) {
-			auto &wport = mem.wr_ports[wpidx];
+			auto &wport = mem.wr_ports[wpidx];                 			
+			write_port_size=GetSize(wport.data);
 			Swizzle port_swz = gen_swizzle(mem, cfg, wport.wide_log2, hw_wr_wide_log2);
 			std::vector<SigSpec> big_wren = generate_demux(mem, wpidx, port_swz);
 			for (int rd = 0; rd < cfg.repl_d; rd++) {
 				auto cell = cells[rd];
 				SigSpec hw_wdata;
 				SigSpec hw_wren;
+				// Ayyaz: This if block is added to handle  bit placement for Rapidsilicon Architecture for asymmetric BRAM
+			    if (mem.width < cfg.def->byte && write_port_size >= cfg.def->byte){
+					int count=0;
+					for (auto &bit : port_swz.bits[rd]) {
+						count++;
+						if (!bit.valid) {
+							if (count==effective_byte || count==3*effective_byte) continue;
+							else if (count==2*effective_byte ||count==4*effective_byte){
+							hw_wdata.append(State::Sx);
+							hw_wdata.append(State::Sx);
+							}
+						} else 
+							hw_wdata.append(wport.data[bit.bit]);
+					}
+				}
+				// original memory_libmap flow
+			    else{ 			
 				for (auto &bit : port_swz.bits[rd]) {
 					if (!bit.valid) {
 						hw_wdata.append(State::Sx);
@@ -1703,6 +1724,7 @@ void MemMapping::emit_port(const MemConfig &cfg, std::vector<Cell*> &cells, cons
 						hw_wdata.append(wport.data[bit.bit]);
 					}
 				}
+			    }
 				for (int i = 0; i < GetSize(port_swz.bits[rd]); i += effective_byte) {
 					auto &bit = port_swz.bits[rd][i];
 					if (!bit.valid) {
@@ -1749,6 +1771,7 @@ void MemMapping::emit_port(const MemConfig &cfg, std::vector<Cell*> &cells, cons
 		if (rpidx != -1) {
 			auto &rport = mem.rd_ports[rpidx];
 			auto &rpcfg = cfg.rd_ports[rpidx];
+			read_port_size=GetSize(rport.data);
 			Swizzle port_swz = gen_swizzle(mem, cfg, rport.wide_log2, hw_rd_wide_log2);
 			std::vector<SigSpec> big_rdata = generate_mux(mem, rpidx, port_swz);
 			for (int rd = 0; rd < cfg.repl_d; rd++) {
@@ -1813,11 +1836,30 @@ void MemMapping::emit_port(const MemConfig &cfg, std::vector<Cell*> &cells, cons
 				cell->setPort(stringf("\\PORT_%s_RD_DATA", name), hw_rdata);
 				SigSpec lhs;
 				SigSpec rhs;
-				for (int i = 0; i < GetSize(hw_rdata); i++) {
-					auto &bit = port_swz.bits[rd][i];
-					if (bit.valid) {
-						lhs.append(big_rdata[bit.mux_idx][bit.bit]);
-						rhs.append(hw_rdata[i]);
+				//Ayyaz:  This if block is added to handle bit placement for Rapidsilicon Architecture for asymmetric BRAM
+				if (mem.width < cfg.def->byte && read_port_size >= cfg.def->byte ){
+					for (int i = 0; i < GetSize(hw_rdata); i++) {
+						auto &bit = port_swz.bits[rd][i];
+						if (bit.valid) {
+							lhs.append(big_rdata[bit.mux_idx][bit.bit]);
+							if(i==(2*cfg.def->byte-2) || i==(4*cfg.def->byte -2)) continue;
+							rhs.append(hw_rdata[i]);
+						}
+						else {
+							if (i==(cfg.def->byte -1) || i==(3*cfg.def->byte -1)){
+							rhs.append(hw_rdata[i]);
+							}
+						}
+					}
+				}
+				// Original memory_libmap flow
+				else{
+					for (int i = 0; i < GetSize(hw_rdata); i++) {
+						auto &bit = port_swz.bits[rd][i];
+						if (bit.valid) {
+							lhs.append(big_rdata[bit.mux_idx][bit.bit]);
+							rhs.append(hw_rdata[i]);
+						}
 					}
 				}
 				mem.module->connect(lhs, rhs);
