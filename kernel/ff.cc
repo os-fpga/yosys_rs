@@ -280,9 +280,9 @@ FfData FfData::slice(const std::vector<int> &bits) {
 	//
         IdString newId;
 
-	if (GetSize(sig_q) == 1) {
+	if (bits.size() == 1) {
 
-          SigBit sigQ = sig_q;
+          SigBit sigQ = sig_q[0];
 
           string FfQname = sigTostring(sigQ);
 
