@@ -599,10 +599,10 @@ struct MemoryDffWorker
 				wpIdxVec.push_back(i);
 			}
 		}
-		if (wpIdxVec.empty()) {
-			log("address FF clock is not compatible with write clock.\n");
-			return;
-		}
+		//if (wpIdxVec.empty()) {
+		//	log("address FF clock is not compatible with write clock.\n");
+		//	return;
+		//}
 		// Now we're commited to merge it.
 		merger.mark_input_ff(bits);
 		// If the address FF has enable and/or sync reset, unmap it.
