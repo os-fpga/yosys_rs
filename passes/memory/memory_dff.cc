@@ -599,6 +599,9 @@ struct MemoryDffWorker
 				wpIdxVec.push_back(i);
 			}
 		}
+		/*
+		 * Lilit: EDA-882
+		 */
 		//if (wpIdxVec.empty()) {
 		//	log("address FF clock is not compatible with write clock.\n");
 		//	return;
