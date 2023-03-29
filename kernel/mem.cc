@@ -1594,9 +1594,25 @@ bool Mem::emulate_read_first_ok() {
 			return false;
 		// No point doing this operation if there is no read-first relationship
 		// in the first place.
+
+		/*EDA-1278: To check if the TDP RAM is No-change that is write-en and read-en are exclusive,
+		* then below check make sure that it should not take No-change TDP RAM as read first TDP RAM.
+		*/
+		for (auto &cell : module->selected_cells()) {
+            if ((cell->type == RTLIL::escape_id("$logic_not")))
+			{
+				for (auto &r: rd_ports) {
+					for (auto &w: wr_ports) {
+						if (r.en==cell->getPort(ID::Y) && (w.en[0]==cell->getPort(ID::A)))
+						for (int j = 0; j < GetSize(wr_ports); j++)
+							port.transparency_mask[j] = true; 
+					} 
+				}
+			}
+		}
 		/* (Ayyaz/Awaise): Below if block check is added for speparating write-first TDP from read-first TDP
-         * for the single clock.
-		 */
+		* for the single clock.
+		*/
 		if (port.transparency_mask[i]){
 			for (int j = 0; j < GetSize(wr_ports); j++){
 				port.transparency_mask[j] = true; 
