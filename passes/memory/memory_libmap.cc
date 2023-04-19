@@ -450,7 +450,8 @@ void MemMapping::determine_style() {
 				continue;
 			if (val_s == "auto") {
 				// Nothing.
-			} else if (val_s == "logic" || val_s == "registers") {
+			// } else if (val_s == "logic" || val_s == "registers") {
+			} else if (val_s == "logic" || val_s == "registers" || val_s == "pipe_distributed") { // Awais: pipe_distributed ram kind is mapped to logic 
 				kind = RamKind::Logic;
 			} else if (val_s == "distributed") {
 				kind = RamKind::Distributed;
