@@ -25,12 +25,16 @@ PRIVATE_NAMESPACE_BEGIN
 
 struct TribufConfig {
 	bool merge_mode;
+	bool rs_merge_mode;
 	bool logic_mode;
+	bool rs_logic_mode;
 	bool formal_mode;
 
 	TribufConfig() {
 		merge_mode = false;
+		rs_merge_mode = false;
 		logic_mode = false;
+		rs_logic_mode = false;
 		formal_mode = false;
 	}
 };
@@ -57,7 +61,7 @@ struct TribufWorker {
 		dict<SigSpec, vector<Cell*>> tribuf_cells;
 		pool<SigBit> output_bits;
 
-		if (config.logic_mode || config.formal_mode)
+		if (config.logic_mode || config.rs_logic_mode || config.formal_mode)
 			for (auto wire : module->wires())
 				if (wire->port_output)
 					for (auto bit : sigmap(wire))
@@ -89,6 +93,20 @@ struct TribufWorker {
 					cell->type = tri_type;
 					tribuf_cells[sigmap(cell->getPort(ID::Y))].push_back(cell);
 					module->design->scratchpad_set_bool("tribuf.added_something", true);
+
+	                                if (config.rs_merge_mode || config.rs_logic_mode) {
+                                           std::string inst_name= log_id(cell->name);
+                                           std::regex pattern1("\\$tribuf_conflict\\$");
+                                           std::regex pattern2("\\$\\d+$");
+                                           std::regex pattern3(".*\\$");
+                                           std::string out = std::regex_replace(inst_name,pattern1,"");
+                                           out = std::regex_replace(out,pattern2,"");
+                                           out = std::regex_replace(out,pattern3,"");
+                
+                                           log_warning("Transforming tri-state at RTL line %s into pure logic:\n", 
+                                                       out.c_str());
+                                           log("         Functional Behavior may change.\n");
+                                        }
 					continue;
 				}
 
@@ -99,18 +117,33 @@ struct TribufWorker {
 					cell->type = tri_type;
 					tribuf_cells[sigmap(cell->getPort(ID::Y))].push_back(cell);
 					module->design->scratchpad_set_bool("tribuf.added_something", true);
+
+	                                if (config.rs_merge_mode || config.rs_logic_mode) {
+                                           std::string inst_name= log_id(cell->name);
+                                           std::regex pattern1("\\$tribuf_conflict\\$");
+                                           std::regex pattern2("\\$\\d+$");
+                                           std::regex pattern3(".*\\$");
+                                           std::string out = std::regex_replace(inst_name,pattern1,"");
+                                           out = std::regex_replace(out,pattern2,"");
+                                           out = std::regex_replace(out,pattern3,"");
+                
+                                           log_warning("Transforming tri-state at RTL line %s into pure logic:\n", 
+                                                       out.c_str());
+                                           log("         Functional Behavior may change.\n");
+                                        }
 					continue;
 				}
 			}
 		}
 
-		if (config.merge_mode || config.logic_mode || config.formal_mode)
+		if (config.merge_mode || config.rs_merge_mode || config.logic_mode || config.rs_logic_mode ||
+                    config.formal_mode)
 		{
 			for (auto &it : tribuf_cells)
 			{
 				bool no_tribuf = false;
 
-				if (config.logic_mode && !config.formal_mode) {
+				if ((config.logic_mode || config.rs_logic_mode) && !config.formal_mode) {
 					no_tribuf = true;
 					for (auto bit : it.first)
 						if (output_bits.count(bit))
@@ -152,9 +185,9 @@ struct TribufWorker {
 					}
 				}
 
-				SigSpec pmux_b, pmux_s;
+				SigSpec pmux_b, pmux_s, muxout;
 				for (auto cell : it.second) {
-					if (cell->type == ID($tribuf))
+					if (cell->type == ID($tribuf)) 
 						pmux_s.append(cell->getPort(ID::EN));
 					else
 						pmux_s.append(cell->getPort(ID::E));
@@ -162,7 +195,14 @@ struct TribufWorker {
 					module->remove(cell);
 				}
 
-				SigSpec muxout = GetSize(pmux_s) > 1 ? module->Pmux(NEW_ID, SigSpec(State::Sx, GetSize(it.first)), pmux_b, pmux_s) : pmux_b;
+                                // in Rapid Silicon mode we consider also pmux with size 1 and during merge
+                                // we build a pmux with default value '0' instead of default 'x'.
+                                //
+		                if (config.rs_merge_mode || config.rs_logic_mode) {
+				   muxout = GetSize(pmux_s) >= 1 ? module->Pmux(NEW_ID, SigSpec(State::S0, GetSize(it.first)), pmux_b, pmux_s) : pmux_b;
+                                } else {
+				   muxout = GetSize(pmux_s) > 1 ? module->Pmux(NEW_ID, SigSpec(State::Sx, GetSize(it.first)), pmux_b, pmux_s) : pmux_b;
+                                }
 
 				if (no_tribuf)
 					module->connect(it.first, muxout);
@@ -198,6 +238,9 @@ struct TribufPass : public Pass {
 		log("        add a formal assertion that no two buffers are driving the\n");
 		log("        same net simultaneously. this option implies -merge.\n");
 		log("\n");
+
+                // do not list -rs_merge and -rs_logic as they are Rapid Silicon hidden options
+                //
 	}
 	void execute(std::vector<std::string> args, RTLIL::Design *design) override
 	{
@@ -211,8 +254,16 @@ struct TribufPass : public Pass {
 				config.merge_mode = true;
 				continue;
 			}
+			if (args[argidx] == "-rs_merge") {
+				config.rs_merge_mode = true;
+				continue;
+			}
 			if (args[argidx] == "-logic") {
 				config.logic_mode = true;
+				continue;
+			}
+			if (args[argidx] == "-rs_logic") {
+				config.rs_logic_mode = true;
 				continue;
 			}
 			if (args[argidx] == "-formal") {
