@@ -33,7 +33,7 @@ struct MuxData {
 	int base_idx;
 	int size;
 	bool is_b;
-	SigSpec sig_s;
+	SigSpec sig_s, PortA, PortB;
 	std::vector<SigSpec> sig_other;
 };
 
@@ -233,7 +233,7 @@ struct MemoryDffWorker
 	// signal's only user is a mux data signal, passes through the mux
 	// and remembers information about it.  Conceptually works on every
 	// bit separately, but coalesces the result when possible.
-	SigSpec walk_muxes(SigSpec data, std::vector<MuxData> &res) {
+	SigSpec walk_muxes(SigSpec data, std::vector<MuxData> &res,string &mux_id) {
 		bool did_something;
 		do {
 			did_something = false;
@@ -273,10 +273,13 @@ struct MemoryDffWorker
 					md.size = 0;
 					md.is_b = is_b;
 					md.sig_s = consumer.cell->getPort(ID::S);
+					md.PortA = consumer.cell->getPort(ID::A);
+					md.PortB = consumer.cell->getPort(ID::B);
 					md.sig_other.resize(GetSize(md.sig_s));
 					prev_cell = consumer.cell;
 					prev_is_b = is_b;
 					res.push_back(md);
+					mux_id = log_id(consumer.cell->name);
 				}
 				auto &md = res.back();
 				md.size++;
@@ -337,7 +340,11 @@ struct MemoryDffWorker
 		log("Checking read port `%s'[%d] in module `%s': ", mem.memid.c_str(), idx, module->name.c_str());
 
 		std::vector<MuxData> muxdata;
-		SigSpec data = walk_muxes(port.data, muxdata);
+		string muxid = "";
+		bool is_rdbyp = false;
+		bool rdbyp = false;
+		SigSpec data = walk_muxes(port.data, muxdata,muxid);
+
 		FfData ff;
 		pool<std::pair<Cell *, int>> bits;
 		if (!merger.find_output_ff(data, ff, bits)) {
@@ -427,9 +434,13 @@ struct MemoryDffWorker
 							continue;
 						if (pd.uncollidable_mask[bitidx])
 							continue;
+						if (wport.en[bitidx] != sbit and wport.data[bitidx] != odbit and (port.data == md.PortA or port.data == md.PortB))
+							rdbyp = true;
+
 						bool match = cache.is_w2rbyp(pi, wport.en[bitidx], sbit, md.is_b);
 						if (!match)
 							continue;
+						
 						// If we got here, we recognized this mux sel
 						// as valid bypass sel for a given port bit.
 						if (odbit == State::Sx) {
@@ -457,6 +468,12 @@ struct MemoryDffWorker
 							log("FF found, but with a mux data input that doesn't seem to correspond to transparency logic.\n");
 							return;
 						}
+					}
+
+					if (rdbyp == true and recognized == false){
+						recognized = true;
+						is_rdbyp = true;
+						break;
 					}
 					if (!recognized) {
 						// If we haven't positively identified this as
@@ -533,7 +550,8 @@ struct MemoryDffWorker
 			port.srst = State::S0;
 		}
 		port.init_value = ff.val_init;
-		port.data = ff.sig_q;
+		if (is_rdbyp == false)
+			port.data = ff.sig_q;
 		for (int pi = 0; pi < GetSize(mem.wr_ports); pi++) {
 			auto &pd = portdata[pi];
 			if (!pd.relevant)
@@ -546,6 +564,15 @@ struct MemoryDffWorker
 				port.transparency_mask[pi] = true;
 			} else {
 				log("    Write port %d: non-transparent.\n", pi);
+			}
+		}
+		if (is_rdbyp == true){
+			for (auto cell : module->cells())
+			{
+				if (cell->type == ID($mux)  and muxid == log_id(cell->name)){
+					cell->setPort(ID::A,port.data);
+					cell->setPort(ID::Y,ff.sig_q);
+				}
 			}
 		}
 		mem.emit();
