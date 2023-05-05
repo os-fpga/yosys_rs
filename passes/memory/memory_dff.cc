@@ -469,12 +469,13 @@ struct MemoryDffWorker
 							return;
 						}
 					}
-
+					// Begin: Fix for EDA-1459, by Awais: If ram is not write first and there is a bypass mux at read port then break the loop
 					if (rdbyp == true and recognized == false){
 						recognized = true;
 						is_rdbyp = true;
 						break;
 					}
+					// End: Fix for EDA-1459, by Awais: If ram is not write first and there is a bypass mux at read port then break the loop
 					if (!recognized) {
 						// If we haven't positively identified this as
 						// a bypass: it's still skippable if the
@@ -550,6 +551,7 @@ struct MemoryDffWorker
 			port.srst = State::S0;
 		}
 		port.init_value = ff.val_init;
+		// Begin: Fix for EDA-1459, by Awais
 		if (is_rdbyp == false)
 			port.data = ff.sig_q;
 		for (int pi = 0; pi < GetSize(mem.wr_ports); pi++) {
@@ -566,6 +568,7 @@ struct MemoryDffWorker
 				log("    Write port %d: non-transparent.\n", pi);
 			}
 		}
+		// Begin: Fix for EDA-1459, by Awais: If ram is not write first and there is a bypass mux at read port then bypass memory output port via this mux
 		if (is_rdbyp == true){
 			for (auto cell : module->cells())
 			{
@@ -575,6 +578,7 @@ struct MemoryDffWorker
 				}
 			}
 		}
+		// End: Fix for EDA-1459, by Awais
 		mem.emit();
 	}
 
