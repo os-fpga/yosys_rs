@@ -33,7 +33,7 @@ struct MuxData {
 	int base_idx;
 	int size;
 	bool is_b;
-	SigSpec sig_s, PortA, PortB;
+	SigSpec sig_s, PortA, PortB, PortY;
 	std::vector<SigSpec> sig_other;
 };
 
@@ -275,6 +275,7 @@ struct MemoryDffWorker
 					md.sig_s = consumer.cell->getPort(ID::S);
 					md.PortA = consumer.cell->getPort(ID::A);
 					md.PortB = consumer.cell->getPort(ID::B);
+					md.PortY = consumer.cell->getPort(ID::Y);
 					md.sig_other.resize(GetSize(md.sig_s));
 					prev_cell = consumer.cell;
 					prev_is_b = is_b;
@@ -434,8 +435,9 @@ struct MemoryDffWorker
 							continue;
 						if (pd.uncollidable_mask[bitidx])
 							continue;
-						if (wport.en[bitidx] != sbit and wport.data[bitidx] != odbit and (port.data == md.PortA or port.data == md.PortB))
+						if (wport.en[bitidx] != sbit and wport.data[bitidx] != odbit and (port.data == md.PortA or port.data == md.PortB) and odbit != State::Sx){
 							rdbyp = true;
+						}
 
 						bool match = cache.is_w2rbyp(pi, wport.en[bitidx], sbit, md.is_b);
 						if (!match)
@@ -570,13 +572,17 @@ struct MemoryDffWorker
 		}
 		// Begin: Fix for EDA-1459, by Awais: If ram is not write first and there is a bypass mux at read port then bypass memory output port via this mux
 		if (is_rdbyp == true){
+			SigSpec bypass_mux_out = mem.module->addWire(NEW_ID, GetSize(ff.sig_q));
+			SigSpec tri_buf_in = mem.module->addWire(NEW_ID, GetSize(ff.sig_q));
 			for (auto cell : module->cells())
 			{
 				if (cell->type == ID($mux)  and muxid == log_id(cell->name)){
 					cell->setPort(ID::A,port.data);
-					cell->setPort(ID::Y,ff.sig_q);
+					cell->setPort(ID::Y,bypass_mux_out);
 				}
 			}
+			module->addMux(NEW_ID, port.data ,bypass_mux_out, port.en, tri_buf_in);
+			module->addMux(NEW_ID, ff.sig_q, tri_buf_in, port.en, ff.sig_q);
 		}
 		// End: Fix for EDA-1459, by Awais
 		mem.emit();
