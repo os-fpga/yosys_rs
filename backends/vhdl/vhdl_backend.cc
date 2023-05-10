@@ -294,7 +294,8 @@ void vhdl_dump_const(std::ostream &f, const RTLIL::Const &data, int width = -1, 
 	if (nostr)
 		goto vhdl_dump_hex;
 	if ((data.flags & RTLIL::CONST_FLAG_STRING) == 0 || width != (int)data.bits.size()) {
-		if (width == 32 && !no_decimal && !nodec) {
+		if (width == 32 && !no_decimal && !nodec && 0) { // EDA-1499 : ignore decimal mode with specific
+                                                                 // width==32 case (Thierry)
 			int32_t val = 0;
 			for (int i = offset+width-1; i >= offset; i--) {
 				log_assert(i < (int)data.bits.size());
