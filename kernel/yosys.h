@@ -291,7 +291,7 @@ int GetSize(RTLIL::Wire *wire);
 
 extern int autoidx;
 extern int yosys_xtrace;
-
+extern bool mem_async_read;
 YOSYS_NAMESPACE_END
 
 #include "kernel/log.h"

@@ -98,6 +98,7 @@ std::vector<void*> memhasher_store;
 std::string yosys_share_dirname;
 std::string yosys_abc_executable;
 std::string yosys_shared_tmp_dirname;
+bool mem_async_read= false;
 
 void init_share_dirname();
 void init_abc_executable_name();
