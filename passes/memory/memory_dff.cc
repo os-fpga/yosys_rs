@@ -221,6 +221,8 @@ struct MemoryDffWorker
 	FfInitVals initvals;
 	FfMergeHelper merger;
 	bool flag_no_rw_check;
+	bool no_addr_ff = false;
+	bool no_out_ff = false;
 
 	MemoryDffWorker(Module *module, bool flag_no_rw_check) : module(module), modwalker(module->design), flag_no_rw_check(flag_no_rw_check)
 	{
@@ -342,6 +344,7 @@ struct MemoryDffWorker
 		pool<std::pair<Cell *, int>> bits;
 		if (!merger.find_output_ff(data, ff, bits)) {
 			log("no output FF found.\n");
+			no_out_ff = true;
 			return;
 		}
 		if (!ff.has_clk) {
@@ -560,6 +563,7 @@ struct MemoryDffWorker
 		pool<std::pair<Cell *, int>> bits;
 		if (!merger.find_input_ff(port.addr, ff, bits)) {
 			log("no address FF found.\n");
+			no_addr_ff =true;
 			return;
 		}
 		if (!ff.has_clk) {
@@ -643,6 +647,19 @@ struct MemoryDffWorker
 					handle_rd_port_addr(mem, i);
 			}
 		}
+		// Begin: Awais: Fix for EDA-1436: (Map memory with async read to soft logic when inline attribute is block)
+		for (auto &mem : memories) {
+			for (auto attr: {ID::ram_block, ID::rom_block, ID::ram_style, ID::rom_style, ID::ramstyle, ID::romstyle, ID::syn_ramstyle, ID::syn_romstyle}) {
+				if (mem.has_attribute(attr) and no_out_ff and no_addr_ff) {
+					Const val = mem.attributes.at(attr);
+					std::string val_s = val.decode_string();
+					if (val_s == "block"){
+						mem_async_read = true;
+					}
+				}
+			}
+		}
+		// End: Awais: Fix for EDA-1436: (Map memory with async read to soft logic when inline attribute is block)
 	}
 };
 
