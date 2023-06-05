@@ -132,6 +132,7 @@ void set_module_parameters(const Map* parameters, RTLIL::Module* mod) {
 	{
 		if (verific_verbose)
 			log("Setting parameter %s to %s for %s module.\n", k, v, mod->name.c_str());
+		log("Setting parameter %s to %s for %s module.\n", k, v, mod->name.c_str());
 		IdString paramName = IdString(std::string("\\") + k);
 		mod->avail_parameters(paramName);
 	}
@@ -150,6 +151,7 @@ void set_instance_parameters(Design *design)
 					std::vector<bool> bits;
 					if (verific_verbose)
 						log("Setting parameter %s to %s for %s cell.\n", k, v, cell.second->name.c_str());
+				log("Setting parameter %s to %s for %s cell.\n", k, v, cell.second->name.c_str());
 					size_t len = strlen(v);
 					for (int i = len - 1; i >= 0; --i) {
 						if (v[i] == 'b')

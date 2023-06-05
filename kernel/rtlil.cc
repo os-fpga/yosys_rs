@@ -792,6 +792,11 @@ void RTLIL::Design::rename(RTLIL::Module *module, RTLIL::IdString new_name)
 {
 	modules_.erase(module->name);
 	module->name = new_name;
+	for (auto &it : modules_){
+	 	if (it.first==new_name){
+			modules_.erase(module->name);
+		}
+	}
 	add(module);
 }
 
