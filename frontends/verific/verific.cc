@@ -126,24 +126,29 @@ string get_full_netlist_name(Netlist *nl)
 
 
 void set_module_parameters(const Map* parameters, RTLIL::Module* mod) {
-	MapIter mIter;
-	const char *k, *v;
-	FOREACH_MAP_ITEM(parameters, mIter, &k, &v)
-	{
-		if (verific_verbose)
-			log("Setting parameter %s to %s for %s module.\n", k, v, mod->name.c_str());
-		log("Setting parameter %s to %s for %s module.\n", k, v, mod->name.c_str());
-		IdString paramName = IdString(std::string("\\") + k);
-		mod->avail_parameters(paramName);
-	}
+	log("In set_module_parameters function.\n");
+				MapIter mIter;
+				const char *k, *v;
+				FOREACH_MAP_ITEM(parameters, mIter, &k, &v)
+				{
+					if (verific_verbose)
+						log("Setting parameter %s to %s for %s module.\n", k, v, mod->name.c_str());
+					//log("setting_module_parameters %s to %s for %s module.\n", k, v, mod->name.c_str());
+					IdString paramName = IdString(std::string("\\") + k);
+					log("paramName %s for module %s.\n", paramName.c_str(), mod->name.c_str());
+					mod->avail_parameters(paramName);
+				}
 }
+	
 
 void set_instance_parameters(Design *design)
 {
+	log("In set_instance_parameters function.\n");
 	for (auto module : design->selected_modules()) {
 		for (auto cell : module->cells_) {
 			auto it = moduleToParamsMap.find(cell.second->type);
 			if (it != moduleToParamsMap.end()) {
+				log("Printing Cell type %s and cell_name %s.\n", cell.second->type.c_str(),cell.second->name.c_str());
 				MapIter mIter;
 				const char *k, *v;
 				FOREACH_MAP_ITEM(it->second, mIter, &k, &v)
@@ -151,7 +156,7 @@ void set_instance_parameters(Design *design)
 					std::vector<bool> bits;
 					if (verific_verbose)
 						log("Setting parameter %s to %s for %s cell.\n", k, v, cell.second->name.c_str());
-				log("Setting parameter %s to %s for %s cell.\n", k, v, cell.second->name.c_str());
+				//log("Setting parameter %s to %s for %s cell having cell type %s.\n", k, v, cell.second->name.c_str(),cell.second->type.c_str());
 					size_t len = strlen(v);
 					for (int i = len - 1; i >= 0; --i) {
 						if (v[i] == 'b')
@@ -1116,6 +1121,7 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 
 	module = new RTLIL::Module;
 	module->name = module_name;
+	module->context_name = module_name;
 	design->add(module);
 	RTLIL::IdString protectId("$rs_protected");
 

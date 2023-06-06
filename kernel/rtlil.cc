@@ -665,7 +665,7 @@ RTLIL::Module *RTLIL::Design::top_module()
 
 void RTLIL::Design::add(RTLIL::Module *module)
 {
-	log_assert(modules_.count(module->name) == 0);
+	log_assert(modules_.count( module->context_name) == 0);
 	log_assert(refcount_modules_ == 0);
 	modules_[module->name] = module;
 	module->design = this;
@@ -792,11 +792,6 @@ void RTLIL::Design::rename(RTLIL::Module *module, RTLIL::IdString new_name)
 {
 	modules_.erase(module->name);
 	module->name = new_name;
-	for (auto &it : modules_){
-	 	if (it.first==new_name){
-			modules_.erase(module->name);
-		}
-	}
 	add(module);
 }
 

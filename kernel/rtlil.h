@@ -1161,6 +1161,7 @@ public:
 	std::vector<RTLIL::Binding*> bindings_;
 
 	RTLIL::IdString name;
+	RTLIL::IdString context_name;
 	idict<RTLIL::IdString> avail_parameters;
 	dict<RTLIL::IdString, RTLIL::Const> parameter_default_values;
 	dict<RTLIL::IdString, RTLIL::Memory*> memories;
