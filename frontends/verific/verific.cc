@@ -185,22 +185,21 @@ void set_instance_parameters(Design *design)
 						log("Setting parameter %s to %s for %s cell.\n", k, v, cell.second->name.c_str());
 					size_t len = strlen(v);
 					if (!containsOnlyAlphabets(v)){ // if 'v' (pram value) contains digit then we follow default binary conversion
-					for (int i = len - 1; i >= 0; --i) {
-						if (v[i] == 'b')
-							break;
-						bits.push_back(v[i] == '1');
-					}
-					paramValue = Const(bits);
+						for (int i = len - 1; i >= 0; --i) {
+							if (v[i] == 'b')
+								break;
+							bits.push_back(v[i] == '1');
+						}
+						paramValue = Const(bits);
 					}
 					// if we reach in else condition here, then param value would be string.
 					/* Begin- EDA-1419 string param value support */
 					else {
-					char* updated = updateMiddleChars(v); //here remove the double qoutes
-					paramValue = Const(updated);
-					delete[]updated;
+						char* updated = updateMiddleChars(v); //here remove the double qoutes
+						paramValue = Const(updated);
+						delete[]updated;
 					}
 					/* END- EDA-1419 string param value support */
-
 					IdString paramName = IdString(std::string("\\") + k);
 					cell.second->setParam(paramName, paramValue);
 				}
