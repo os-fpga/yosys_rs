@@ -98,7 +98,7 @@ void reset_auto_counter(RTLIL::Module *module)
 	for (size_t i = 10; i < auto_name_offset + auto_name_map.size(); i = i*10)
 		auto_name_digits++;
 
-	if (verbose)
+	if (0 && verbose)
 		for (auto it = auto_name_map.begin(); it != auto_name_map.end(); ++it)
 			log("  renaming `%s' to `%s_%0*d_'.\n", it->first.c_str(), auto_prefix.c_str(), auto_name_digits, auto_name_offset + it->second);
 }
