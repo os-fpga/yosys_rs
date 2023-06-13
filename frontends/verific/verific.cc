@@ -141,6 +141,38 @@ void set_module_parameters(const Map* parameters, RTLIL::Module* mod) {
 }
 	
 
+//********* EDA-1419 for string param support *********//
+bool containsOnlyAlphabets(const char* v) {
+    size_t length = strlen(v);
+    for (int i = length - 1; i >= 0; --i) { // Reads from LSB side if found any digit return false 
+        if (isdigit(v[i])) { 
+            return false;
+        }
+    }
+    return true; // return true only when we have a complete string param value 
+}
+
+char* updateMiddleChars(const char* v) {
+    if (v == nullptr || v[0] == '\0' || v[1] == '\0') {
+        return nullptr;  // Handle edge cases where the string is empty or contains only one character
+    }
+
+    size_t length = strlen(v);
+    char* updated = new char[length - 1];  // Allocate memory for the new string
+
+    /* Copy the middle characters, excluding the first and last 
+	   characters that are ("") e.g from "false" we suppose to remove ("") as
+	   later function automatically adds them.*/
+
+    strncpy(updated, v + 1, length - 2);
+    updated[length - 2] = '\0';  // Add null-terminator at the end
+
+    return updated;
+}
+//********* EDA-1419 for string param support *********//
+
+
+
 void set_instance_parameters(Design *design)
 {
 	log("In set_instance_parameters function.\n");
@@ -151,6 +183,7 @@ void set_instance_parameters(Design *design)
 				log("Printing Cell type %s and cell_name %s.\n", cell.second->type.c_str(),cell.second->name.c_str());
 				MapIter mIter;
 				const char *k, *v;
+				Const paramValue;
 				FOREACH_MAP_ITEM(it->second, mIter, &k, &v)
 				{
 					std::vector<bool> bits;
@@ -158,13 +191,22 @@ void set_instance_parameters(Design *design)
 						log("Setting parameter %s to %s for %s cell.\n", k, v, cell.second->name.c_str());
 				//log("Setting parameter %s to %s for %s cell having cell type %s.\n", k, v, cell.second->name.c_str(),cell.second->type.c_str());
 					size_t len = strlen(v);
-					for (int i = len - 1; i >= 0; --i) {
-						if (v[i] == 'b')
-							break;
-						bits.push_back(v[i] == '1');
+					if (!containsOnlyAlphabets(v)){ // if 'v' (pram value) contains digit then we follow default binary conversion
+						for (int i = len - 1; i >= 0; --i) {
+							if (v[i] == 'b')
+								break;
+							bits.push_back(v[i] == '1');
+						}
+						paramValue = Const(bits);
 					}
-
-					Const paramValue = Const(bits);
+					// if we reach in else condition here, then param value would be string.
+					/* Begin- EDA-1419 string param value support */
+					else {
+						char* updated = updateMiddleChars(v); //here remove the double qoutes
+						paramValue = Const(updated);
+						delete[]updated;
+					}
+					/* END- EDA-1419 string param value support */
 					IdString paramName = IdString(std::string("\\") + k);
 					cell.second->setParam(paramName, paramValue);
 				}
@@ -1142,7 +1184,10 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 		"RS_DSP_MULT_REGOUT", "RS_DSP_MULT_REGIN_REGOUT", "RS_DSP_MULTADD",
 		"RS_DSP_MULTADD_REGIN", "RS_DSP_MULTADD_REGOUT", "RS_DSP_MULTADD_REGIN_REGOUT",
 		"RS_DSP_MULTACC", "RS_DSP_MULTACC_REGIN", "RS_DSP_MULTACC_REGOUT",
-		"RS_DSP_MULTACC_REGIN_REGOUT", "RS_TDP36K"};
+		"RS_DSP_MULTACC_REGIN_REGOUT", "RS_TDP36K",
+		/* genesis3 primitives */
+		"FIFO18K","FIFO36K","CLK_BUF","IO_BUF","IO_BUF_DS", "I_BUF", "I_BUF_DS", "I_DDR", "O_BUF", "O_BUFT_DS",
+		"O_BUFT", "O_DDR", "O_SERDES", "I_SERDES"};
 
 	std::sort(primitive_names.begin(), primitive_names.end(), [] (const std::string& first, const std::string& second)
 	{
