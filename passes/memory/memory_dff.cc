@@ -224,6 +224,7 @@ struct MemoryDffWorker
 	bool no_addr_ff = false;
 	bool no_out_ff = false;
 
+	bool recognized;
 	MemoryDffWorker(Module *module, bool flag_no_rw_check) : module(module), modwalker(module->design), flag_no_rw_check(flag_no_rw_check)
 	{
 		modwalker.setup(module);
@@ -235,7 +236,7 @@ struct MemoryDffWorker
 	// signal's only user is a mux data signal, passes through the mux
 	// and remembers information about it.  Conceptually works on every
 	// bit separately, but coalesces the result when possible.
-	SigSpec walk_muxes(SigSpec data, std::vector<MuxData> &res) {
+	SigSpec walk_muxes(SigSpec data, std::vector<MuxData> &res, string &mux_id) {
 		bool did_something;
 		do {
 			did_something = false;
@@ -279,6 +280,7 @@ struct MemoryDffWorker
 					prev_cell = consumer.cell;
 					prev_is_b = is_b;
 					res.push_back(md);
+					mux_id = log_id(consumer.cell->name);
 				}
 				auto &md = res.back();
 				md.size++;
@@ -339,7 +341,8 @@ struct MemoryDffWorker
 		log("Checking read port `%s'[%d] in module `%s': ", mem.memid.c_str(), idx, module->name.c_str());
 
 		std::vector<MuxData> muxdata;
-		SigSpec data = walk_muxes(port.data, muxdata);
+		string muxid = "";
+		SigSpec data = walk_muxes(port.data, muxdata,muxid);
 		FfData ff;
 		pool<std::pair<Cell *, int>> bits;
 		if (!merger.find_output_ff(data, ff, bits)) {
@@ -422,7 +425,7 @@ struct MemoryDffWorker
 				SigSpec &odata = md.sig_other[sel_idx];
 				for (int bitidx = md.base_idx; bitidx < md.base_idx+md.size; bitidx++) {
 					SigBit odbit = odata[bitidx-md.base_idx];
-					bool recognized = false;
+					recognized = false;
 					for (int pi = 0; pi < GetSize(mem.wr_ports); pi++) {
 						auto &pd = portdata[pi];
 						auto &wport = mem.wr_ports[pi];
@@ -473,6 +476,7 @@ struct MemoryDffWorker
 						log("FF found, but with a mux select that doesn't seem to correspond to transparency logic.\n");
 						return;
 					}
+
 				}
 			}
 			// Done with this mux, now actually apply the transparencies.
@@ -536,7 +540,18 @@ struct MemoryDffWorker
 			port.srst = State::S0;
 		}
 		port.init_value = ff.val_init;
-		port.data = ff.sig_q;
+		// Awais: Write first mux is handled for write first bram
+		if (!recognized)
+			port.data = ff.sig_q;
+		else{
+			for (auto cell : module->cells()){
+				if (cell->type == ID($mux)  and muxid == log_id(cell->name)){
+					cell->setPort(ID::A,port.data);
+					cell->setPort(ID::Y,ff.sig_q);
+				}
+			}
+		}
+		// Awais: Write first mux is handled for write first bram
 		for (int pi = 0; pi < GetSize(mem.wr_ports); pi++) {
 			auto &pd = portdata[pi];
 			if (!pd.relevant)
