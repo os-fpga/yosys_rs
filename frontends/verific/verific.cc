@@ -126,16 +126,15 @@ string get_full_netlist_name(Netlist *nl)
 
 
 void set_module_parameters(const Map* parameters, RTLIL::Module* mod) {
-	log("In set_module_parameters function.\n");
+
 				MapIter mIter;
 				const char *k, *v;
 				FOREACH_MAP_ITEM(parameters, mIter, &k, &v)
 				{
 					if (verific_verbose)
 						log("Setting parameter %s to %s for %s module.\n", k, v, mod->name.c_str());
-					//log("setting_module_parameters %s to %s for %s module.\n", k, v, mod->name.c_str());
+
 					IdString paramName = IdString(std::string("\\") + k);
-					log("paramName %s for module %s.\n", paramName.c_str(), mod->name.c_str());
 					mod->avail_parameters(paramName);
 				}
 }
@@ -175,12 +174,10 @@ char* updateMiddleChars(const char* v) {
 
 void set_instance_parameters(Design *design)
 {
-	log("In set_instance_parameters function.\n");
 	for (auto module : design->selected_modules()) {
 		for (auto cell : module->cells_) {
-			auto it = moduleToParamsMap.find(cell.second->type);
+			auto it = moduleToParamsMap.find(cell.second->name); // w.r.t instance name search
 			if (it != moduleToParamsMap.end()) {
-				log("Printing Cell type %s and cell_name %s.\n", cell.second->type.c_str(),cell.second->name.c_str());
 				MapIter mIter;
 				const char *k, *v;
 				Const paramValue;
@@ -189,7 +186,6 @@ void set_instance_parameters(Design *design)
 					std::vector<bool> bits;
 					if (verific_verbose)
 						log("Setting parameter %s to %s for %s cell.\n", k, v, cell.second->name.c_str());
-				//log("Setting parameter %s to %s for %s cell having cell type %s.\n", k, v, cell.second->name.c_str(),cell.second->type.c_str());
 					size_t len = strlen(v);
 					if (!containsOnlyAlphabets(v)){ // if 'v' (pram value) contains digit then we follow default binary conversion
 						for (int i = len - 1; i >= 0; --i) {
@@ -1205,12 +1201,20 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 		}
 	}
 
-	if (is_blackbox(nl)) {
+    if (is_blackbox(nl)) {
 		log("Importing blackbox module %s.\n", RTLIL::id2cstr(module->name));
 		module->set_bool_attribute(ID::blackbox);
 		auto params = nl->GetParameters();
+		unsigned int no_of_instances= nl->GetReferences()->Size();
+		log("No of instances of this module %d.\n", no_of_instances);
+		for (unsigned i=0; i<no_of_instances; i=i+1){
+			Instance *inst1 = (Instance*)nl->GetReferences()->GetAt(i);
+			std::string inst_name = inst1->Name();
+			if (params) {
+				moduleToParamsMap["\\"+inst_name] = params;
+			}
+		}
 		if (params) {
-			moduleToParamsMap[module->name] = params;
 			set_module_parameters(params, module);
 		}
 	} else {
