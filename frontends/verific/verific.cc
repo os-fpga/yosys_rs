@@ -133,7 +133,6 @@ void set_module_parameters(const Map* parameters, RTLIL::Module* mod) {
 				{
 					if (verific_verbose)
 						log("Setting parameter %s to %s for %s module.\n", k, v, mod->name.c_str());
-
 					IdString paramName = IdString(std::string("\\") + k);
 					mod->avail_parameters(paramName);
 				}
@@ -1206,7 +1205,9 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 		module->set_bool_attribute(ID::blackbox);
 		auto params = nl->GetParameters();
 		unsigned int no_of_instances= nl->GetReferences()->Size();
+		#if 0
 		log("No of instances of this module %d.\n", no_of_instances);
+		#endif
 		for (unsigned i=0; i<no_of_instances; i=i+1){
 			Instance *inst1 = (Instance*)nl->GetReferences()->GetAt(i);
 			std::string inst_name = inst1->Name();
