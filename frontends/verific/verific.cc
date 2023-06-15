@@ -126,18 +126,17 @@ string get_full_netlist_name(Netlist *nl)
 
 
 void set_module_parameters(const Map* parameters, RTLIL::Module* mod) {
-
-				MapIter mIter;
-				const char *k, *v;
-				FOREACH_MAP_ITEM(parameters, mIter, &k, &v)
-				{
-					if (verific_verbose)
-						log("Setting parameter %s to %s for %s module.\n", k, v, mod->name.c_str());
-					IdString paramName = IdString(std::string("\\") + k);
-					mod->avail_parameters(paramName);
-				}
+	MapIter mIter;
+	const char *k, *v;
+	FOREACH_MAP_ITEM(parameters, mIter, &k, &v)
+	{
+		if (verific_verbose)
+			log("Setting parameter %s to %s for %s module.\n", k, v, mod->name.c_str());
+			IdString paramName = IdString(std::string("\\") + k);
+			mod->avail_parameters(paramName);
+	}
 }
-	
+
 
 //********* EDA-1419 for string param support *********//
 bool containsOnlyAlphabets(const char* v) {
