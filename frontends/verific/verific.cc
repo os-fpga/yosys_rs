@@ -132,8 +132,8 @@ void set_module_parameters(const Map* parameters, RTLIL::Module* mod) {
 	{
 		if (verific_verbose)
 			log("Setting parameter %s to %s for %s module.\n", k, v, mod->name.c_str());
-			IdString paramName = IdString(std::string("\\") + k);
-			mod->avail_parameters(paramName);
+		IdString paramName = IdString(std::string("\\") + k);
+		mod->avail_parameters(paramName);
 	}
 }
 
