@@ -137,6 +137,7 @@ void set_module_parameters(const Map* parameters, RTLIL::Module* mod) {
 	}
 }
 
+
 //********* EDA-1419 for string param support *********//
 bool containsOnlyAlphabets(const char* v) {
     size_t length = strlen(v);
@@ -173,7 +174,7 @@ void set_instance_parameters(Design *design)
 {
 	for (auto module : design->selected_modules()) {
 		for (auto cell : module->cells_) {
-			auto it = moduleToParamsMap.find(cell.second->type);
+			auto it = moduleToParamsMap.find(cell.second->name); // w.r.t instance name search
 			if (it != moduleToParamsMap.end()) {
 				MapIter mIter;
 				const char *k, *v;
@@ -1156,6 +1157,7 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 
 	module = new RTLIL::Module;
 	module->name = module_name;
+	module->context_name = module_name;
 	design->add(module);
 	RTLIL::IdString protectId("$rs_protected");
 
@@ -1196,13 +1198,22 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 			break;
 		}
 	}
-
 	if (is_blackbox(nl)) {
 		log("Importing blackbox module %s.\n", RTLIL::id2cstr(module->name));
 		module->set_bool_attribute(ID::blackbox);
 		auto params = nl->GetParameters();
+		unsigned int no_of_instances= nl->GetReferences()->Size();
+		#if 0
+		log("No of instances of this module %d.\n", no_of_instances);
+		#endif
+		for (unsigned i=0; i<no_of_instances; i=i+1){
+			Instance *inst1 = (Instance*)nl->GetReferences()->GetAt(i);
+			std::string inst_name = inst1->Name();
+			if (params) {
+				moduleToParamsMap["\\"+inst_name] = params;
+			}
+		}
 		if (params) {
-			moduleToParamsMap[module->name] = params;
 			set_module_parameters(params, module);
 		}
 	} else {
