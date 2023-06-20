@@ -236,7 +236,7 @@ struct MemoryDffWorker
 	// signal's only user is a mux data signal, passes through the mux
 	// and remembers information about it.  Conceptually works on every
 	// bit separately, but coalesces the result when possible.
-	SigSpec walk_muxes(SigSpec data, std::vector<MuxData> &res, string &mux_id) {
+	SigSpec walk_muxes(SigSpec data, std::vector<MuxData> &res, string &mux_id, SigSpec &dffe_din_d) {
 		bool did_something;
 		do {
 			did_something = false;
@@ -276,6 +276,7 @@ struct MemoryDffWorker
 					md.size = 0;
 					md.is_b = is_b;
 					md.sig_s = consumer.cell->getPort(ID::S);
+					dffe_din_d = consumer.cell->getPort(ID::B);
 					md.sig_other.resize(GetSize(md.sig_s));
 					prev_cell = consumer.cell;
 					prev_is_b = is_b;
@@ -339,10 +340,13 @@ struct MemoryDffWorker
 	{
 		auto &port = mem.rd_ports[idx];
 		log("Checking read port `%s'[%d] in module `%s': ", mem.memid.c_str(), idx, module->name.c_str());
-
+		SigSpec dff_q = module->addWire(NEW_ID,GetSize(port.clk));
+		SigSpec dff_d = module->addWire(NEW_ID,GetSize(port.clk));
+		SigSpec dffe_din_q = module->addWire(NEW_ID,GetSize(port.data));
+		SigSpec dffe_din_d = module->addWire(NEW_ID,GetSize(port.data));
 		std::vector<MuxData> muxdata;
 		string muxid = "";
-		SigSpec data = walk_muxes(port.data, muxdata,muxid);
+		SigSpec data = walk_muxes(port.data, muxdata,muxid,dffe_din_d);
 		FfData ff;
 		pool<std::pair<Cell *, int>> bits;
 		if (!merger.find_output_ff(data, ff, bits)) {
@@ -382,6 +386,8 @@ struct MemoryDffWorker
 			PortData pd;
 			auto &wport = mem.wr_ports[i];
 			pd.relevant = true;
+			dff_d=wport.en[0];
+			log("\nwrite enebale %s\n",log_signal(wport.en[0]));
 			if (!wport.clk_enable)
 				pd.relevant = false;
 			if (wport.clk != ff.sig_clk)
@@ -548,8 +554,12 @@ struct MemoryDffWorker
 				if (cell->type == ID($mux)  and muxid == log_id(cell->name)){
 					cell->setPort(ID::A,port.data);
 					cell->setPort(ID::Y,ff.sig_q);
+					cell->setPort(ID::S,dff_q);
+					cell->setPort(ID::B,dffe_din_q);
 				}
 			}
+			module->addDff(NEW_ID,port.clk,dff_d,dff_q,port.clk_polarity);
+			module->addDffe(NEW_ID,port.clk,dff_d,dffe_din_d,dffe_din_q,port.clk_polarity);
 		}
 		// Awais: Write first mux is handled for write first bram
 		for (int pi = 0; pi < GetSize(mem.wr_ports); pi++) {
