@@ -2198,25 +2198,18 @@ struct MemoryLibMapPass : public Pass {
 				if (idx == -1 or ((GetSize(mem.rd_ports)>1 or GetSize(mem.wr_ports)>1) and mem.emulate_read_first_ok() and wtrans_new == true)) {
 					log("using FF mapping for memory %s.%s\n", log_id(module->name), log_id(mem.memid));
 				} else {
-					// Awais: Logic added to handle no change mode of bram
-					bool no_change = false;
+				
+				// Awais: Logic added to handle no change mode of bram
+				if (design->scratchpad_get_bool("memory_dff.match_wr") == false){
+					bool read_first_iff = false;
 					for (int pidx = 0; pidx < GetSize(mem.rd_ports); pidx++) {
 						auto &port = mem.rd_ports[pidx];
-
-						for (auto &cell : module->selected_cells()) {
-							if ((cell->type == RTLIL::escape_id("$logic_not"))){
-								for (auto &r: mem.rd_ports) {
-									for (auto &w: mem.wr_ports) {
-										if (r.en==cell->getPort(ID::Y) && (w.en[0]==cell->getPort(ID::A)))
-										for (int j = 0; j < GetSize(mem.wr_ports); j++)
-											no_change = true;
-											break;
-									}
-								}
+						for (auto &r: mem.rd_ports) {
+							if (r.en!=State::S1){
+								read_first_iff=true;
 							}
 						}
-
-						if (no_change){
+						if (read_first_iff){
 							SigSpec Mux_Y 		= module->addWire(NEW_ID,GetSize(port.data));
 							SigSpec Mux_A 		= module->addWire(NEW_ID,GetSize(port.data));
 							SigSpec Mux_B 		= module->addWire(NEW_ID,GetSize(port.data));
@@ -2230,7 +2223,8 @@ struct MemoryLibMapPass : public Pass {
 							module->addMux(NEW_ID, Mux_B, port.data, Mux_sel, Mux_Y);
 						}
 					}
-					// Awais: Logic added to handle no change mode of bram
+				}
+				// Awais: Logic added to handle no change mode of bram
 					if (limit_b != -1) {
 						if (map.cfgs[idx].def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM18_TDP") || map.cfgs[idx].def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM18_SDP")){
 							counter += ceil((float)std::max(map.cfgs[idx].repl_d, map.cfgs[idx].repl_port)/2);
