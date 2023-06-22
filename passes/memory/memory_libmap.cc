@@ -2194,10 +2194,37 @@ struct MemoryLibMapPass : public Pass {
 					Awais: If memory is a read first TDP ram, soft logic is infered
 					original: if(idx == -1)
 				*/
-			
+
 				if (idx == -1 or ((GetSize(mem.rd_ports)>1 or GetSize(mem.wr_ports)>1) and mem.emulate_read_first_ok() and wtrans_new == true)) {
 					log("using FF mapping for memory %s.%s\n", log_id(module->name), log_id(mem.memid));
 				} else {
+				
+				// Awais: Logic added to handle no change mode of bram
+				if (design->scratchpad_get_bool("memory_dff.match_wr") == false){
+					bool read_first_iff = false;
+					for (int pidx = 0; pidx < GetSize(mem.rd_ports); pidx++) {
+						auto &port = mem.rd_ports[pidx];
+						for (auto &r: mem.rd_ports) {
+							if (r.en!=State::S1){
+								read_first_iff=true;
+							}
+						}
+						if (read_first_iff){
+							SigSpec Mux_Y 		= module->addWire(NEW_ID,GetSize(port.data));
+							SigSpec Mux_A 		= module->addWire(NEW_ID,GetSize(port.data));
+							SigSpec Mux_B 		= module->addWire(NEW_ID,GetSize(port.data));
+							SigSpec Mux_sel 	= module->addWire(NEW_ID,GetSize(port.en));
+							
+							Mux_Y = port.data;
+							port.data = Mux_A;
+							
+							module->addDff(NEW_ID,port.clk,Mux_Y,Mux_B,port.clk_polarity);
+							module->addDff(NEW_ID,port.clk,port.en,Mux_sel,port.clk_polarity);
+							module->addMux(NEW_ID, Mux_B, port.data, Mux_sel, Mux_Y);
+						}
+					}
+				}
+				// Awais: Logic added to handle no change mode of bram
 					if (limit_b != -1) {
 						if (map.cfgs[idx].def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM18_TDP") || map.cfgs[idx].def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM18_SDP")){
 							counter += ceil((float)std::max(map.cfgs[idx].repl_d, map.cfgs[idx].repl_port)/2);

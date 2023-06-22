@@ -28,7 +28,7 @@
 
 USING_YOSYS_NAMESPACE
 PRIVATE_NAMESPACE_BEGIN
-
+bool match_wr = false;
 struct MuxData {
 	int base_idx;
 	int size;
@@ -431,6 +431,7 @@ struct MemoryDffWorker
 						if (pd.uncollidable_mask[bitidx])
 							continue;
 						bool match = cache.is_w2rbyp(pi, wport.en[bitidx], sbit, md.is_b);
+						match_wr = match;						
 						if (!match)
 							continue;
 						// If we got here, we recognized this mux sel
@@ -700,6 +701,7 @@ struct MemoryDffPass : public Pass {
 			MemoryDffWorker worker(mod, flag_no_rw_check);
 			worker.run();
 		}
+		design->scratchpad_set_bool("memory_dff.match_wr", match_wr);
 	}
 } MemoryDffPass;
 
