@@ -1198,23 +1198,32 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 			break;
 		}
 	}
+
 	if (is_blackbox(nl)) {
 		log("Importing blackbox module %s.\n", RTLIL::id2cstr(module->name));
 		module->set_bool_attribute(ID::blackbox);
 		auto params = nl->GetParameters();
-		unsigned int no_of_instances= nl->GetReferences()->Size();
-		#if 0
-		log("No of instances of this module %d.\n", no_of_instances);
-		#endif
-		for (unsigned i=0; i<no_of_instances; i=i+1){
-			Instance *inst1 = (Instance*)nl->GetReferences()->GetAt(i);
-			std::string inst_name = inst1->Name();
-			if (params) {
-				moduleToParamsMap["\\"+inst_name] = params;
+		unsigned int ref_num=nl->NumOfRefs();
+		if (ref_num!=0){
+			unsigned int no_of_instances= nl->GetReferences()->Size();
+			#if 0
+			log("No of instances of this module %d.\n", no_of_instances);
+			#endif
+			for (unsigned i=0; i<no_of_instances; i=i+1){
+				Instance *inst1 = (Instance*)nl->GetReferences()->GetAt(i);
+				std::string inst_name = inst1->Name();
+				if (params) {
+					moduleToParamsMap["\\"+inst_name] = params;
+				}
 			}
-		}
-		if (params) {
-			set_module_parameters(params, module);
+			if (params) {
+				set_module_parameters(params, module);
+			}
+		}else{
+			if (params) {
+				moduleToParamsMap[module->name] = params;
+				set_module_parameters(params, module);
+			}
 		}
 	} else {
 		log("Importing module %s.\n", RTLIL::id2cstr(module->name));
