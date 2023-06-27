@@ -583,10 +583,15 @@ struct MemoryDffWorker
 		// value of the FF is fully-defined.  However, we
 		// cannot simply reject FFs with any defined init bit,
 		// as this is often the result of merging a const bit.
-		if (ff.val_init.is_fully_def()) {
-			log("address FF has fully-defined init value, not supported.\n");
-			return;
-		}
+		// ----------------------------------------------------------------------
+		// Davit: We have observed that the FF feeading address is kept outside
+		// of the memory and is not packed into bram. So it is safe to transoform
+		// this kind of FF.
+		//-----------------------------------------------------------------------
+		//if (ff.val_init.is_fully_def()) {
+		//	log("address FF has fully-defined init value, not supported.\n");
+		//	return;
+		//}
 		/*
 		 * Aram: We should check only the corresponding Write port.
 		for (int i = 0; i < GetSize(mem.wr_ports); i++) {
