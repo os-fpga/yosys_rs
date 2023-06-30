@@ -3053,6 +3053,15 @@ struct VerificPass : public Pass {
 			verific_import_pending = true;
 			goto check_error;
 		}
+
+		if (GetSize(args) > argidx && (args[argidx] == "-vhdl2019")) {
+			vhdl_file::SetDefaultLibraryPath((proc_share_dirname() + "verific/vhdl_vdbs_2008").c_str());
+			for (argidx++; argidx < GetSize(args); argidx++)
+				if (!vhdl_file::Analyze(args[argidx].c_str(), work.c_str(), vhdl_file::VHDL_2019))
+					log_cmd_error("Reading `%s' in VHDL_2019 mode failed.\n", args[argidx].c_str());
+			verific_import_pending = true;
+			goto check_error;
+		}
 #endif
 
 		if (argidx < GetSize(args) && args[argidx] == "-pp")
@@ -3504,7 +3513,7 @@ struct ReadPass : public Pass {
 		}
 
 #ifdef VERIFIC_VHDL_SUPPORT
-		if (args[1] == "-vhdl87" || args[1] == "-vhdl93" || args[1] == "-vhdl2k" || args[1] == "-vhdl2008" || args[1] == "-vhdl") {
+		if (args[1] == "-vhdl87" || args[1] == "-vhdl93" || args[1] == "-vhdl2k" || args[1] == "-vhdl2008" || args[1] == "-vhdl2019" || args[1] == "-vhdl") {
 			if (use_verific) {
 				args[0] = "verific";
 				Pass::call(design, args);
