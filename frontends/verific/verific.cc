@@ -1160,6 +1160,9 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 	module->context_name = module_name;
 	design->add(module);
 	RTLIL::IdString protectId("$rs_protected");
+	if (nl->IsProtected()) {
+		module->set_bool_attribute(protectId, true);
+	}
 
 	// vector of string primitive names
 	std::vector <std::string> primitive_names = {

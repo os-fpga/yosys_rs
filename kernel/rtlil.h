@@ -1064,6 +1064,7 @@ struct RTLIL::Design
 	}
 
 	void set_protcted_rtl() { protected_rtl = true; }
+	void unset_protcted_rtl() { protected_rtl = false; }
 	bool is_protected_rtl() { return protected_rtl; }
 
 	void add(RTLIL::Module *module);
