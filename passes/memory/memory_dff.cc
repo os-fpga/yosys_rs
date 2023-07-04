@@ -224,6 +224,7 @@ struct MemoryDffWorker
 	bool no_addr_ff = false;
 	bool no_out_ff = false;
 
+	bool recognized;
 	MemoryDffWorker(Module *module, bool flag_no_rw_check) : module(module), modwalker(module->design), flag_no_rw_check(flag_no_rw_check)
 	{
 		modwalker.setup(module);
@@ -235,7 +236,7 @@ struct MemoryDffWorker
 	// signal's only user is a mux data signal, passes through the mux
 	// and remembers information about it.  Conceptually works on every
 	// bit separately, but coalesces the result when possible.
-	SigSpec walk_muxes(SigSpec data, std::vector<MuxData> &res) {
+	SigSpec walk_muxes(SigSpec data, std::vector<MuxData> &res, string &mux_id, SigSpec s_bit_) {
 		bool did_something;
 		do {
 			did_something = false;
@@ -275,10 +276,12 @@ struct MemoryDffWorker
 					md.size = 0;
 					md.is_b = is_b;
 					md.sig_s = consumer.cell->getPort(ID::S);
+					s_bit_ = consumer.cell->getPort(ID::S);
 					md.sig_other.resize(GetSize(md.sig_s));
 					prev_cell = consumer.cell;
 					prev_is_b = is_b;
 					res.push_back(md);
+					mux_id = log_id(consumer.cell->name);
 				}
 				auto &md = res.back();
 				md.size++;
@@ -324,7 +327,7 @@ struct MemoryDffWorker
 	//      passes failed to optimize)
 	//    - a mux whose other input is 'x, and can thus be skipped
 	// 5. When recognizing transparency bypasses, take care to preserve priority
-	//    behavior — when two bypasses are sequential muxes on the chain, they
+	//    behavior  when two bypasses are sequential muxes on the chain, they
 	//    effectively have priority over one another, and the transform can
 	//    only be performed when either a) their corresponding write ports
 	//    also have priority, or b) there can never be a three-way collision
@@ -339,7 +342,9 @@ struct MemoryDffWorker
 		log("Checking read port `%s'[%d] in module `%s': ", mem.memid.c_str(), idx, module->name.c_str());
 
 		std::vector<MuxData> muxdata;
-		SigSpec data = walk_muxes(port.data, muxdata);
+		string muxid = "";
+		SigSpec s_bit_;
+		SigSpec data = walk_muxes(port.data, muxdata,muxid,s_bit_);
 		FfData ff;
 		pool<std::pair<Cell *, int>> bits;
 		if (!merger.find_output_ff(data, ff, bits)) {
@@ -422,7 +427,7 @@ struct MemoryDffWorker
 				SigSpec &odata = md.sig_other[sel_idx];
 				for (int bitidx = md.base_idx; bitidx < md.base_idx+md.size; bitidx++) {
 					SigBit odbit = odata[bitidx-md.base_idx];
-					bool recognized = false;
+					recognized = false;
 					for (int pi = 0; pi < GetSize(mem.wr_ports); pi++) {
 						auto &pd = portdata[pi];
 						auto &wport = mem.wr_ports[pi];
@@ -474,6 +479,7 @@ struct MemoryDffWorker
 						log("FF found, but with a mux select that doesn't seem to correspond to transparency logic.\n");
 						return;
 					}
+
 				}
 			}
 			// Done with this mux, now actually apply the transparencies.
@@ -537,7 +543,47 @@ struct MemoryDffWorker
 			port.srst = State::S0;
 		}
 		port.init_value = ff.val_init;
-		port.data = ff.sig_q;
+		// Awais: Write first mux is handled for write first bram
+		if (!recognized)
+			port.data = ff.sig_q;
+		else{
+			if (ff.has_ce && ff.has_srst && port.ce_over_srst){
+				SigSpec Mux_en_reg_Y 	= module->addWire(NEW_ID,GetSize(port.data));
+				SigSpec reg_en		    = module->addWire(NEW_ID,GetSize(port.en));
+				SigSpec reg_rst		    = module->addWire(NEW_ID,GetSize(port.srst));
+				SigSpec Mux_rst_Y 		= module->addWire(NEW_ID,GetSize(port.data));
+				SigSpec Mux_rst_A 		= module->addWire(NEW_ID,GetSize(port.data));
+
+				SigSpec we_en_reg = module->addWire(NEW_ID,GetSize(s_bit_));
+				//SigSpec we_en = module->addWire(NEW_ID,GetSize(port.en));
+				
+					module->addDff(NEW_ID,port.clk,s_bit_,we_en_reg,port.clk_polarity);// en register
+			for (auto cell : module->cells()){
+				if (cell->type == ID($mux)  and muxid == log_id(cell->name)){
+					cell->setPort(ID::A,port.data);
+					cell->setPort(ID::Y,Mux_rst_A);
+					SigSpec we_en=cell->getPort(ID::S);
+					// cell->unsetPort(ID::S);
+					cell->setPort(ID::S,we_en_reg);
+				}
+			}
+			module->addDff(NEW_ID,port.clk,port.srst,reg_rst,port.clk_polarity);// rst register
+			module->addMux(NEW_ID, Mux_rst_A, port.srst_value, reg_rst, Mux_rst_Y);
+			module->addDff(NEW_ID,port.clk,ff.sig_q,Mux_en_reg_Y,port.clk_polarity);// dout register
+			module->addDff(NEW_ID,port.clk,port.en,reg_en,port.clk_polarity);// en register
+			module->addMux(NEW_ID, Mux_en_reg_Y, Mux_rst_Y, reg_en, ff.sig_q); 
+			}
+			else
+			{
+				for (auto cell : module->cells()){
+					if (cell->type == ID($mux)  and muxid == log_id(cell->name)){
+						cell->setPort(ID::A,port.data);
+						cell->setPort(ID::Y,ff.sig_q);
+					}
+				}
+			}
+		}
+		// Awais: Write first mux is handled for write first bram
 		for (int pi = 0; pi < GetSize(mem.wr_ports); pi++) {
 			auto &pd = portdata[pi];
 			if (!pd.relevant)
@@ -583,15 +629,10 @@ struct MemoryDffWorker
 		// value of the FF is fully-defined.  However, we
 		// cannot simply reject FFs with any defined init bit,
 		// as this is often the result of merging a const bit.
-		// ----------------------------------------------------------------------
-		// Davit: We have observed that the FF feeading address is kept outside
-		// of the memory and is not packed into bram. So it is safe to transoform
-		// this kind of FF.
-		//-----------------------------------------------------------------------
-		//if (ff.val_init.is_fully_def()) {
-		//	log("address FF has fully-defined init value, not supported.\n");
-		//	return;
-		//}
+		if (ff.val_init.is_fully_def()) {
+			log("address FF has fully-defined init value, not supported.\n");
+			return;
+		}
 		/*
 		 * Aram: We should check only the corresponding Write port.
 		for (int i = 0; i < GetSize(mem.wr_ports); i++) {

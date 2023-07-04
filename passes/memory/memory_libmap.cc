@@ -2224,6 +2224,33 @@ struct MemoryLibMapPass : public Pass {
 						}
 					}
 				}
+				else
+				{
+					// for (int pidx = 0; pidx < GetSize(mem.rd_ports); pidx++) {
+					// 	auto &port = mem.rd_ports[pidx];
+					// 	for (auto &wr: mem.wr_ports) {
+					// 		SigSpec Mux_Y 		= module->addWire(NEW_ID,GetSize(port.data));
+					// 		SigSpec Mux_A 		= module->addWire(NEW_ID,GetSize(port.data));
+					// 		SigSpec Mux_B 		= module->addWire(NEW_ID,GetSize(wr.data));
+					// 		SigSpec en = mem.module->ReduceOr(NEW_ID, wr.en);
+					// 		SigSpec Mux_sel 	= module->addWire(NEW_ID,GetSize(en));
+					// 		int total_bits_left=36 - GetSize(wr.en);
+					// 		int skip_bits= total_bits_left/4;
+					// 		int pick_we=9 - skip_bits; 
+					// 		Mux_Y = port.data;
+					// 		port.data = Mux_A;
+					// 		//DATA-IN
+					// 		module->addDffe(NEW_ID,port.clk,en,wr.data,Mux_B,port.clk_polarity);
+					// 		module->addDffe(NEW_ID,port.clk,en,wr.data,Mux_B,port.clk_polarity);
+					// 		module->addDffe(NEW_ID,port.clk,en,wr.data,Mux_B,port.clk_polarity);
+					// 		module->addDffe(NEW_ID,port.clk,en,wr.data,Mux_B,port.clk_polarity);
+
+					// 		module->addDff(NEW_ID,port.clk,en,Mux_sel,port.clk_polarity);// wr_en register
+					// 		module->addMux(NEW_ID, Mux_A, Mux_B, Mux_sel, Mux_Y);
+					// 	}
+					// }
+				}
+
 				// Awais: Logic added to handle no change mode of bram
 					if (limit_b != -1) {
 						if (map.cfgs[idx].def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM18_TDP") || map.cfgs[idx].def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM18_SDP")){
@@ -2239,6 +2266,21 @@ struct MemoryLibMapPass : public Pass {
 					} else {
 						map.emit(map.cfgs[idx]);
 					}
+				// 	if (design->scratchpad_get_bool("memory_dff.match_wr") == true){
+				// 		for (auto &module : design->selected_modules()) {
+            	// 			for (auto &cell : module->selected_cells()) {
+				// 				log("UNDER BYPASS MUX %s\n",cell->type.c_str());
+                // 				if ((cell->type == RTLIL::escape_id("$__RS_FACTOR_BRAM36_TDP")) ||
+				// 					(cell->type == RTLIL::escape_id("$__RS_FACTOR_BRAM18_TDP")) ||
+				// 					(cell->type == RTLIL::escape_id("$__RS_FACTOR_BRAM36_SDP")) ||
+				// 					(cell->type == RTLIL::escape_id("$__RS_FACTOR_BRAM18_SDP"))
+				// 					) {
+				// 						RTLIL::SigSpec SEL =cell->getPort("\\PORT_B_WR_EN");
+				// 						log("UNDER BYPASS MUX WRITE_ENABLE %s\n",log_signal(SEL));
+				// 				}
+				// 			}
+				// 		}
+				// 	}
 				}
 			}
 		}
