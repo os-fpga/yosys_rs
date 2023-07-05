@@ -430,7 +430,8 @@ void Mem::coalesce_inits() {
 }
 
 Const Mem::get_init_data() const {
-	Const init_data(State::Sx, width * size);
+	// Komal: Initiazing BRAM with State::S0, originaly State::Sx as per EDA-1635
+	Const init_data(State::S0, width * size);
 	for (auto &init : inits) {
 		if (init.removed)
 			continue;
