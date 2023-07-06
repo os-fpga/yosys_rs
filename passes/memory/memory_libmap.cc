@@ -2007,7 +2007,8 @@ void MemMapping::emit(const MemConfig &cfg) {
 				for (int hwa = 0; hwa < (1 << cfg.def->abits); hwa += 1 << (GetSize(cfg.def->dbits) - 1)) {
 					for (auto &bit: init_swz.bits[rd]) {
 						if (!bit.valid) {
-							initval.push_back(State::Sx);
+							// Komal: Initialize invalid bits of memory to zero as per EDA-1635
+							initval.push_back(State::S0);
 						} else {
 							int addr = bit.addr;
 							for (int i = GetSize(cfg.def->dbits) - 1; i < cfg.def->abits; i++)
@@ -2015,8 +2016,10 @@ void MemMapping::emit(const MemConfig &cfg) {
 									addr += 1 << hw_addr_swizzle[i];
 							if (addr >= mem.start_offset && addr < mem.start_offset + mem.size)
 								initval.push_back(init_data.bits[(addr - mem.start_offset) * mem.width + bit.bit]);
-							else
-								initval.push_back(State::Sx);
+							else {
+								// Komal: Initialize BRAM's uninitialized bits with zeros as per EDA-1635
+								initval.push_back(State::S0);
+							}
 						}
 					}
 				}
