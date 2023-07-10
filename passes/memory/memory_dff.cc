@@ -236,7 +236,7 @@ struct MemoryDffWorker
 	// signal's only user is a mux data signal, passes through the mux
 	// and remembers information about it.  Conceptually works on every
 	// bit separately, but coalesces the result when possible.
-	SigSpec walk_muxes(SigSpec data, std::vector<MuxData> &res, string &mux_id, SigSpec s_bit_) {
+	SigSpec walk_muxes(SigSpec data, std::vector<MuxData> &res) {
 		bool did_something;
 		do {
 			did_something = false;
@@ -276,12 +276,10 @@ struct MemoryDffWorker
 					md.size = 0;
 					md.is_b = is_b;
 					md.sig_s = consumer.cell->getPort(ID::S);
-					s_bit_ = consumer.cell->getPort(ID::S);
 					md.sig_other.resize(GetSize(md.sig_s));
 					prev_cell = consumer.cell;
 					prev_is_b = is_b;
 					res.push_back(md);
-					mux_id = log_id(consumer.cell->name);
 				}
 				auto &md = res.back();
 				md.size++;
@@ -342,9 +340,9 @@ struct MemoryDffWorker
 		log("Checking read port `%s'[%d] in module `%s': ", mem.memid.c_str(), idx, module->name.c_str());
 
 		std::vector<MuxData> muxdata;
-		string muxid = "";
 		SigSpec s_bit_;
-		SigSpec data = walk_muxes(port.data, muxdata,muxid,s_bit_);
+		SigSpec s_din_;
+		SigSpec data = walk_muxes(port.data, muxdata);
 		FfData ff;
 		pool<std::pair<Cell *, int>> bits;
 		if (!merger.find_output_ff(data, ff, bits)) {
@@ -431,6 +429,8 @@ struct MemoryDffWorker
 					for (int pi = 0; pi < GetSize(mem.wr_ports); pi++) {
 						auto &pd = portdata[pi];
 						auto &wport = mem.wr_ports[pi];
+						s_bit_=sbit;
+						s_din_=odata;
 						if (!pd.relevant)
 							continue;
 						if (pd.uncollidable_mask[bitidx])
@@ -543,6 +543,7 @@ struct MemoryDffWorker
 			port.srst = State::S0;
 		}
 		port.init_value = ff.val_init;
+		//port.data = ff.sig_q;
 		// Awais: Write first mux is handled for write first bram
 		if (!recognized)
 			port.data = ff.sig_q;
@@ -554,36 +555,47 @@ struct MemoryDffWorker
 				SigSpec Mux_rst_Y 		= module->addWire(NEW_ID,GetSize(port.data));
 				SigSpec Mux_rst_A 		= module->addWire(NEW_ID,GetSize(port.data));
 
-				SigSpec we_en_reg = module->addWire(NEW_ID,GetSize(s_bit_));
-				//SigSpec we_en = module->addWire(NEW_ID,GetSize(port.en));
-				
-					module->addDff(NEW_ID,port.clk,s_bit_,we_en_reg,port.clk_polarity);// en register
-			for (auto cell : module->cells()){
-				if (cell->type == ID($mux)  and muxid == log_id(cell->name)){
-					cell->setPort(ID::A,port.data);
-					cell->setPort(ID::Y,Mux_rst_A);
-					SigSpec we_en=cell->getPort(ID::S);
-					// cell->unsetPort(ID::S);
-					cell->setPort(ID::S,we_en_reg);
-				}
+				for (int pi = 0; pi < GetSize(mem.wr_ports); pi++) {
+				SigSpec we_en_reg= module->addWire(NEW_ID,GetSize(s_bit_));
+				SigSpec we_en= module->addWire(NEW_ID,GetSize(s_bit_));
+				SigSpec di_reg		    = module->addWire(NEW_ID,GetSize(mem.wr_ports[pi].data));
+				module->addDff(NEW_ID,port.clk,mem.wr_ports[pi].data,di_reg,port.clk_polarity);// din register
+				module->addDff(NEW_ID,port.clk,s_bit_,we_en_reg,port.clk_polarity);// Wr_en register
+				module->addMux(NEW_ID,mem.rd_ports[pi].data, di_reg, we_en_reg, Mux_rst_A); //MUX dout=we_reg?din_reg:dout_mem
+
+				}	
+				module->addDff(NEW_ID,port.clk,port.srst,reg_rst,port.clk_polarity);// rst register
+				module->addMux(NEW_ID, Mux_rst_A, port.srst_value, reg_rst, Mux_rst_Y);
+				module->addDff(NEW_ID,port.clk,ff.sig_q,Mux_en_reg_Y,port.clk_polarity);// dout register
+				module->addDff(NEW_ID,port.clk,port.en,reg_en,port.clk_polarity);// en register
+				module->addMux(NEW_ID, Mux_en_reg_Y, Mux_rst_Y, reg_en, ff.sig_q); 
 			}
-			module->addDff(NEW_ID,port.clk,port.srst,reg_rst,port.clk_polarity);// rst register
-			module->addMux(NEW_ID, Mux_rst_A, port.srst_value, reg_rst, Mux_rst_Y);
-			module->addDff(NEW_ID,port.clk,ff.sig_q,Mux_en_reg_Y,port.clk_polarity);// dout register
-			module->addDff(NEW_ID,port.clk,port.en,reg_en,port.clk_polarity);// en register
-			module->addMux(NEW_ID, Mux_en_reg_Y, Mux_rst_Y, reg_en, ff.sig_q); 
+			else if (ff.has_ce)
+			{
+				
+				SigSpec we_en_reg= module->addWire(NEW_ID,GetSize(s_bit_));
+				SigSpec di_reg		    = module->addWire(NEW_ID,GetSize(s_din_));
+				SigSpec reg_en		    = module->addWire(NEW_ID,GetSize(port.en));
+				SigSpec Mux_r_Y 		= module->addWire(NEW_ID,GetSize(ff.sig_q));
+				SigSpec Mux_en_reg_Y 	= module->addWire(NEW_ID,GetSize(ff.sig_q));
+				module->addDff(NEW_ID,port.clk,s_din_,di_reg,port.clk_polarity);// din register
+				module->addDff(NEW_ID,port.clk,s_bit_,we_en_reg,port.clk_polarity);// Wr_en register
+				module->addMux(NEW_ID,port.data, di_reg, we_en_reg, Mux_r_Y); //MUX dout1=we_reg?din_reg:dout_mem
+				module->addDff(NEW_ID,port.clk,port.en,reg_en,port.clk_polarity);// en register
+				module->addDff(NEW_ID,port.clk,ff.sig_q,Mux_en_reg_Y,port.clk_polarity);// dout register
+				module->addMux(NEW_ID, Mux_en_reg_Y, Mux_r_Y, reg_en, ff.sig_q); //MUX dout=en_reg?dout1:dout_reg
 			}
 			else
-			{
-				for (auto cell : module->cells()){
-					if (cell->type == ID($mux)  and muxid == log_id(cell->name)){
-						cell->setPort(ID::A,port.data);
-						cell->setPort(ID::Y,ff.sig_q);
-					}
-				}
+			{	
+				SigSpec we_en_reg= module->addWire(NEW_ID,GetSize(s_bit_));
+				SigSpec di_reg		    = module->addWire(NEW_ID,GetSize(s_din_));
+				SigSpec Mux_en_reg_Y 	= module->addWire(NEW_ID,GetSize(ff.sig_q));
+				module->addDff(NEW_ID,port.clk,s_din_,di_reg,port.clk_polarity);// din register
+				module->addDff(NEW_ID,port.clk,s_bit_,we_en_reg,port.clk_polarity);// Wr_en register
+				module->addMux(NEW_ID,port.data, di_reg, we_en_reg, ff.sig_q); //MUX dout=we_reg?din_reg:dout_mem
 			}
 		}
-		// Awais: Write first mux is handled for write first bram
+		// Awais: Write first mux is handled for write first bram/
 		for (int pi = 0; pi < GetSize(mem.wr_ports); pi++) {
 			auto &pd = portdata[pi];
 			if (!pd.relevant)
