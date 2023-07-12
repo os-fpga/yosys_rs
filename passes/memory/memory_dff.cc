@@ -671,50 +671,7 @@ struct MemoryDffWorker
 			if (!(!wport.clk_enable || wport.clk != ff.sig_clk || wport.clk_polarity != ff.pol_clk)) {
 				wpIdxVec.push_back(i);
 			}
-#if 1
-			/*Ayyaz: Here in this #IF 1 block, some logic is added to handle write first RAM with address registered
-			It can only handle single port Symmetric RAMs and  dual port Symmetric RAMs. It can not handle 
-			asymmetric RAMs and write-byte enable RAMs.*/
-			if (GetSize(mem.wr_ports) ==1 && GetSize(mem.rd_ports)==1) // single port RAM
-			{
-				#if 0
-				log("\nREAD_IDX= %d, WRITE_idx =%d, port.data = %s, wport.data = %s\n",idx,i,log_signal(port.data),log_signal(wport.data));
-				#endif
-				SigBit we_en_reg       = module->addWire(NEW_ID);
-				SigBit we_en           = module->addWire(NEW_ID);
-				SigSpec di_reg		   = module->addWire(NEW_ID,GetSize(wport.data));
-				we_en=wport.en[0];
-				module->addDff(NEW_ID,ff.sig_clk,wport.data,di_reg,ff.pol_clk);// din register
-				module->addDff(NEW_ID,ff.sig_clk,we_en,we_en_reg,ff.pol_clk);// Wr_en register
-				SigSpec Mux_Y 		= module->addWire(NEW_ID,GetSize(port.data));
-				SigSpec Mux_A 		= module->addWire(NEW_ID,GetSize(port.data));
-				Mux_Y = port.data;
-				port.data = Mux_A;
-				module->addMux(NEW_ID,port.data, di_reg, we_en_reg, Mux_Y); //MUX dout=we_reg?din_reg:dout_mem
-				
-			}
-			else if (GetSize(mem.wr_ports) > 1 && GetSize(mem.rd_ports) >1 && GetSize(mem.wr_ports)==GetSize(mem.rd_ports)) // Dual port symmetric RAM
-			{
-				if (idx ^ i){
-				#if 0
-				log("\nREAD_IDX= %d, WRITE_idx =%d, port.data = %s, wport.data = %s\n",idx,i,log_signal(port.data),log_signal(wport.data));
-				#endif
-				SigBit we_en_reg       = module->addWire(NEW_ID);
-				SigBit we_en           = module->addWire(NEW_ID);
-				SigSpec di_reg		   = module->addWire(NEW_ID,GetSize(wport.data));
-				we_en=wport.en[0];
-				module->addDff(NEW_ID,ff.sig_clk,wport.data,di_reg,ff.pol_clk);// din register
-				module->addDff(NEW_ID,ff.sig_clk,we_en,we_en_reg,ff.pol_clk);// Wr_en register
-				SigSpec Mux_Y 		= module->addWire(NEW_ID,GetSize(port.data));
-				SigSpec Mux_A 		= module->addWire(NEW_ID,GetSize(port.data));
-				Mux_Y = port.data;
-				port.data = Mux_A;
-				module->addMux(NEW_ID,port.data, di_reg, we_en_reg, Mux_Y); //MUX dout=we_reg?din_reg:dout_mem			
-				}
-			}
-#endif
 		}
-
 		/*
 		 * Lilit: EDA-882
 		 */
