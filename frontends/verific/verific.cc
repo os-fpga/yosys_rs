@@ -1184,7 +1184,7 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 		"RS_DSP_MULTACC_REGIN_REGOUT", "RS_TDP36K",
 		/* genesis3 primitives */
 		"FIFO18K","FIFO36K","CLK_BUF","IO_BUF","IO_BUF_DS", "I_BUF", "I_BUF_DS", "I_DDR", "O_BUF", "O_BUFT_DS",
-		"O_BUFT", "O_DDR", "O_SERDES", "I_SERDES"};
+		"O_BUFT", "O_DDR", "O_SERDES", "I_SERDES", "LUT1", "LUT2", "LUT3","LUT4","LUT5","LUT6","CARRY_CHAIN","adder_carry","DSP38" };
 
 	std::sort(primitive_names.begin(), primitive_names.end(), [] (const std::string& first, const std::string& second)
 	{
