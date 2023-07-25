@@ -438,10 +438,17 @@ void MemMapping::determine_style() {
 	for (auto attr: {ID::ram_block, ID::rom_block, ID::ram_style, ID::rom_style, ID::ramstyle, ID::romstyle, ID::syn_ramstyle, ID::syn_romstyle}) {
 		if (mem.has_attribute(attr)) {
 			// Begin: Awais: Fix for EDA-1436: (Map memory with async read to soft logic when inline attribute is block)
-			if (mem_async_read){
-				log_warning("Asyncronous read in BRAM is not supported, memory will be mapped to soft logic.\n");
-				mem.set_string_attribute(attr,"logic");
+			for (int pidx = 0; pidx < GetSize(mem.rd_ports); pidx++) {
+					auto &port = mem.rd_ports[pidx];
+					if (!port.clk_enable){
+						log_warning("Asyncronous read in BRAM is not supported, memory will be mapped to soft logic.\n");
+						mem.set_string_attribute(attr,"logic");
+					}
 			}
+			// if (mem_async_read){
+			// 	log_warning("Asyncronous read in BRAM is not supported, memory will be mapped to soft logic.\n");
+			// 	mem.set_string_attribute(attr,"logic");
+			// }
 			// End: Awais: Fix for EDA-1436: (Map memory with async read to soft logic when inline attribute is block)
 			Const val = mem.attributes.at(attr);
 			if (val == 1) {
