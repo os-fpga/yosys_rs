@@ -445,6 +445,7 @@ void MemMapping::determine_style() {
 						mem.set_string_attribute(attr,"logic");
 					}
 			}
+			// End: Awais: Fix for EDA-1436: (Map memory with async read to soft logic when inline attribute is block)
 			Const val = mem.attributes.at(attr);
 			if (val == 1) {
 				kind = RamKind::NotLogic;
