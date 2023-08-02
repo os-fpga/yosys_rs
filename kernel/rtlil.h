@@ -1050,7 +1050,7 @@ struct RTLIL::Design
 	std::vector<RTLIL::Selection> selection_stack;
 	dict<RTLIL::IdString, RTLIL::Selection> selection_vars;
 	std::string selected_active_module;
-
+	std::vector<Cell *> DFF_cells;
 	Design();
 	~Design();
 
