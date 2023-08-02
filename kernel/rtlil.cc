@@ -1139,8 +1139,23 @@ namespace {
 				check_expected(true);
 				return;
 			}
+			
+			if (cell->type.in(ID($mul))) {
+				param_bool(ID::A_SIGNED);
+				param_bool(ID::B_SIGNED);
+				port(ID::A, param(ID::A_WIDTH));
+				port(ID::B, param(ID::B_WIDTH));
+				port(ID::Y, param(ID::Y_WIDTH));
+				param(ID::REG_OUT);
+				param(ID::DSP_CLK);
+				param(ID::DSP_RST);
+				param(ID::DSP_RST_POL);
+				check_expected(cell->type != ID($pow));
+				return;
 
-			if (cell->type.in(ID($add), ID($sub), ID($mul), ID($div), ID($mod), ID($divfloor), ID($modfloor), ID($pow))) {
+			}
+
+			if (cell->type.in(ID($add), ID($sub), ID($div), ID($mod), ID($divfloor), ID($modfloor), ID($pow))) {
 				param_bool(ID::A_SIGNED);
 				param_bool(ID::B_SIGNED);
 				port(ID::A, param(ID::A_WIDTH));
@@ -2389,6 +2404,16 @@ DEF_METHOD(LogicNot,   1, ID($logic_not))
 		cell->setPort(ID::B, sig_b);                        \
 		cell->setPort(ID::Y, sig_y);                        \
 		cell->set_src_attribute(src);                       \
+		if(cell->type == RTLIL::escape_id("$mul")) cell->parameters[ID::REG_OUT] = 0;        \
+		string empty_clk = ""; \
+		Const mul_ck; \
+		mul_ck = Const(empty_clk); \
+		if(cell->type == RTLIL::escape_id("$mul")) cell->parameters[ID::DSP_CLK] = empty_clk;         \
+		string empty_rst = ""; \
+		Const mul_rst; \
+		mul_rst = Const(empty_rst); \
+		if(cell->type == RTLIL::escape_id("$mul")) cell->parameters[ID::DSP_RST] = empty_rst;         \
+		if(cell->type == RTLIL::escape_id("$mul")) cell->parameters[ID::DSP_RST_POL] = 0;        \
 		return cell;                                        \
 	} \
 	RTLIL::SigSpec RTLIL::Module::_func(RTLIL::IdString name, const RTLIL::SigSpec &sig_a, const RTLIL::SigSpec &sig_b, bool is_signed, const std::string &src) { \
