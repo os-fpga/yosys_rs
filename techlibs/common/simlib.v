@@ -886,6 +886,10 @@ parameter B_SIGNED = 0;
 parameter A_WIDTH = 0;
 parameter B_WIDTH = 0;
 parameter Y_WIDTH = 0;
+parameter REG_OUT = 0;
+parameter DSP_CLK = {8'h00,"clk"};
+parameter DSP_RST = {8'h00,"rst"};
+parameter DSP_RST_POL = 0;
 
 input [A_WIDTH-1:0] A;
 input [B_WIDTH-1:0] B;
