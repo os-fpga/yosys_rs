@@ -56,7 +56,10 @@ module _80_mul (A, B, Y);
 	parameter A_WIDTH = 1;
 	parameter B_WIDTH = 1;
 	parameter Y_WIDTH = 1;
-
+	parameter REG_OUT = 3'b0;
+	parameter DSP_CLK = {8'h00,"clk"};
+	parameter DSP_RST = {8'h00,"rst"};
+	parameter DSP_RST_POL = 0;
 	(* force_downto *)
 	input [A_WIDTH-1:0] A;
 	(* force_downto *)
@@ -89,7 +92,11 @@ module _80_mul (A, B, Y);
 			.B_SIGNED(1),
 			.A_WIDTH(A_WIDTH + 1),
 			.B_WIDTH(B_WIDTH + 1),
-			.Y_WIDTH(Y_WIDTH)
+			.Y_WIDTH(Y_WIDTH),
+			.REG_OUT(REG_OUT),
+			.DSP_CLK(DSP_CLK),
+			.DSP_RST(DSP_RST),
+			.DSP_RST_POL(DSP_RST_POL)
 		) _TECHMAP_REPLACE_ (
 			.A({1'b0, A}),
 			.B({1'b0, B}),
@@ -102,7 +109,11 @@ module _80_mul (A, B, Y);
 			.B_SIGNED(A_SIGNED),
 			.A_WIDTH(B_WIDTH),
 			.B_WIDTH(A_WIDTH),
-			.Y_WIDTH(Y_WIDTH)
+			.Y_WIDTH(Y_WIDTH),
+			.REG_OUT(REG_OUT),
+			.DSP_CLK(DSP_CLK),
+			.DSP_RST(DSP_RST),
+			.DSP_RST_POL(DSP_RST_POL)
 		) _TECHMAP_REPLACE_ (
 			.A(B),
 			.B(A),
@@ -146,7 +157,11 @@ module _80_mul (A, B, Y);
 					.B_SIGNED(B_SIGNED),
 					.A_WIDTH(`DSP_A_MAXWIDTH_PARTIAL),
 					.B_WIDTH(B_WIDTH),
-					.Y_WIDTH(partial_Y_WIDTH)
+					.Y_WIDTH(partial_Y_WIDTH),
+					.REG_OUT(REG_OUT),
+					.DSP_CLK(DSP_CLK),
+					.DSP_RST(DSP_RST),
+					.DSP_RST_POL(DSP_RST_POL)
 				) mul (
 					.A({{sign_headroom{1'b0}}, A[i*(`DSP_A_MAXWIDTH_PARTIAL-sign_headroom) +: `DSP_A_MAXWIDTH_PARTIAL-sign_headroom]}),
 					.B(B),
@@ -166,7 +181,11 @@ module _80_mul (A, B, Y);
 				.B_SIGNED(B_SIGNED),
 				.A_WIDTH(last_A_WIDTH),
 				.B_WIDTH(B_WIDTH),
-				.Y_WIDTH(last_Y_WIDTH)
+				.Y_WIDTH(last_Y_WIDTH),
+				.REG_OUT(REG_OUT),
+				.DSP_CLK(DSP_CLK),
+				.DSP_RST(DSP_RST),
+				.DSP_RST_POL(DSP_RST_POL)
 			) sliceA.last (
 				.A(A[A_WIDTH-1 -: last_A_WIDTH]),
 				.B(B),
@@ -203,7 +222,11 @@ module _80_mul (A, B, Y);
 					.B_SIGNED(sign_headroom),
 					.A_WIDTH(A_WIDTH),
 					.B_WIDTH(`DSP_B_MAXWIDTH_PARTIAL),
-					.Y_WIDTH(partial_Y_WIDTH)
+					.Y_WIDTH(partial_Y_WIDTH),
+					.REG_OUT(REG_OUT),
+					.DSP_CLK(DSP_CLK),
+					.DSP_RST(DSP_RST),
+					.DSP_RST_POL(DSP_RST_POL)
 				) mul (
 					.A(A),
 					.B({{sign_headroom{1'b0}}, B[i*(`DSP_B_MAXWIDTH_PARTIAL-sign_headroom) +: `DSP_B_MAXWIDTH_PARTIAL-sign_headroom]}),
@@ -223,7 +246,11 @@ module _80_mul (A, B, Y);
 				.B_SIGNED(B_SIGNED),
 				.A_WIDTH(A_WIDTH),
 				.B_WIDTH(last_B_WIDTH),
-				.Y_WIDTH(last_Y_WIDTH)
+				.Y_WIDTH(last_Y_WIDTH),
+				.REG_OUT(REG_OUT),
+				.DSP_CLK(DSP_CLK),
+				.DSP_RST(DSP_RST),
+				.DSP_RST_POL(DSP_RST_POL)
 			) mul_sliceB_last (
 				.A(A),
 				.B(B[B_WIDTH-1 -: last_B_WIDTH]),
@@ -252,6 +279,10 @@ module _80_mul (A, B, Y);
 				.A_WIDTH(`DSP_A_MAXWIDTH),
 				.B_WIDTH(`DSP_B_MAXWIDTH),
 				.Y_WIDTH(`MIN(Y_WIDTH,`DSP_A_MAXWIDTH+`DSP_B_MAXWIDTH)),
+				.REG_OUT(REG_OUT),
+				.DSP_CLK(DSP_CLK),
+				.DSP_RST(DSP_RST),
+				.DSP_RST_POL(DSP_RST_POL)
 			) _TECHMAP_REPLACE_ (
 				.A(blkA.Aext),
 				.B(blkB.Bext),
@@ -269,6 +300,10 @@ module _90_soft_mul (A, B, Y);
 	parameter A_WIDTH = 1;
 	parameter B_WIDTH = 1;
 	parameter Y_WIDTH = 1;
+	parameter REG_OUT = 1;
+	parameter DSP_CLK = {8'h00, "Clk"};
+	parameter DSP_RST = {8'h00,"rst"};
+	parameter DSP_RST_POL = 0;
 
 	(* force_downto *)
 	input [A_WIDTH-1:0] A;
@@ -286,7 +321,11 @@ module _90_soft_mul (A, B, Y);
 			.B_SIGNED(1),
 			.A_WIDTH(A_WIDTH),
 			.B_WIDTH(B_WIDTH+1),
-			.Y_WIDTH(Y_WIDTH)
+			.Y_WIDTH(Y_WIDTH),
+			.REG_OUT(REG_OUT),
+			.DSP_CLK(DSP_CLK),
+			.DSP_RST(DSP_RST),
+			.DSP_RST_POL(DSP_RST_POL)
 		) _TECHMAP_REPLACE_ (
 			.A(A),
 			.B({1'b0,B}),
@@ -298,7 +337,11 @@ module _90_soft_mul (A, B, Y);
 			.B_SIGNED(B_SIGNED),
 			.A_WIDTH(A_WIDTH+1),
 			.B_WIDTH(B_WIDTH),
-			.Y_WIDTH(Y_WIDTH)
+			.Y_WIDTH(Y_WIDTH),
+			.REG_OUT(REG_OUT),
+			.DSP_CLK(DSP_CLK),
+			.DSP_RST(DSP_RST),
+			.DSP_RST_POL(DSP_RST_POL)
 		) _TECHMAP_REPLACE_ (
 			.A({1'b0,A}),
 			.B(B),
@@ -310,7 +353,11 @@ module _90_soft_mul (A, B, Y);
 			.B_SIGNED(B_SIGNED),
 			.A_WIDTH(A_WIDTH),
 			.B_WIDTH(B_WIDTH),
-			.Y_WIDTH(Y_WIDTH)
+			.Y_WIDTH(Y_WIDTH),
+			.REG_OUT(REG_OUT),
+			.DSP_CLK(DSP_CLK),
+			.DSP_RST(DSP_RST),
+			.DSP_RST_POL(DSP_RST_POL)
 		) _TECHMAP_REPLACE_ (
 			.A(A),
 			.B(B),
