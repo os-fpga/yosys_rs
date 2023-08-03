@@ -943,11 +943,13 @@ struct TechmapWorker
 				}
 				else
 				{
+#if 0
 					auto msg = stringf("Using template %s for cells of type %s.", log_id(tpl), log_id(cell->type));
 					if (!log_msg_cache.count(msg)) {
 						log_msg_cache.insert(msg);
 						log("%s\n", msg.c_str());
 					}
+#endif
 					log_debug("%s %s.%s (%s) using %s.\n", mapmsg_prefix.c_str(), log_id(module), log_id(cell), log_id(cell->type), log_id(tpl));
 					techmap_module_worker(design, module, cell, tpl);
 					cell = nullptr;
