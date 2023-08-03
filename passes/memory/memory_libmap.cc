@@ -27,6 +27,8 @@
 #include "kernel/mem.h"
 #include "kernel/qcsat.h"
 
+#include "kernel/ff.h"
+
 USING_YOSYS_NAMESPACE
 PRIVATE_NAMESPACE_BEGIN
 
