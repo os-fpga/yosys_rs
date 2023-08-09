@@ -29,6 +29,7 @@
 #include "passes/techmap/simplemap.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <chrono>
 
 USING_YOSYS_NAMESPACE
 PRIVATE_NAMESPACE_BEGIN
@@ -723,6 +724,9 @@ struct OptDffWorker
 	}
 
 	bool run_constbits() {
+
+                auto startTime = std::chrono::high_resolution_clock::now();
+
 		ModWalker modwalker(module->design, module);
 		QuickConeSat qcsat(modwalker);
 
@@ -846,30 +850,24 @@ log("Nb solve = %d\n", nbSolve);
 				did_something = true;
 			}
 
-                   // Check the return of investment of DFF optimization.
-                   // If too low (less than 0.2% of DFFs removed) then proceed to early exit. 
-                   // Performs this check for a reasonable minimum number of "solve" DFFs (2000)
-                   // when runtime starts to be costly.
-                   // [RapidSilicon]
-#if 1
-                   if ((nbSolve >= 1000) && (nbRemove < nbSolve * 0.002)) {
-                      break;
+                   // Hard coded limit when SAT mode is used. Limit based on design EDA-1041/rsnoc which 
+                   // blows up with opt_dff -sat (> 10 hours).
+                   // This is a safety guard break till we revisit the SAT solver runtime issues
+                   // (Thierry)
+                   //
+                   if (nbSolve > 30000) {
+                     break;
                    }
-                   if (nbSolve >= 4000) {
-                      // If we process too many "solve" w.r.t number of visited DFF we stop
-                      // because it is too costly (ex: design27, Jira 115)
-                      // The other design sensitive to this check is "main_loop_synth".
-                      //
-                      // These number have been tuned based on Jira 115 (design27) and 
-                      // "main_loop_synth". It helps to reduce Jira 115 from 3h30mn down
-                      // to 25 mn.
-                      //
-                      if (1 && (nbSolve >= 5 * nbVisited)) {
-                        break;
-                      }
-                   }
-#endif
+
 		}
+
+                auto endTime = std::chrono::high_resolution_clock::now();
+                auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(endTime - startTime);
+
+                float totalTime = elapsed.count() * 1e-9; 
+
+                log("[#visit=%d, #solve=%d, #remove=%d, time=%.2f sec.]\n", nbVisited, nbSolve, nbRemove, totalTime);
+
 		return did_something;
 	}
 };

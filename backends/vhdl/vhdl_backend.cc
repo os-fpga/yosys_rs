@@ -2071,6 +2071,24 @@ void vhdl_dump_cell_intermediate_outputs(std::ostream &f, std::string indent, RT
      }
 }
 
+bool isLUTx(string cellName) 
+{
+   if (cellName == "LUT1")
+       return true;
+   if (cellName == "LUT2")
+       return true;
+   if (cellName == "LUT3")
+       return true;
+   if (cellName == "LUT4")
+       return true;
+   if (cellName == "LUT5")
+       return true;
+   if (cellName == "LUT6")
+       return true;
+
+   return false;
+}
+
 bool isGenesis2(string cellName) 
 {
 if (cellName == "dff")
@@ -2141,6 +2159,9 @@ bool unsupportedCell(string cellName)
    if (isGenesis2(cellName))
      return false;
 
+   if (isLUTx(cellName))
+     return false;
+
    return true;
 }
 
@@ -2180,7 +2201,7 @@ void vhdl_dump_cell(std::ostream &f, std::string indent, RTLIL::Cell *cell)
 	// ================================================
 	// Process "generic map" part of cell instantiation
 	//
-        if (0 || isGenesis2(cellName)) {
+        if (isLUTx(cellName) || isGenesis2(cellName)) {
 
 	  if (!defparam && cell->parameters.size() > 0) {
 		f << stringf("     generic map (");
@@ -2579,6 +2600,87 @@ void printComponent_lut(std::ostream &f, std::string indent)
         f << stringf("%s" "  );\n", indent.c_str());
         f << stringf("%s" " end component;\n", indent.c_str());
 }
+
+void printComponent_LUT1(std::ostream &f, std::string indent)
+{
+        f << stringf("%s" "component LUT1\n", indent.c_str());
+        f << stringf("%s" " generic (\n", indent.c_str());
+        f << stringf("%s" "    INIT_VALUE : std_logic_vector (1 downto 0) \n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" "  port (\n", indent.c_str());
+        f << stringf("%s" "    Y : out std_logic;\n", indent.c_str());
+        f << stringf("%s" "    A : in std_logic\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" " end component;\n", indent.c_str());
+}
+
+
+void printComponent_LUT2(std::ostream &f, std::string indent)
+{
+        f << stringf("%s" "component LUT2\n", indent.c_str());
+        f << stringf("%s" " generic (\n", indent.c_str());
+        f << stringf("%s" "    INIT_VALUE : std_logic_vector (3 downto 0) \n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" "  port (\n", indent.c_str());
+        f << stringf("%s" "    Y : out std_logic;\n", indent.c_str());
+        f << stringf("%s" "    A : in std_logic_vector(1 downto 0)\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" " end component;\n", indent.c_str());
+}
+
+void printComponent_LUT3(std::ostream &f, std::string indent)
+{
+        f << stringf("%s" "component LUT3\n", indent.c_str());
+        f << stringf("%s" " generic (\n", indent.c_str());
+        f << stringf("%s" "    INIT_VALUE : std_logic_vector (7 downto 0) \n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" "  port (\n", indent.c_str());
+        f << stringf("%s" "    Y : out std_logic;\n", indent.c_str());
+        f << stringf("%s" "    A : in std_logic_vector(2 downto 0)\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" " end component;\n", indent.c_str());
+}
+
+void printComponent_LUT4(std::ostream &f, std::string indent)
+{
+        f << stringf("%s" "component LUT4\n", indent.c_str());
+        f << stringf("%s" " generic (\n", indent.c_str());
+        f << stringf("%s" "    INIT_VALUE : std_logic_vector (15 downto 0) \n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" "  port (\n", indent.c_str());
+        f << stringf("%s" "    Y : out std_logic;\n", indent.c_str());
+        f << stringf("%s" "    A : in std_logic_vector(3 downto 0)\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" " end component;\n", indent.c_str());
+}
+
+void printComponent_LUT5(std::ostream &f, std::string indent)
+{
+        f << stringf("%s" "component LUT5\n", indent.c_str());
+        f << stringf("%s" " generic (\n", indent.c_str());
+        f << stringf("%s" "    INIT_VALUE : std_logic_vector (31 downto 0) \n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" "  port (\n", indent.c_str());
+        f << stringf("%s" "    Y : out std_logic;\n", indent.c_str());
+        f << stringf("%s" "    A : in std_logic_vector(4 downto 0)\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" " end component;\n", indent.c_str());
+}
+
+void printComponent_LUT6(std::ostream &f, std::string indent)
+{
+        f << stringf("%s" "component LUT6\n", indent.c_str());
+        f << stringf("%s" " generic (\n", indent.c_str());
+        f << stringf("%s" "    INIT_VALUE : std_logic_vector (63 downto 0) \n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" "  port (\n", indent.c_str());
+        f << stringf("%s" "    Y : out std_logic;\n", indent.c_str());
+        f << stringf("%s" "    A : in std_logic_vector(5 downto 0)\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" " end component;\n", indent.c_str());
+}
+
+
 
 void printComponent_shr(std::ostream &f, std::string indent)
 {
@@ -3040,6 +3142,14 @@ void vhdl_dump_module(std::ostream &f, std::string indent, RTLIL::Module *module
         printComponent_latchr(f, indent);
         printComponent_latchnr(f, indent);
         printComponent_fa_1bit(f, indent);
+
+        // LUTx
+        printComponent_LUT1(f, indent);
+        printComponent_LUT2(f, indent);
+        printComponent_LUT3(f, indent);
+        printComponent_LUT4(f, indent);
+        printComponent_LUT5(f, indent);
+        printComponent_LUT6(f, indent);
 
 	for (auto w : module->wires())
 		vhdl_dump_signal(f, indent + "  ", w);
