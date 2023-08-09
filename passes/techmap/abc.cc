@@ -895,6 +895,7 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 	}
 
 	had_init = false;
+	en_over_srst=false;
 	for (auto c : cells)
 		extract_cell(c, keepff);
 
