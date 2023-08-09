@@ -1552,6 +1552,10 @@ skip_identity:
 					cell->parameters[ID::B_WIDTH] = GetSize(new_b);
 					cell->parameters[ID::B_SIGNED] = false;
 					cell->setPort(ID::B, new_b);
+					cell->unsetParam(ID::DSP_CLK);
+					cell->unsetParam(ID::DSP_RST);
+					cell->unsetParam(ID::DSP_RST_POL);
+					cell->unsetParam(ID::REG_OUT);
 					cell->check();
 
 					did_something = true;
