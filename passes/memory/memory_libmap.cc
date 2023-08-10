@@ -2198,7 +2198,7 @@ struct MemoryLibMapPass : public Pass {
 							ff_data.sig_clk = port.clk;
 							ff_data.pol_clk = port.clk_polarity;
 							
-							if(port.en != State::S1){
+							if ((!port.ce_over_srst && (port.en != State::S1))){
 								ff_data.has_ce = true;
 								ff_data.sig_ce = port.en;
 							}
