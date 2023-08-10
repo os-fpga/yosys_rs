@@ -120,7 +120,22 @@ static RTLIL::SigSpec binop2rtlil(AstNode *that, IdString type, int result_width
 
 	cell->parameters[ID::A_SIGNED] = RTLIL::Const(that->children[0]->is_signed);
 	cell->parameters[ID::B_SIGNED] = RTLIL::Const(that->children[1]->is_signed);
-
+	
+	// Awais: extra parameter for $mul added to avoid CI failures
+	#if 1
+		if (type == ID($mul)){
+			cell->parameters[ID::REG_OUT] = 0;
+			cell->parameters[ID::DSP_RST_POL] = 0;      
+			string empty_clk = "";
+			Const mul_ck;
+			mul_ck = Const(empty_clk); 
+			cell->parameters[ID::DSP_CLK] = empty_clk;         
+			string empty_rst = ""; 
+			Const mul_rst; 
+			mul_rst = Const(empty_rst); 
+			cell->parameters[ID::DSP_RST] = empty_rst;         
+		}
+	#endif
 	cell->parameters[ID::A_WIDTH] = RTLIL::Const(left.size());
 	cell->parameters[ID::B_WIDTH] = RTLIL::Const(right.size());
 
