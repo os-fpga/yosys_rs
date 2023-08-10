@@ -26,7 +26,7 @@
 #include "kernel/sigtools.h"
 #include "kernel/mem.h"
 #include "kernel/qcsat.h"
-
+#include "kernel/ffinit.h"
 #include "kernel/ff.h"
 
 USING_YOSYS_NAMESPACE
@@ -2190,40 +2190,38 @@ struct MemoryLibMapPass : public Pass {
 							
 							Mux_Y = port.data;
 							port.data = Mux_A;
-							
-							for (auto &port: mem.rd_ports) {
-																
-								FfData ff_data(module, &initvals, NEW_ID);
-								FfData ff_en(module, &initvals, NEW_ID);
-								ff_data.width = GetSize(port.data);
-								ff_data.has_clk = true;
-								ff_data.sig_clk = port.clk;
-								ff_data.pol_clk = port.clk_polarity;
 								
-								if(port.en != State::S1){
-									ff_data.has_ce = true;
-									ff_data.sig_ce = port.en;
-								}
-								if(port.arst != State::S0){
-									SigSpec rst 	= module->addWire(NEW_ID,GetSize(port.arst));
-									rst = module->Not(NEW_ID, port.arst);
-									ff_data.has_arst = true;
-									ff_data.sig_arst = rst;
-									ff_data.val_arst = port.arst_value;
-								}
-								if(port.srst != State::S0){
-									ff_data.has_srst = true;
-									SigSpec rst 	= module->addWire(NEW_ID,GetSize(port.srst));
-									rst = module->Not(NEW_ID, port.srst);
-									ff_data.sig_srst = rst;
-									ff_data.val_srst = port.srst_value;
-									ff_data.ce_over_srst = port.ce_over_srst;
-								}
-								ff_data.sig_d = Mux_Y;
-								ff_data.sig_q = Mux_B;
-								ff_data.val_init = port.init_value ;
-								ff_data.emit();
+							FfData ff_data(module, &initvals, NEW_ID);
+
+							ff_data.width = GetSize(port.data);
+							ff_data.has_clk = true;
+							ff_data.sig_clk = port.clk;
+							ff_data.pol_clk = port.clk_polarity;
+							
+							if ((!port.ce_over_srst && (port.en != State::S1))){
+								ff_data.has_ce = true;
+								ff_data.sig_ce = port.en;
 							}
+							if(port.arst != State::S0){
+								SigSpec rst 	= module->addWire(NEW_ID,GetSize(port.arst));
+								rst = module->Not(NEW_ID, port.arst);
+								ff_data.has_arst = true;
+								ff_data.sig_arst = rst;
+								ff_data.val_arst = port.arst_value;
+							}
+							if(port.srst != State::S0){
+								ff_data.has_srst = true;
+								SigSpec rst 	= module->addWire(NEW_ID,GetSize(port.srst));
+								rst = module->Not(NEW_ID, port.srst);
+								ff_data.sig_srst = rst;
+								ff_data.val_srst = port.srst_value;
+								ff_data.ce_over_srst = port.ce_over_srst;
+							}
+							ff_data.sig_d = Mux_Y;
+							ff_data.sig_q = Mux_B;
+							ff_data.val_init = port.init_value ;
+							ff_data.emit();
+							
 							// module->addDff(NEW_ID,port.clk,Mux_Y,Mux_B,port.clk_polarity);
 							module->addDff(NEW_ID,port.clk,port.en,Mux_sel,port.clk_polarity);
 							module->addMux(NEW_ID, Mux_B, port.data, Mux_sel, Mux_Y);
