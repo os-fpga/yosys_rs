@@ -121,7 +121,7 @@ pool<std::string> enabled_gates;
 bool cmos_cost;
 bool had_init;
 
-bool clk_polarity, en_polarity, arst_polarity, srst_polarity;
+bool clk_polarity, en_polarity, arst_polarity, srst_polarity,en_over_srst;
 RTLIL::SigSpec clk_sig, en_sig, arst_sig, srst_sig;
 dict<int, std::string> pi_map, po_map;
 
@@ -234,6 +234,10 @@ void extract_cell(RTLIL::Cell *cell, bool keepff)
 					return;
 				type = G(FF0);
 			}
+			if (ff.ce_over_srst){
+				log_debug("Setting CE periority over reset\n");
+				en_over_srst=true;
+			}else en_over_srst=false;
 		} else {
 			if (GetSize(srst_sig) != 0)
 				return;
@@ -891,6 +895,7 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 	}
 
 	had_init = false;
+	en_over_srst=false;
 	for (auto c : cells)
 		extract_cell(c, keepff);
 
@@ -1291,6 +1296,7 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 						ff.pol_srst = srst_polarity;
 						ff.sig_srst = srst_sig;
 						ff.val_srst = init;
+						if (en_over_srst) ff.ce_over_srst= true;
 					}
 					ff.sig_d = module->wire(remap_name(c->getPort(ID::D).as_wire()->name));
 					ff.sig_q = module->wire(remap_name(c->getPort(ID::Q).as_wire()->name));
