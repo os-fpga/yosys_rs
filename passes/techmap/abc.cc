@@ -2206,11 +2206,11 @@ struct AbcPass : public Pass {
                         for (std::vector<pair<clkdomain_t, std::vector<RTLIL::Cell*>>*>::iterator itpp = partitions.begin();
                              itpp != partitions.end(); itpp++) {
 
-                           // Based on experiments on big designs having a lot of partitions. Processing the first 400
+                           // Based on experiments on big designs having a lot of partitions. Processing the first 200
                            // looks to be acceptable, no need to do more. (ex: rsnoc design)
                            // (Thierry)
                            //
-                           if (nb > 400) {
+                           if (nb > 200) {
                               break;
                            }
 
