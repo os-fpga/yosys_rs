@@ -19,6 +19,16 @@
  *
  */
 
+/* Mimic the verific "analyze". Some "keys" are currently not supported and some
+ * associated hard coded values are dumped. 
+ * This is the case of :
+ * 	- line : 0
+ * 	- language : SystemVerilog
+ * 	- file : 1
+ *
+ *  We would need to extract these info from the Verilog parser (Thierry).
+ */
+
 #include "kernel/rtlil.h"
 #include "kernel/register.h"
 #include "kernel/sigtools.h"
@@ -115,10 +125,19 @@ struct AnlzWriter
                           f << stringf(",\n");
                         }
                         f << stringf("              {\n");
-                        f << stringf("                  \"name\": %s\n", get_name(param.first).c_str());
-                        f << stringf("                  \"value\": ");
+                        f << stringf("                  \"name\": %s,\n", 
+				     get_name(param.first).c_str());
 
+#if 1
+                        // Mimic what was done with the analyze verific version
+                        // even if it is wrong so that it goes through the JSON
+                        // parser.
+                        //
+                        f << stringf("                  \"value\": 0");
+#else
+                        f << stringf("                  \"value\": ");
                         dump_parameter_value(param.second);
+#endif
 
                         f << stringf(" \n              }");
 
@@ -256,7 +275,9 @@ struct AnlzWriter
                       f << stringf(",\n");
                    }
                    f << stringf("              {\n");
+                   f << stringf("                   \"file\": \"1\",\n");
                    f << stringf("                   \"instName\": %s,\n", get_name(c->name).c_str());
+                   f << stringf("                   \"line\": 0,\n");
                    f << stringf("                   \"module\":  %s,\n", get_name(c->type).c_str());
                    f << stringf("                   \"parameters\": []\n");
                    f << stringf("              }");
@@ -304,6 +325,7 @@ struct AnlzWriter
 
                 // write file ID
                 //
+                f << stringf("          \"file\": \"1\",\n");
 
                 // write internalSignals
                 //
@@ -311,9 +333,11 @@ struct AnlzWriter
 
                 // write language
                 //
+                f << stringf("          \"language\": \"SystemVerilog\",\n");
 
                 // write line
                 //
+                f << stringf("          \"line\": 0,\n");
                      
                 if (dump_name) {
                   f << stringf("          \"module\": %s,\n", get_name(module->name).c_str());
@@ -356,7 +380,7 @@ struct AnlzWriter
                 f << stringf("  ],\n");
         }
 
-	void dump_modules(Module* topModule)
+	void dump_modules(Module* topModule, std::set<RTLIL::Module*, IdString::compare_ptr_by_name<Module>>& used)
 	{
                 f << stringf("  \"modules\": {\n");
                 vector<Module*> modules = design->modules();
@@ -368,6 +392,12 @@ struct AnlzWriter
                      if (module == topModule) {
                         continue;
                      }
+
+                     if (used.count(module) == 0) {
+                        continue;
+                     }
+
+                     log(" Process module %s\n", get_name(module->name).c_str());
 
                      if (!first_module) {
                         f << stringf(",\n");
@@ -410,6 +440,39 @@ struct AnlzWriter
                 f << stringf("]\n");
         }
 
+        std::string basic_cell_type(const std::string celltype, int pos[3] = nullptr) {
+           std::string basicType = celltype;
+           if (celltype.compare(0, strlen("$array:"), "$array:") == 0) {
+                int pos_idx = celltype.find_first_of(':');
+                int pos_num = celltype.find_first_of(':', pos_idx + 1);
+                int pos_type = celltype.find_first_of(':', pos_num + 1);
+                basicType = celltype.substr(pos_type + 1);
+                if (pos != nullptr) {
+                        pos[0] = pos_idx;
+                        pos[1] = pos_num;
+                        pos[2] = pos_type;
+                }
+           }
+           return basicType;
+        }
+
+        void hierarchy_visit(RTLIL::Design *design, std::set<RTLIL::Module*,
+                              IdString::compare_ptr_by_name<Module>> &used, RTLIL::Module *mod)
+        {
+           if (used.count(mod) > 0)
+                return;
+
+           used.insert(mod);
+
+           for (auto cell : mod->cells()) {
+                std::string celltype = cell->type.str();
+                if (celltype.compare(0, strlen("$array:"), "$array:") == 0)
+                        celltype = basic_cell_type(celltype);
+                if (design->module(celltype))
+                        hierarchy_visit(design, used, design->module(celltype));
+           }
+        }
+
 	void dump_hier_info(Design *design_)
 	{
 		design = design_;
@@ -427,7 +490,10 @@ struct AnlzWriter
 
                 dump_hierTree();
 
-                dump_modules(topmod);
+                std::set<RTLIL::Module*, IdString::compare_ptr_by_name<Module>> used;
+                hierarchy_visit(design, used, topmod);
+
+                dump_modules(topmod, used);
 
 		f << stringf("\n}\n");
 	}
@@ -448,6 +514,8 @@ struct AnlzPass : public Pass {
 		log("\n");
 		log("    -top <top_module_name>\n");
 		log("       performs Analyze from the top module with name 'top_module_name'.\n");
+		log("    -auto-top \n");
+		log("       detects automatically the top module. If several tops, it picks up the one with deepest hierarchy. Analyze from this selected top module.\n");
 		log("\n");
 	}
 
@@ -475,7 +543,10 @@ struct AnlzPass : public Pass {
                         top_name = args[++argidx];
                         continue;
                    }
-                   log_error("Analyze Unknow Option : \"%s\"\n", args[argidx].c_str());
+                   if (args[argidx] == "-auto-top") {
+                        continue;
+                   }
+                   log_error("Analyze Unknown Option : \"%s\"\n", args[argidx].c_str());
 		}
 		extra_args(args, argidx, design);
 
