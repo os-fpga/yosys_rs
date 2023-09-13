@@ -1032,6 +1032,13 @@ struct define_map_t;
 
 struct RTLIL::Design
 {
+        // For Yosys "analyze" version stores RTL file names with associated IDs
+        //
+        unsigned int rtlFilesId = 1;
+        std::map<std::string, unsigned int> rtlFiles;
+        std::vector<std::string> rtlFilesNames;
+        // (Thierry)
+
 	unsigned int hashidx_;
 	unsigned int hash() const { return hashidx_; }
 
@@ -1149,6 +1156,10 @@ protected:
 	void add(RTLIL::Process *process);
 
 public:
+        std::string fileName = "";
+        int fileID = 0;
+        int line = 0;
+
 	RTLIL::Design *design;
 	pool<RTLIL::Monitor*> monitors;
 
@@ -1507,6 +1518,10 @@ struct RTLIL::Memory : public RTLIL::AttrObject
 
 struct RTLIL::Cell : public RTLIL::AttrObject
 {
+        // Line info for Yosys "analyze" (Thierry)
+        //
+        unsigned int line = 0;
+
 	unsigned int hashidx_;
 	unsigned int hash() const { return hashidx_; }
 
