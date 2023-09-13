@@ -275,9 +275,9 @@ struct AnlzWriter
                       f << stringf(",\n");
                    }
                    f << stringf("              {\n");
-                   f << stringf("                   \"file\": \"1\",\n");
+                   f << stringf("                   \"file\": \"%d\",\n", module->fileID);
                    f << stringf("                   \"instName\": %s,\n", get_name(c->name).c_str());
-                   f << stringf("                   \"line\": 0,\n");
+                   f << stringf("                   \"line\": %d,\n", c->line);
                    f << stringf("                   \"module\":  %s,\n", get_name(c->type).c_str());
                    f << stringf("                   \"parameters\": []\n");
                    f << stringf("              }");
@@ -317,6 +317,14 @@ struct AnlzWriter
         void dump_fileIDs()
         {
 		f << stringf("  \"fileIDs\": {\n");
+                int fileID = 1;
+                for (std::vector<std::string>::iterator it = design->rtlFilesNames.begin(); 
+                    it != design->rtlFilesNames.end(); it++) {
+
+                    std::string fileName = *it;
+
+                    f << stringf("      \"%d\": \"%s\"\n", fileID++, fileName.c_str());
+                }
 		f << stringf("  },\n");
         }
 
@@ -325,7 +333,7 @@ struct AnlzWriter
 
                 // write file ID
                 //
-                f << stringf("          \"file\": \"1\",\n");
+                f << stringf("          \"file\": \"%d\",\n", module->fileID);
 
                 // write internalSignals
                 //
@@ -337,7 +345,7 @@ struct AnlzWriter
 
                 // write line
                 //
-                f << stringf("          \"line\": 0,\n");
+                f << stringf("          \"line\": %d,\n", module->line);
                      
                 if (dump_name) {
                   f << stringf("          \"module\": %s,\n", get_name(module->name).c_str());

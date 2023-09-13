@@ -1938,6 +1938,10 @@ RTLIL::SigSpec AstNode::genRTLIL(int width_hint, bool sign_hint)
 			// Set attribute 'module_not_derived' which will be cleared again after the hierarchy pass
 			cell->set_bool_attribute(ID::module_not_derived);
 
+                        // Store line of cell instance for Yosys "analyze" (Thierry)
+                        //
+                        cell->line = location.first_line;
+
 			for (auto it = children.begin(); it != children.end(); it++) {
 				AstNode *child = *it;
 				if (child->type == AST_CELLTYPE) {
