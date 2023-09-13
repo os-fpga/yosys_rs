@@ -1269,8 +1269,11 @@ static void rename_in_package_stmts(AstNode *pkg)
 }
 
 // create AstModule instances for all modules in the AST tree and add them to 'design'
-void AST::process(RTLIL::Design *design, AstNode *ast, bool dump_ast1, bool dump_ast2, bool no_dump_ptr, bool dump_vlog1, bool dump_vlog2, bool dump_rtlil,
-		bool nolatches, bool nomeminit, bool nomem2reg, bool mem2reg, bool noblackbox, bool lib, bool nowb, bool noopt, bool icells, bool pwires, bool nooverwrite, bool overwrite, bool defer, bool autowire)
+void AST::process(RTLIL::Design *design, AstNode *ast, bool dump_ast1, bool dump_ast2, 
+                  bool no_dump_ptr, bool dump_vlog1, bool dump_vlog2, bool dump_rtlil,
+                  bool nolatches, bool nomeminit, bool nomem2reg, bool mem2reg, bool noblackbox, 
+                  bool lib, bool nowb, bool noopt, bool icells, bool pwires, bool nooverwrite, 
+                  bool overwrite, bool defer, bool autowire)
 {
 	current_ast = ast;
 	current_ast_mod = nullptr;
@@ -1291,6 +1294,21 @@ void AST::process(RTLIL::Design *design, AstNode *ast, bool dump_ast1, bool dump
 	flag_icells = icells;
 	flag_pwires = pwires;
 	flag_autowire = autowire;
+
+
+        // Store both in MAP and VECTOR containers the current processed RTL file name
+        // (Thierry)
+        //
+        unsigned int fileID = 0;
+        std::string fileName = current_ast->filename;
+
+        if (design->rtlFiles.find(current_ast->filename) == design->rtlFiles.end()) {
+          fileID = design->rtlFilesId;
+          design->rtlFiles[current_ast->filename] = design->rtlFilesId++;
+          design->rtlFilesNames.push_back(current_ast->filename);
+        } else {
+          fileID = design->rtlFiles[current_ast->filename];
+        }
 
 	log_assert(current_ast->type == AST_DESIGN);
 	for (AstNode *child : current_ast->children)
@@ -1352,6 +1370,16 @@ void AST::process(RTLIL::Design *design, AstNode *ast, bool dump_ast1, bool dump
 
 			process_module(design, child, defer_local);
 			current_ast_mod = nullptr;
+
+                        // Add file and line information for the "module"
+                        // (Thierry)
+                        //
+                        if (design->has(child->str)) {
+                          RTLIL::Module *existing_mod = design->module(child->str);
+                          existing_mod->fileName = fileName;
+                          existing_mod->fileID = fileID;
+                          existing_mod->line = child->location.first_line;
+                        }
 		}
 		else if (child->type == AST_PACKAGE) {
 			// process enum/other declarations

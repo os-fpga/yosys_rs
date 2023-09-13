@@ -1136,6 +1136,13 @@ struct RTLIL::Design
 #ifdef WITH_PYTHON
 	static std::map<unsigned int, RTLIL::Design*> *get_all_designs(void);
 #endif
+        
+        // For Yosys "analyze" version stores RTL file names with associated IDs
+        //
+        unsigned int rtlFilesId = 1;
+        std::map<std::string, unsigned int> rtlFiles;
+        std::vector<std::string> rtlFilesNames;
+        // (Thierry)
 };
 
 struct RTLIL::Module : public RTLIL::AttrObject
@@ -1462,6 +1469,12 @@ public:
 #ifdef WITH_PYTHON
 	static std::map<unsigned int, RTLIL::Module*> *get_all_modules(void);
 #endif
+
+        // data for Yosys "analyze" (Thierry)
+        //
+        std::string fileName = "";
+        int fileID = 0;
+        int line = 0;
 };
 
 struct RTLIL::Wire : public RTLIL::AttrObject
@@ -1563,6 +1576,10 @@ public:
 
 	bool has_memid() const;
 	bool is_mem_cell() const;
+        
+        // Line info for Yosys "analyze" (Thierry)
+        //
+        unsigned int line = 0;
 };
 
 struct RTLIL::CaseRule : public RTLIL::AttrObject
