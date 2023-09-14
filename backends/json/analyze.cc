@@ -316,16 +316,26 @@ struct AnlzWriter
 
         void dump_fileIDs()
         {
+                bool first = true;
+
 		f << stringf("  \"fileIDs\": {\n");
+
                 int fileID = 1;
+
                 for (std::vector<std::string>::iterator it = design->rtlFilesNames.begin(); 
                     it != design->rtlFilesNames.end(); it++) {
 
+                    if (!first) {
+		      f << stringf(",\n");
+                    }
+
                     std::string fileName = *it;
 
-                    f << stringf("      \"%d\": \"%s\"\n", fileID++, fileName.c_str());
+                    f << stringf("      \"%d\": \"%s\"", fileID++, fileName.c_str());
+
+                    first = false;
                 }
-		f << stringf("  },\n");
+		f << stringf("\n  },\n");
         }
 
         void dump_module(Module* module, int dump_name)
