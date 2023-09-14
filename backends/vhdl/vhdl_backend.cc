@@ -2155,6 +2155,12 @@ bool unsupportedCell(string cellName)
    if (cellName == "dffnsre") 
        return false;
 
+   if (cellName == "DFFRE") 
+       return false;
+
+   if (cellName == "DFFNRE") 
+       return false;
+
    /* Genesis 2 */
    if (isGenesis2(cellName))
      return false;
@@ -2915,6 +2921,21 @@ void printComponent_dffre(std::ostream &f, std::string indent)
         f << stringf("%s" "  );\n", indent.c_str());
         f << stringf("%s" " end component;\n", indent.c_str());
 }
+void printComponent_DFFRE(std::ostream &f, std::string indent)
+{
+        f << stringf("%s" " component DFFRE\n", indent.c_str());
+        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" "  port (\n", indent.c_str());
+        f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
+        f << stringf("%s" "    R : in std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "    E : in std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "    D : in std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "    C : in std_logic := '0'\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" " end component;\n", indent.c_str());
+}
 void printComponent_dffnre(std::ostream &f, std::string indent)
 {
         f << stringf("%s" " component dffnre\n", indent.c_str());
@@ -2930,6 +2951,22 @@ void printComponent_dffnre(std::ostream &f, std::string indent)
         f << stringf("%s" "  );\n", indent.c_str());
         f << stringf("%s" " end component;\n", indent.c_str());
 }
+void printComponent_DFFNRE(std::ostream &f, std::string indent)
+{
+        f << stringf("%s" " component DFFNRE\n", indent.c_str());
+        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" "  port (\n", indent.c_str());
+        f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
+        f << stringf("%s" "    R : in std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "    E : in std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "    D : in std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "    C : in std_logic := '0'\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" " end component;\n", indent.c_str());
+}
+
 void printComponent_latch(std::ostream &f, std::string indent)
 {
         f << stringf("%s" " component latch\n", indent.c_str());
@@ -3135,13 +3172,18 @@ void vhdl_dump_module(std::ostream &f, std::string indent, RTLIL::Module *module
         printComponent_dffne(f, indent);
         printComponent_sdffre(f, indent);
         printComponent_sdffnre(f, indent);
-        printComponent_dffre(f, indent);
-        printComponent_dffnre(f, indent);
+        //printComponent_dffre(f, indent);
+        //printComponent_dffnre(f, indent);
         printComponent_latch(f, indent);
         printComponent_latchn(f, indent);
         printComponent_latchr(f, indent);
         printComponent_latchnr(f, indent);
         printComponent_fa_1bit(f, indent);
+
+        // Genesis 3
+        //
+        printComponent_DFFRE(f, indent);
+        printComponent_DFFNRE(f, indent);
 
         // LUTx
         printComponent_LUT1(f, indent);
