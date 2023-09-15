@@ -254,6 +254,9 @@ struct AnlzWriter
                    if (c->name[0] == '$') {
                       continue;
                    }
+                   if (c->type[0] == '$') {
+                      continue;
+                   }
                    anyInst++;
                    break;
                 }
@@ -268,6 +271,9 @@ struct AnlzWriter
 		for (auto c : module->cells()) {
 
                    if (c->name[0] == '$') {
+                      continue;
+                   }
+                   if (c->type[0] == '$') {
                       continue;
                    }
 
@@ -400,8 +406,31 @@ struct AnlzWriter
 
 	void dump_modules(Module* topModule, std::set<RTLIL::Module*, IdString::compare_ptr_by_name<Module>>& used)
 	{
-                f << stringf("  \"modules\": {\n");
                 vector<Module*> modules = design->modules();
+                int nb_modules = 0;
+
+                // special case of no modules
+                //
+                for (auto module : modules) {
+
+                     if (module == topModule) {
+                        continue;
+                     }
+
+                     if (used.count(module) == 0) {
+                        continue;
+                     }
+
+                     nb_modules++;
+                     break;
+                }
+
+                if (!nb_modules) {
+                  f << stringf("  \"modules\": null");
+                  return;
+                }
+
+                f << stringf("  \"modules\": {\n");
 
                 bool first_module = true;
 
