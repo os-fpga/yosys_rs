@@ -804,8 +804,10 @@ struct OCLA_AnalyzerPass : public Pass {
     log("\n");
     log("    -top <top_module_name>\n");
     log("       performs Analyze from the top module with name 'top_module_name'.\n");
-    log("    -auto-top \n");
+    log("    -auto-top\n");
     log("       detects automatically the top module. If several tops, it picks up the one with deepest hierarchy. Analyze from this selected top module.\n");
+    log("    -file <output json file>\n");
+    log("       writes the output to the specified file. Optional, if not specified, the default name is ocla.json\n");
     log("\n");
   }
 
@@ -813,6 +815,7 @@ struct OCLA_AnalyzerPass : public Pass {
   {
     // Parse Analyze command arguments
     std::string top_name = "";
+    std::string json_name = "ocla.json";
     bool is_auto = false;
     size_t argidx;
     for (argidx = 1; argidx < args.size(); argidx++)
@@ -825,6 +828,10 @@ struct OCLA_AnalyzerPass : public Pass {
         is_auto = true;
         continue;
       }
+      if (args[argidx] == "-file" && argidx+1 < args.size()) {
+        json_name = args[++argidx];
+        continue;
+      }
       log_error("Analyze Unknown Option : \"%s\"\n", args[argidx].c_str());
     }
     extra_args(args, argidx, design);
@@ -834,7 +841,7 @@ struct OCLA_AnalyzerPass : public Pass {
     } else if (is_auto) {
       run_pass("hierarchy -auto-top");
     }
-    std::ofstream json("ocla.json");
+    std::ofstream json(json_name.c_str());
     OCLA_Analyzer::analyze(design, json);
     json.close();
   }
