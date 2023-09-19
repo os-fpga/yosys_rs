@@ -20,7 +20,7 @@
  */
 
 /* 
-  This piece of code extract important information for RTLIL::Design class
+  This piece of code extract important information from RTLIL::Design class
   directly. These important information includes:
     a. Number of OCLA instances being instantiated (if there is)
     b. Each signals that user would like to probe/debug
