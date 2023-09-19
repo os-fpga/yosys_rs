@@ -29,6 +29,9 @@
         -- useful for SW to determine what base addr to talk to each instance
     e. a lot more
 */
+/*
+  Author: Chai, Chung Shien
+*/
 
 #include "kernel/rtlil.h"
 #include "kernel/register.h"
@@ -99,15 +102,28 @@ void post_msg(std::ofstream& json, int space, std::string string) {
     { post_msg(json, space, stringf(__VA_ARGS__)); }
 #endif
 
+/*
+  Storing module parameter information in this struct
+    a. Parameter can be either string or uint32_t (determined by is_str)
+    b. Parameter can only be assigned once (determined by is_assigned)
+    c. Depend on is_str, the pointer ptr will be cast to std::string* or uint32_t*
+*/
 struct PARAM_INFO {
   PARAM_INFO(void* p = nullptr, bool s = false) :
     is_str(s), ptr(p) {
   }
-  bool is_str;
+  bool is_str = false;
   bool is_assigned = false;
-  void* ptr;
+  void* ptr = nullptr;
 };
 
+/*
+  This is base structure of the IP
+  There will be two IPs that we need to detect:
+    a. OCLA IP
+    b. AXIL Interconnect IP
+  Both IP will always has IP_TYPE, IP_VERSION and IP_ID parameter
+*/
 struct MODULE_IP {
   MODULE_IP(std::string n = "") : name (n) {
     log_assert(name.size());
@@ -115,6 +131,9 @@ struct MODULE_IP {
     params["\\IP_VERSION"] = PARAM_INFO(&version);
     params["\\IP_ID"] = PARAM_INFO(&id);
   }
+  /*
+    Set the parameter information
+  */
   bool set_param(std::ofstream& json, std::string name, std::string value) {
     bool status = true;
     auto iter = params.find(name);
@@ -165,6 +184,10 @@ SET_PARAM_END:
   uint32_t id = 0;
 };
 
+/*
+  OCLA IP derived MODULE_IP
+    Beside the 3 essential paramters, thiss IP need more parameter information
+*/
 struct OCLA_MODULE : MODULE_IP {
   OCLA_MODULE(std::string n) : MODULE_IP(n) {
     params["\\AXI_ADDR_WIDTH"] = PARAM_INFO(&axi_addr_width);
@@ -174,6 +197,9 @@ struct OCLA_MODULE : MODULE_IP {
     params["\\NO_OF_PROBES"] = PARAM_INFO(&probes_count);
     params["\\NO_OF_TRIGGER_INPUTS"] = PARAM_INFO(&trigger_inputs_count);
   }
+  /*
+    This function to determine if the detected parameter meet the requirement
+  */
   bool check_type(std::ofstream& json) {
     bool status = false;
     if (type == "ocla" && mem_depth > 0 && probe_width > 0 && probe_width <= 32 &&
@@ -195,6 +221,10 @@ struct OCLA_MODULE : MODULE_IP {
   uint32_t trigger_inputs_count = 0;
 };
 
+/*
+  AXIL Interconnect IP derived MODULE_IP
+    Beside the 3 essential paramters, this IP need more parameter information
+*/
 struct AXIL_INTERCONNECT_MODULE : MODULE_IP {
   AXIL_INTERCONNECT_MODULE(std::string n) : MODULE_IP(n) {
     params["\\ADDR_WIDTH"] = PARAM_INFO(&addr_width);
@@ -204,6 +234,9 @@ struct AXIL_INTERCONNECT_MODULE : MODULE_IP {
       params[gen_string("\\M%02d_BASE_ADDR", i)] = PARAM_INFO(&base_addresses[i]);
     }
   }
+  /*
+    This function to determine if the detected parameter meet the requirement
+  */
   bool check_type(std::ofstream& json) {
     bool status = false;
     if (type == "AXIL_IC" && count > 0 && count <= 16) {
@@ -222,6 +255,19 @@ struct AXIL_INTERCONNECT_MODULE : MODULE_IP {
   uint32_t tracking = 0;
 };
 
+/*
+  This struct store the information of the signal. The information include:
+    a. name
+    b. width size
+    c. offset index
+  Example of signals include:
+    a. signals that user want to probe/debug
+    b. signals that user want to use as trigger inputs
+    c. special signal which is s_axil_awready, we need to trace this signal connection,
+        so that we know how each OCLA instance is routed to AXIL Interconnect master port
+        Once we know which port index is being used by a particular OCLA, we know the base
+        address to talk to this OCLA instance
+*/
 struct OCLA_SIGNAL {
   OCLA_SIGNAL(std::string f, std::string n, uint32_t w, uint32_t o, bool s) :
     fullname(f), name(n), width(w), offset(o), show_index(s) {
@@ -241,6 +287,10 @@ struct OCLA_SIGNAL {
   bool show_index = false;
 };
 
+/*
+  When using IP Catalog, each IP will be instantiated by a wrapper
+  This struct is the IP wrapper/instantiator
+*/
 struct OCLA_INSTANTIATOR {
   OCLA_INSTANTIATOR(std::string m, std::string i, OCLA_MODULE* o,
                     std::vector<OCLA_SIGNAL> p, std::vector<OCLA_SIGNAL> t, 
@@ -248,6 +298,9 @@ struct OCLA_INSTANTIATOR {
     module(m), instance(i), ocla(o), probes(p), trigger_inputs(t), awready(a), 
     index(in), connection_chain(cs) {
   }
+  /*
+    Validate if all the information that we extract is good
+  */
   bool finalize(AXIL_INTERCONNECT_MODULE* axil, std::ofstream& json, int space) {
     uint32_t total_s = 0;
     if (!status) {
@@ -317,6 +370,12 @@ FINALIZE_END:
 
 class OCLA_Analyzer {
  public:
+  /*
+    The only public access static function
+    This is entry to analyze the design
+      a. Input is from RTLIL::Design
+      b. Output is dumped into json std::ofstream
+  */
   static void analyze(RTLIL::Design* design, std::ofstream& json) {
     printf("************************************\n");
     printf("************************************\n");
@@ -336,26 +395,33 @@ class OCLA_Analyzer {
     std::vector<std::string> ocla_instantiator_names;
     std::vector<OCLA_MODULE*> ocla_instantiated_modules;
     std::vector<OCLA_INSTANTIATOR> ocla_instantiators;
+    // Step 1: Get all the OCLA IP and AXIL Interconnect IPs
     get_modules(design, ocla_modules, axil_interconnect_modules, json);
+    // Step 2: Check the detected IP counts
+    //    a. User can instantiate as many OCLA instances (as long as it is connected to AXIL Interconnet)
+    //    b. AXIL Interconnect can support maximum of 16 master ports
+    //    c. Limitation: we only support one AXIL Interconnect IP for now
     if (ocla_modules.size() == 0 || axil_interconnect_modules.size() != 1) {
       JSON_POST_MSG(0, "Warning/Error: OCLA module count=%ld, AXIL Interconnect module count=%ld", 
                         ocla_modules.size(), axil_interconnect_modules.size());
       goto ANALYZE_MSG_END;
     }
-    // Make sure there is only one AXIL Interconnect all the way up to top
+    // Step 3: Make sure there is only one AXIL Interconnect all the way up to top
     if (!check_unique_axil_interconnect(design, axil_interconnect_modules[0]->name, connection_name, json)) {
       JSON_POST_MSG(1, "Error: Currently only support one AXIL Interconnect instance in a design");
       goto ANALYZE_MSG_END;
     }
+    // Step 4: For each OCLA IP, grab all the instantiator (or wrapper)
     for (auto& o : ocla_modules) {
       get_ocla_instantiator(design, o, ocla_instantiator_names, ocla_instantiated_modules, json);
     }
+    // Step 5: Make sure we successfully grab at least 1 instantiator
     if (ocla_instantiator_names.size() == 0) {
       JSON_POST_MSG(0, "Error: Does not find any OCLA instantiator");
       goto ANALYZE_MSG_END;
     }
     log_assert(ocla_instantiator_names.size() == ocla_instantiated_modules.size());
-    // Black box and Flatten the design
+    // Step 6: Black box instantiator module and Flatten the design
     for (auto& n : ocla_instantiator_names) {
       std::string cmd = gen_string("blackbox %s", n.c_str());
       JSON_POST_MSG(0, "Run command: %s", cmd.c_str());
@@ -363,11 +429,13 @@ class OCLA_Analyzer {
     }
     JSON_POST_MSG(0, "Run command: flatten");
     run_pass("flatten", design);
+    // Step 7: Once the flatten the design, start to grab all the signals information
     for (size_t i = 0; i < ocla_instantiator_names.size(); i++) {
       get_ocla_instantiator(design->top_module(), ocla_instantiator_names[i], ocla_instantiated_modules[i], 
                             ocla_instantiators, connection_name, json);
     }
     JSON_POST_MSG(0, "Total detected OCLA Instantiator: %ld", ocla_instantiators.size());
+    // Step 8: Loop through the instantiator that we gathered so far and perform final validation
     for (auto& inst : ocla_instantiators) {
       JSON_POST_MSG(1, "Instance: %s, Module: %s", inst.instance.c_str(), inst.module.c_str());
       JSON_POST_MSG(2, "Final checking ...");
@@ -395,6 +463,7 @@ class OCLA_Analyzer {
     }
 ANALYZE_MSG_END:
     json << "    \"End of OCLA Analysis\"\n  ]";
+    // Step 9: There is is valid detected OCLA instance, then we dump those information is JSON file
     if (ocla_count) {
       json << ",\n  \"ocla\" : [\n";
       uint32_t index = 0;
@@ -417,6 +486,7 @@ ANALYZE_MSG_END:
       json_write_param(axil_interconnect_modules[0], json, 2);
       json << "\n  }";
     }
+    // Step 10: Take care of memory leak
     while (ocla_modules.size()) {
       delete ocla_modules.back();
       ocla_modules.pop_back();
@@ -428,6 +498,9 @@ ANALYZE_MSG_END:
     json << "\n}\n";
   }
  private:
+  /*
+    Convert RTLIL::Const to string: normally is parameter or const signal (example: 4'b0000, 5'h3)
+  */
   static void dump_const(std::ostringstream &f, const RTLIL::Const &data, int width = -1, int offset = 0, bool autoint = true) {
     if (width < 0) {
       width = data.bits.size() - offset;
@@ -484,6 +557,9 @@ ANALYZE_MSG_END:
       f << stringf("\"");
     }
   }
+  /*
+    Convert RTLIL::SigSpec to string/OCLA_SIGNAL
+  */
   static void dump_sigspec(std::ostringstream &f, std::vector<OCLA_SIGNAL>& ss, const RTLIL::SigSpec &sig, bool autoint=true) {
     if (sig.is_chunk()) {
       OCLA_SIGNAL s = dump_sigchunk(f, sig.as_chunk(), autoint);
@@ -498,6 +574,9 @@ ANALYZE_MSG_END:
       f << stringf("}");
     }
   }
+  /*
+    Convert RTLIL::SigChunk to string/OCLA_SIGNAL
+  */
   static OCLA_SIGNAL dump_sigchunk(std::ostringstream &f, const RTLIL::SigChunk &chunk, bool autoint) {
     std::ostringstream temp;
     std::string name = "";
@@ -519,6 +598,9 @@ ANALYZE_MSG_END:
     f << temp.str().c_str();
     return OCLA_SIGNAL(temp.str(), name, (uint32_t)(chunk.width), (uint32_t)(chunk.offset), show_index);
   }
+  /*
+    Get OCLA and AXIL Interconnect module (if there is any)
+  */
   static void get_modules(RTLIL::Design* design, std::vector<OCLA_MODULE*>& ocla_modules, 
                           std::vector<AXIL_INTERCONNECT_MODULE*>& axil_interconnect_modules,
                           std::ofstream& json) {
@@ -554,6 +636,9 @@ ANALYZE_MSG_END:
       }
     }
   }
+  /*
+    Make sure there is only AXIL Interconnect IP being instantiated - all the way up to top
+  */
   static bool check_unique_axil_interconnect(RTLIL::Design* design, std::string module_name, 
                                               std::string& connection_name, std::ofstream& json) {
     bool status = true;
@@ -598,6 +683,9 @@ ANALYZE_MSG_END:
     }
     return status;
   }
+  /*
+    Retrieve parameter from the module
+  */
   static void get_module_params(RTLIL::Module* module, MODULE_IP*& ip, std::ofstream& json) {
     for (const auto &p : module->avail_parameters) {
       const auto &it = module->parameter_default_values.find(p);
@@ -618,6 +706,11 @@ ANALYZE_MSG_END:
       }
     }
   }
+  /*
+    Get the information of OCLA instantiator/wrapper
+      a. This function only get the information name.
+      b. This is done before we blackbox the instantiator and flatten the design
+  */
   static void get_ocla_instantiator(RTLIL::Design* design, OCLA_MODULE* module, 
                                     std::vector<std::string>& instantiators,
                                     std::vector<OCLA_MODULE*>& instantiated_modules,
@@ -638,6 +731,14 @@ ANALYZE_MSG_END:
       JSON_POST_MSG(1, "Warning: Does not detect any instantiator");
     }
   }
+  /*
+    Get the information of OCLA instantiator/wrapper
+      a. This function retrieve all other information that we need:
+          - probed signals
+          - trigger signals
+          - s_axil_awready
+      b. This is done after we blackbox the instantiator and flatten the design
+  */
   static void get_ocla_instantiator(RTLIL::Module* top_module, std::string instantiator_module, 
                                     OCLA_MODULE* module, std::vector<OCLA_INSTANTIATOR>& instantiators, 
                                     std::string connection_name, std::ofstream& json) {
@@ -690,6 +791,9 @@ ANALYZE_MSG_END:
       JSON_POST_MSG(1, "Warning: Does not detect OCLA instantiator instantiated by top module or there is error in detecting signals");
     }
   }
+  /*
+    This function search the connection how the OCLA is being connected to AXIL Interconnect IP
+  */
   static int search_axil_interconnection(RTLIL::Module* top_module, std::string connection_name,
                                           std::string awready, std::vector<std::string>& connections,
                                           std::ofstream& json) {
@@ -732,6 +836,9 @@ ANALYZE_MSG_END:
     }
     return index;
   }
+  /*
+    Write out IP/Module parameter into JSON file
+  */
   static void json_write_param(MODULE_IP* ip, std::ofstream& json, uint32_t space) {
     std::string info = "";
     size_t index = 0;
@@ -757,6 +864,9 @@ ANALYZE_MSG_END:
       }
     }
   }
+  /*
+    Write out IP/Module signals into JSON file
+  */
   static void json_write_signals(std::string name, std::vector<OCLA_SIGNAL>& signals, std::ofstream& json) {
     json << gen_string(",\n      \"%s\" : [\n", name.c_str()).c_str();
     size_t index = 0;
