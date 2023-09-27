@@ -1604,7 +1604,8 @@ bool Mem::emulate_read_first_ok() {
 			{
 				for (auto &r: rd_ports) {
 					for (auto &w: wr_ports) {
-						if (r.en==cell->getPort(ID::Y) && (w.en[0]==cell->getPort(ID::A)))
+						SigSpec sig = w.en.extract(0, 1);
+						if (r.en==cell->getPort(ID::Y) || (sig ==cell->getPort(ID::A)))
 						for (int j = 0; j < GetSize(wr_ports); j++)
 							port.transparency_mask[j] = true; 
 					} 
