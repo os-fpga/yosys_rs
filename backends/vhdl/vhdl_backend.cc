@@ -27,7 +27,7 @@
  * It is a copy/paste of the Verilog version (yosys/backends/verilog) and 
  * only the "structural" parts have been modified to allow the VHDL ouptut of structural netlist.
  * It is currently customized for specific cells which have been hard-coded like :
- * shr, adder_carry, TDP36K, RS_DSP2_MULT, sh_dff, latchsre, dffnsre, dffsre. 
+ * shr, ADDER_CARRY, TDP36K, RS_DSP2_MULT, sh_dff, latchsre, dffnsre, dffsre. 
  * Things are generally straighforward when coming from Verilog code except when we want to adress 
  * port map association of an instance like :
  *     Cell (...
@@ -2134,7 +2134,7 @@ bool unsupportedCell(string cellName)
    if (cellName == "shr") 
        return false;
 
-   if (cellName == "adder_carry") 
+   if (cellName == "ADDER_CARRY") 
        return false;
 
    if (cellName == "TDP36K") 
@@ -2750,9 +2750,9 @@ void printComponent_latchsre(std::ostream &f, std::string indent)
 }
 
 
-void printComponent_adder_carry(std::ostream &f, std::string indent)
+void printComponent_ADDER_CARRY(std::ostream &f, std::string indent)
 {
-        f << stringf("%s" " component adder_carry\n", indent.c_str());
+        f << stringf("%s" " component ADDER_CARRY\n", indent.c_str());
         f << stringf("%s" "  port (\n", indent.c_str());
         f << stringf("%s" "    sumout : out std_logic ;\n", indent.c_str());
         f << stringf("%s" "    cout : out std_logic ;\n", indent.c_str());
@@ -3158,7 +3158,7 @@ void vhdl_dump_module(std::ostream &f, std::string indent, RTLIL::Module *module
 
         printComponent_latchsre(f, indent);
 
-        printComponent_adder_carry(f, indent);
+        printComponent_ADDER_CARRY(f, indent);
 
         // Genesis 2
         //
