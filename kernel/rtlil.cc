@@ -3663,12 +3663,40 @@ RTLIL::SigSpec::SigSpec(const RTLIL::Const &value)
 	check();
 }
 
+RTLIL::SigSpec::SigSpec(RTLIL::Const &&value)
+{
+	cover("kernel.rtlil.sigspec.init.const.move");
+
+	if (GetSize(value) != 0) {
+		chunks_.emplace_back(std::move(value));
+		width_ = chunks_.back().width;
+	} else {
+		width_ = 0;
+	}
+	hash_ = 0;
+	check();
+}
+
 RTLIL::SigSpec::SigSpec(const RTLIL::SigChunk &chunk)
 {
 	cover("kernel.rtlil.sigspec.init.chunk");
 
 	if (chunk.width != 0) {
 		chunks_.emplace_back(chunk);
+		width_ = chunks_.back().width;
+	} else {
+		width_ = 0;
+	}
+	hash_ = 0;
+	check();
+}
+
+RTLIL::SigSpec::SigSpec(RTLIL::SigChunk &&chunk)
+{
+	cover("kernel.rtlil.sigspec.init.chunk.move");
+
+	if (chunk.width != 0) {
+		chunks_.emplace_back(std::move(chunk));
 		width_ = chunks_.back().width;
 	} else {
 		width_ = 0;

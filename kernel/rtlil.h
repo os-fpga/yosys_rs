@@ -833,7 +833,9 @@ public:
 	RTLIL::SigSpec &operator=(const RTLIL::SigSpec &other);
 
 	SigSpec(const RTLIL::Const &value);
-	SigSpec(const RTLIL::SigChunk &chunk);
+        SigSpec(RTLIL::Const &&value);
+        SigSpec(const RTLIL::SigChunk &chunk);
+        SigSpec(RTLIL::SigChunk &&chunk);
 	SigSpec(RTLIL::Wire *wire);
 	SigSpec(RTLIL::Wire *wire, int offset, int width = 1);
 	SigSpec(const std::string &str);
