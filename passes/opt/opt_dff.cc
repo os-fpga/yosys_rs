@@ -728,23 +728,29 @@ struct OptDffWorker
                 auto startTime = std::chrono::high_resolution_clock::now();
 
 		ModWalker modwalker(module->design, module);
-		QuickConeSat qcsat(modwalker);
+		/*EDA-2101/Thierry: Creating a global "qcsat" solver will store on and on clauses created
+		  within the two for loops below. And we will get a huge number of clauses in the SAT solver
+		  and eventaully it will cause a huge amount of time for it to find a solution. So to avaoid 
+		  huge runtime we are commenting  below global "qcsat" and will create a local "qcsat" object
+		  instead (see below).
+ 		*/
+		//QuickConeSat qcsat(modwalker);
 
 		// Run as a separate sub-pass, so that we don't mutate (non-FF) cells under ModWalker.
 		bool did_something = false;
  
-                // numbers to control below loop exit
-                //
-                int nbSolve = 0;
-                int nbRemove = 0;
-                int nbVisited = 0;
+        	// numbers to control below loop exit
+        	//
+        	int nbSolve = 0;
+        	int nbRemove = 0;
+        	int nbVisited = 0;
 
 		for (auto cell : module->selected_cells()) {
 			if (!RTLIL::builtin_ff_cell_types().count(cell->type))
 				continue;
 			FfData ff(&initvals, cell);
 
-                        nbVisited++;
+            		 nbVisited++;
 
 #if 0
 log("Nb visited = %d\n", nbVisited);
@@ -781,6 +787,8 @@ log("Nb solve = %d\n", nbSolve);
 						if (val != State::S0 && val != State::S1)
 							continue;
 
+						/* EDA-2101/Thierry: Created a local SAT solver object. It is disposed at the end of "else" body.*/
+						QuickConeSat qcsat(modwalker);
 						int init_sat_pi = qcsat.importSigBit(val);
 						int q_sat_pi = qcsat.importSigBit(ff.sig_q[i]);
 						int d_sat_pi = qcsat.importSigBit(ff.sig_d[i]);
@@ -810,6 +818,8 @@ log("Nb solve = %d\n", nbSolve);
 						if (val != State::S0 && val != State::S1)
 							continue;
 
+						/* EDA-2101/Thierry: Created a local SAT solver object. It is disposed at the end of "else" body.*/
+						QuickConeSat qcsat(modwalker);
 						int init_sat_pi = qcsat.importSigBit(val);
 						int q_sat_pi = qcsat.importSigBit(ff.sig_q[i]);
 						int d_sat_pi = qcsat.importSigBit(ff.sig_ad[i]);
@@ -817,7 +827,7 @@ log("Nb solve = %d\n", nbSolve);
 						qcsat.prepare();
 
 						// Try to find out whether the register bit can change under some circumstances
-                                                nbSolve++;
+                        			nbSolve++;
 						bool counter_example_found = qcsat.ez->solve(qcsat.ez->IFF(q_sat_pi, init_sat_pi), qcsat.ez->NOT(qcsat.ez->IFF(d_sat_pi, init_sat_pi)));
 
 						// If the register bit cannot change, we can replace it with a constant
@@ -826,7 +836,7 @@ log("Nb solve = %d\n", nbSolve);
 					}
 				}
 
-                                nbRemove++;
+                		nbRemove++;
 				log("Setting constant %d-bit at position %d on %s (%s) from module %s.\n", val ? 1 : 0,
 						i, log_id(cell), log_id(cell->type), log_id(module));
 
@@ -853,12 +863,13 @@ log("Nb solve = %d\n", nbSolve);
                    // Hard coded limit when SAT mode is used. Limit based on design EDA-1041/rsnoc which 
                    // blows up with opt_dff -sat (> 10 hours).
                    // This is a safety guard break till we revisit the SAT solver runtime issues
-                   // (Thierry)
-                   //
+                   // EDA-2101/(Thierry): Added a fix in (yosys/kernel/qcsat.cc) that avoids runtime  
+                   // blowup for rsnoc, so adding "#if 0" for below limit.
+#if 0				   
                    if (nbSolve > 30000) {
                      break;
                    }
-
+#endif
 		}
 
                 auto endTime = std::chrono::high_resolution_clock::now();
