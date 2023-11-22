@@ -66,7 +66,7 @@ void QuickConeSat::prepare()
 			if (max_cell_outs && GetSize(modwalker.cell_outputs[pbit.cell]) > max_cell_outs)
 				continue;
 			auto &inputs = modwalker.cell_inputs[pbit.cell];
-			/*EDA-2245 Added below check to avoid core dump error due to looping through empty vector,
+			/*EDA-2229 Added below check to avoid core dump error due to looping through empty vector,
 			sample test case is main_loop_synth design*/
 			if (inputs.empty()){
 				continue;
