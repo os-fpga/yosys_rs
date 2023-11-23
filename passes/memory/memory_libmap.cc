@@ -1745,6 +1745,7 @@ void MemMapping::emit_port(const MemConfig &cfg, std::vector<Cell*> &cells, cons
 		} else {
 			for (auto cell: cells) {
 				cell->setPort(stringf("\\PORT_%s_WR_DATA", name), Const(State::Sx, width));
+				cell->setParam(stringf("\\PORT_%s_DATA_WIDTH", name), cfg.def->dbits[hw_wr_wide_log2]);
 				SigSpec hw_wren = Const(State::S0, width / effective_byte);
 				if (pdef.wrbe_separate) {
 					cell->setPort(stringf("\\PORT_%s_WR_EN", name), State::S0);
