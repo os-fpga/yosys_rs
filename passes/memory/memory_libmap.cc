@@ -1728,6 +1728,7 @@ void MemMapping::emit_port(const MemConfig &cfg, std::vector<Cell*> &cells, cons
 					}
 				}
 				cell->setPort(stringf("\\PORT_%s_WR_DATA", name), hw_wdata);
+				cell->setParam(stringf("\\PORT_%s_DATA_WIDTH", name), GetSize(wport.data));
 				if (pdef.wrbe_separate) {
 					// TODO make some use of it
 					SigSpec en = mem.module->ReduceOr(NEW_ID, hw_wren);
@@ -1827,6 +1828,7 @@ void MemMapping::emit_port(const MemConfig &cfg, std::vector<Cell*> &cells, cons
 				}
 				SigSpec hw_rdata = mem.module->addWire(NEW_ID, width);
 				cell->setPort(stringf("\\PORT_%s_RD_DATA", name), hw_rdata);
+				cell->setParam(stringf("\\PORT_%s_DATA_WIDTH", name), GetSize(rport.data));
 				SigSpec lhs;
 				SigSpec rhs;
 				// Original memory_libmap flow
