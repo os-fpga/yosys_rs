@@ -716,19 +716,6 @@ struct MemoryDffWorker
 					handle_rd_port_addr(mem, i);
 			}
 		}
-		// Begin: Awais: Fix for EDA-1436: (Map memory with async read to soft logic when inline attribute is block)
-		for (auto &mem : memories) {
-			for (auto attr: {ID::ram_block, ID::rom_block, ID::ram_style, ID::rom_style, ID::ramstyle, ID::romstyle, ID::syn_ramstyle, ID::syn_romstyle}) {
-				if (mem.has_attribute(attr) and no_out_ff and no_addr_ff) {
-					Const val = mem.attributes.at(attr);
-					std::string val_s = val.decode_string();
-					if (val_s == "block"){
-						mem_async_read = true;
-					}
-				}
-			}
-		}
-		// End: Awais: Fix for EDA-1436: (Map memory with async read to soft logic when inline attribute is block)
 	}
 };
 

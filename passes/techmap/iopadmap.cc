@@ -84,6 +84,10 @@ struct IopadmapPass : public Pass {
 		log("\n");
 		log("Tristate PADS (-toutpad, -tinoutpad) always operate in -bits mode.\n");
 		log("\n");
+		log("\n");
+		log("  -limit_ios <count>\n");
+		log("    Set the maximum number for the inferred IO cells.\n");
+		log("\n");
 	}
 
 	void module_queue(Design *design, Module *module, std::vector<Module *> &modules_sorted, pool<Module *> &modules_processed) {
@@ -112,6 +116,7 @@ struct IopadmapPass : public Pass {
 		std::string widthparam, nameparam;
 		pool<pair<IdString, IdString>> ignore;
 		bool flag_bits = false;
+		int limit_ios = -1;
 
 		size_t argidx;
 		for (argidx = 1; argidx < args.size(); argidx++)
@@ -182,6 +187,10 @@ struct IopadmapPass : public Pass {
 				flag_bits = true;
 				continue;
 			}
+			if (args[argidx] == "-limit" && argidx+1 < args.size()) {
+				limit_ios = std::stoi(args[++argidx]);
+				continue;
+			}
 			break;
 		}
 		extra_args(args, argidx, design);
@@ -206,6 +215,27 @@ struct IopadmapPass : public Pass {
 		pool<Module *> modules_processed;
 		for (auto module : design->selected_modules())
 			module_queue(design, module, modules_sorted, modules_processed);
+		/* EDA-2166: Checking IO mapping limit is provided? If limit is provided and design IOs
+		   are within this limit then we map IO buffers, else we do not map IOs Buffers
+		*/
+		if (limit_ios!=-1) {
+			int count=0;
+			for (auto module : design->selected_modules())
+			{
+				for (auto wire : module->selected_wires())
+				{
+					if (!wire->port_id)
+						continue;
+					if (wire->port_input || wire->port_output){
+						count = count + GetSize(wire);
+					}
+				}
+			}
+			if (count > limit_ios){
+				log_warning("Skipping IO buffer mapping as design has %d IOs which exceeds the max_device_ios limit %d.\n",count,limit_ios);
+				return;
+			}
+		}
 
 		for (auto module : modules_sorted)
 		{

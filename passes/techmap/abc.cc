@@ -121,7 +121,7 @@ pool<std::string> enabled_gates;
 bool cmos_cost;
 bool had_init;
 
-bool clk_polarity, en_polarity, arst_polarity, srst_polarity;
+bool clk_polarity, en_polarity, arst_polarity, srst_polarity,en_over_srst;
 RTLIL::SigSpec clk_sig, en_sig, arst_sig, srst_sig;
 dict<int, std::string> pi_map, po_map;
 
@@ -234,6 +234,10 @@ void extract_cell(RTLIL::Cell *cell, bool keepff)
 					return;
 				type = G(FF0);
 			}
+			if (ff.ce_over_srst){
+				log_debug("Setting CE periority over reset\n");
+				en_over_srst=true;
+			}else en_over_srst=false;
 		} else {
 			if (GetSize(srst_sig) != 0)
 				return;
@@ -891,6 +895,7 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 	}
 
 	had_init = false;
+	en_over_srst=false;
 	for (auto c : cells)
 		extract_cell(c, keepff);
 
@@ -1291,6 +1296,7 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 						ff.pol_srst = srst_polarity;
 						ff.sig_srst = srst_sig;
 						ff.val_srst = init;
+						if (en_over_srst) ff.ce_over_srst= true;
 					}
 					ff.sig_d = module->wire(remap_name(c->getPort(ID::D).as_wire()->name));
 					ff.sig_q = module->wire(remap_name(c->getPort(ID::Q).as_wire()->name));
@@ -1423,6 +1429,16 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 	}
 
 	log_pop();
+}
+
+typedef tuple<bool, RTLIL::SigSpec, bool, RTLIL::SigSpec, bool, RTLIL::SigSpec, bool, RTLIL::SigSpec> clkdomain_t;
+
+bool cmpPartitionSize (pair<clkdomain_t, std::vector<RTLIL::Cell*>>* a, pair<clkdomain_t, std::vector<RTLIL::Cell*>>* b)
+{
+   if (GetSize(a->second) > GetSize(b->second))
+     return true;
+
+   return false;
 }
 
 struct AbcPass : public Pass {
@@ -1616,6 +1632,7 @@ struct AbcPass : public Pass {
 		log("[1] http://www.eecs.berkeley.edu/~alanmi/abc/\n");
 		log("\n");
 	}
+
 	void execute(std::vector<std::string> args, RTLIL::Design *design) override
 	{
 		log_header(design, "Executing ABC pass (technology mapping using ABC).\n");
@@ -2032,7 +2049,7 @@ struct AbcPass : public Pass {
 			pool<RTLIL::Cell*> expand_queue_up, next_expand_queue_up;
 			pool<RTLIL::Cell*> expand_queue_down, next_expand_queue_down;
 
-			typedef tuple<bool, RTLIL::SigSpec, bool, RTLIL::SigSpec, bool, RTLIL::SigSpec, bool, RTLIL::SigSpec> clkdomain_t;
+			//typedef tuple<bool, RTLIL::SigSpec, bool, RTLIL::SigSpec, bool, RTLIL::SigSpec, bool, RTLIL::SigSpec> clkdomain_t;
 			dict<clkdomain_t, std::vector<RTLIL::Cell*>> assigned_cells;
 			dict<RTLIL::Cell*, clkdomain_t> assigned_cells_reverse;
 
@@ -2164,16 +2181,45 @@ struct AbcPass : public Pass {
 			}
 
 			log_header(design, "Summary of detected clock domains:\n");
-			for (auto &it : assigned_cells)
+
+                        int nbPartitions = 0;
+		        std::vector<pair<clkdomain_t, std::vector<RTLIL::Cell*>>*> partitions;
+
+			for (auto &it : assigned_cells) {
+                                nbPartitions++;
+                                partitions.push_back(&it);
+
 				log("  %d cells in clk=%s%s, en=%s%s, arst=%s%s, srst=%s%s\n", GetSize(it.second),
 						std::get<0>(it.first) ? "" : "!", log_signal(std::get<1>(it.first)),
 						std::get<2>(it.first) ? "" : "!", log_signal(std::get<3>(it.first)),
 						std::get<4>(it.first) ? "" : "!", log_signal(std::get<5>(it.first)),
 						std::get<6>(it.first) ? "" : "!", log_signal(std::get<7>(it.first)));
+                        }
+                        log("\n  #logic partitions = %d\n", nbPartitions);
+
+                        // Sort partitions from largest to smallest
+                        //
+                        std::sort(partitions.begin(), partitions.end(), cmpPartitionSize);
 
                         int nb = 0;
 
-			for (auto &it : assigned_cells) {
+                        for (std::vector<pair<clkdomain_t, std::vector<RTLIL::Cell*>>*>::iterator itpp = partitions.begin();
+                             itpp != partitions.end(); itpp++) {
+
+                           // Based on experiments on big designs having a lot of partitions. Processing the first 200
+                           // looks to be acceptable, no need to do more. (ex: rsnoc design)
+                           // (Thierry)
+                           //
+                           if (nb > 200) {
+                              break;
+                           }
+
+                           // get the pair partition 'it'
+                           //
+                           pair<clkdomain_t, std::vector<RTLIL::Cell*>>* itp = *itpp;
+                           pair<clkdomain_t, std::vector<RTLIL::Cell*>> it = *itp;
+
+			//for (auto &it : assigned_cells) {
 
 #ifndef NO_RAPID_SILICON
 		// RapidSilicon [Thierry]
@@ -2188,20 +2234,24 @@ struct AbcPass : public Pass {
 		// We would need to investigate parallel calls on each "assigned_cells" if
 		// feasible.
 		//
+#if 0
                                 if (nb > 200) {
                                   //log("Early exit at 200 iterations\n");
                                   //getchar();
                                   break;
                                 }
+#endif
                                 // watch "b19" with clock_enable_strategy late needing
                                 // "abc -dff" with partition equals 122K, so we need a
                                 // threshold above 122K.
                                 //
+#if 0
                                 if (GetSize(it.second) > 130000) {
                                   //log("Early exit because too many instances\n");
                                   //getchar();
                                   continue;
                                 }
+#endif
                                 nb++;
 #endif
 

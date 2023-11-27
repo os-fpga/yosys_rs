@@ -27,7 +27,7 @@
  * It is a copy/paste of the Verilog version (yosys/backends/verilog) and 
  * only the "structural" parts have been modified to allow the VHDL ouptut of structural netlist.
  * It is currently customized for specific cells which have been hard-coded like :
- * shr, adder_carry, TDP36K, RS_DSP2_MULT, sh_dff, latchsre, dffnsre, dffsre. 
+ * shr, ADDER_CARRY, TDP36K, RS_DSP2_MULT, sh_dff, latchsre, dffnsre, dffsre. 
  * Things are generally straighforward when coming from Verilog code except when we want to adress 
  * port map association of an instance like :
  *     Cell (...
@@ -2071,6 +2071,24 @@ void vhdl_dump_cell_intermediate_outputs(std::ostream &f, std::string indent, RT
      }
 }
 
+bool isLUTx(string cellName) 
+{
+   if (cellName == "LUT1")
+       return true;
+   if (cellName == "LUT2")
+       return true;
+   if (cellName == "LUT3")
+       return true;
+   if (cellName == "LUT4")
+       return true;
+   if (cellName == "LUT5")
+       return true;
+   if (cellName == "LUT6")
+       return true;
+
+   return false;
+}
+
 bool isGenesis2(string cellName) 
 {
 if (cellName == "dff")
@@ -2116,7 +2134,7 @@ bool unsupportedCell(string cellName)
    if (cellName == "shr") 
        return false;
 
-   if (cellName == "adder_carry") 
+   if (cellName == "ADDER_CARRY") 
        return false;
 
    if (cellName == "TDP36K") 
@@ -2137,8 +2155,17 @@ bool unsupportedCell(string cellName)
    if (cellName == "dffnsre") 
        return false;
 
+   if (cellName == "DFFRE") 
+       return false;
+
+   if (cellName == "DFFNRE") 
+       return false;
+
    /* Genesis 2 */
    if (isGenesis2(cellName))
+     return false;
+
+   if (isLUTx(cellName))
      return false;
 
    return true;
@@ -2180,7 +2207,7 @@ void vhdl_dump_cell(std::ostream &f, std::string indent, RTLIL::Cell *cell)
 	// ================================================
 	// Process "generic map" part of cell instantiation
 	//
-        if (0 || isGenesis2(cellName)) {
+        if (isLUTx(cellName) || isGenesis2(cellName)) {
 
 	  if (!defparam && cell->parameters.size() > 0) {
 		f << stringf("     generic map (");
@@ -2580,6 +2607,87 @@ void printComponent_lut(std::ostream &f, std::string indent)
         f << stringf("%s" " end component;\n", indent.c_str());
 }
 
+void printComponent_LUT1(std::ostream &f, std::string indent)
+{
+        f << stringf("%s" "component LUT1\n", indent.c_str());
+        f << stringf("%s" " generic (\n", indent.c_str());
+        f << stringf("%s" "    INIT_VALUE : std_logic_vector (1 downto 0) \n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" "  port (\n", indent.c_str());
+        f << stringf("%s" "    Y : out std_logic;\n", indent.c_str());
+        f << stringf("%s" "    A : in std_logic\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" " end component;\n", indent.c_str());
+}
+
+
+void printComponent_LUT2(std::ostream &f, std::string indent)
+{
+        f << stringf("%s" "component LUT2\n", indent.c_str());
+        f << stringf("%s" " generic (\n", indent.c_str());
+        f << stringf("%s" "    INIT_VALUE : std_logic_vector (3 downto 0) \n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" "  port (\n", indent.c_str());
+        f << stringf("%s" "    Y : out std_logic;\n", indent.c_str());
+        f << stringf("%s" "    A : in std_logic_vector(1 downto 0)\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" " end component;\n", indent.c_str());
+}
+
+void printComponent_LUT3(std::ostream &f, std::string indent)
+{
+        f << stringf("%s" "component LUT3\n", indent.c_str());
+        f << stringf("%s" " generic (\n", indent.c_str());
+        f << stringf("%s" "    INIT_VALUE : std_logic_vector (7 downto 0) \n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" "  port (\n", indent.c_str());
+        f << stringf("%s" "    Y : out std_logic;\n", indent.c_str());
+        f << stringf("%s" "    A : in std_logic_vector(2 downto 0)\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" " end component;\n", indent.c_str());
+}
+
+void printComponent_LUT4(std::ostream &f, std::string indent)
+{
+        f << stringf("%s" "component LUT4\n", indent.c_str());
+        f << stringf("%s" " generic (\n", indent.c_str());
+        f << stringf("%s" "    INIT_VALUE : std_logic_vector (15 downto 0) \n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" "  port (\n", indent.c_str());
+        f << stringf("%s" "    Y : out std_logic;\n", indent.c_str());
+        f << stringf("%s" "    A : in std_logic_vector(3 downto 0)\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" " end component;\n", indent.c_str());
+}
+
+void printComponent_LUT5(std::ostream &f, std::string indent)
+{
+        f << stringf("%s" "component LUT5\n", indent.c_str());
+        f << stringf("%s" " generic (\n", indent.c_str());
+        f << stringf("%s" "    INIT_VALUE : std_logic_vector (31 downto 0) \n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" "  port (\n", indent.c_str());
+        f << stringf("%s" "    Y : out std_logic;\n", indent.c_str());
+        f << stringf("%s" "    A : in std_logic_vector(4 downto 0)\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" " end component;\n", indent.c_str());
+}
+
+void printComponent_LUT6(std::ostream &f, std::string indent)
+{
+        f << stringf("%s" "component LUT6\n", indent.c_str());
+        f << stringf("%s" " generic (\n", indent.c_str());
+        f << stringf("%s" "    INIT_VALUE : std_logic_vector (63 downto 0) \n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" "  port (\n", indent.c_str());
+        f << stringf("%s" "    Y : out std_logic;\n", indent.c_str());
+        f << stringf("%s" "    A : in std_logic_vector(5 downto 0)\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" " end component;\n", indent.c_str());
+}
+
+
+
 void printComponent_shr(std::ostream &f, std::string indent)
 {
         f << stringf("%s" "component shr\n", indent.c_str());
@@ -2642,9 +2750,9 @@ void printComponent_latchsre(std::ostream &f, std::string indent)
 }
 
 
-void printComponent_adder_carry(std::ostream &f, std::string indent)
+void printComponent_ADDER_CARRY(std::ostream &f, std::string indent)
 {
-        f << stringf("%s" " component adder_carry\n", indent.c_str());
+        f << stringf("%s" " component ADDER_CARRY\n", indent.c_str());
         f << stringf("%s" "  port (\n", indent.c_str());
         f << stringf("%s" "    sumout : out std_logic ;\n", indent.c_str());
         f << stringf("%s" "    cout : out std_logic ;\n", indent.c_str());
@@ -2813,6 +2921,21 @@ void printComponent_dffre(std::ostream &f, std::string indent)
         f << stringf("%s" "  );\n", indent.c_str());
         f << stringf("%s" " end component;\n", indent.c_str());
 }
+void printComponent_DFFRE(std::ostream &f, std::string indent)
+{
+        f << stringf("%s" " component DFFRE\n", indent.c_str());
+        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" "  port (\n", indent.c_str());
+        f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
+        f << stringf("%s" "    R : in std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "    E : in std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "    D : in std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "    C : in std_logic := '0'\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" " end component;\n", indent.c_str());
+}
 void printComponent_dffnre(std::ostream &f, std::string indent)
 {
         f << stringf("%s" " component dffnre\n", indent.c_str());
@@ -2828,6 +2951,22 @@ void printComponent_dffnre(std::ostream &f, std::string indent)
         f << stringf("%s" "  );\n", indent.c_str());
         f << stringf("%s" " end component;\n", indent.c_str());
 }
+void printComponent_DFFNRE(std::ostream &f, std::string indent)
+{
+        f << stringf("%s" " component DFFNRE\n", indent.c_str());
+        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" "  port (\n", indent.c_str());
+        f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
+        f << stringf("%s" "    R : in std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "    E : in std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "    D : in std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "    C : in std_logic := '0'\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" " end component;\n", indent.c_str());
+}
+
 void printComponent_latch(std::ostream &f, std::string indent)
 {
         f << stringf("%s" " component latch\n", indent.c_str());
@@ -3019,7 +3158,7 @@ void vhdl_dump_module(std::ostream &f, std::string indent, RTLIL::Module *module
 
         printComponent_latchsre(f, indent);
 
-        printComponent_adder_carry(f, indent);
+        printComponent_ADDER_CARRY(f, indent);
 
         // Genesis 2
         //
@@ -3033,13 +3172,26 @@ void vhdl_dump_module(std::ostream &f, std::string indent, RTLIL::Module *module
         printComponent_dffne(f, indent);
         printComponent_sdffre(f, indent);
         printComponent_sdffnre(f, indent);
-        printComponent_dffre(f, indent);
-        printComponent_dffnre(f, indent);
+        //printComponent_dffre(f, indent);
+        //printComponent_dffnre(f, indent);
         printComponent_latch(f, indent);
         printComponent_latchn(f, indent);
         printComponent_latchr(f, indent);
         printComponent_latchnr(f, indent);
         printComponent_fa_1bit(f, indent);
+
+        // Genesis 3
+        //
+        printComponent_DFFRE(f, indent);
+        printComponent_DFFNRE(f, indent);
+
+        // LUTx
+        printComponent_LUT1(f, indent);
+        printComponent_LUT2(f, indent);
+        printComponent_LUT3(f, indent);
+        printComponent_LUT4(f, indent);
+        printComponent_LUT5(f, indent);
+        printComponent_LUT6(f, indent);
 
 	for (auto w : module->wires())
 		vhdl_dump_signal(f, indent + "  ", w);

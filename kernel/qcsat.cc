@@ -38,6 +38,7 @@ int QuickConeSat::importSigBit(SigBit bit)
 
 void QuickConeSat::prepare()
 {
+	int iter_no=0;
 	while (!bits_queue.empty())
 	{
 		pool<ModWalker::PortBit> portbits;
@@ -65,12 +66,34 @@ void QuickConeSat::prepare()
 			if (max_cell_outs && GetSize(modwalker.cell_outputs[pbit.cell]) > max_cell_outs)
 				continue;
 			auto &inputs = modwalker.cell_inputs[pbit.cell];
+			/*EDA-2229 Added below check to avoid core dump error due to looping through empty vector,
+			sample test case is main_loop_synth design*/
+			if (inputs.empty()){
+				continue;
+			}
 			bits_queue.insert(inputs.begin(), inputs.end());
 			satgen.importCell(pbit.cell);
 			imported_cells.insert(pbit.cell);
 		}
 
 		if (max_cell_count && GetSize(imported_cells) > max_cell_count)
+			break;
+		
+		/*EDA-2101/(Thierry): Here, we simply importing cells in the "SAT solver" having ports connected
+		  to the original "bits_queue", which is actually the direct logic at the DFF output and DFF input.
+		  Continuing "while" loop would mean that continuesly adding the cells, also that are connected to these 
+		  previously added cells, which results in growing logic cone. This growing logic cone results in large
+		  run time for opt_dff -sat command for designs like rsnoc taking 5h30mn and bch_decoder taking 72m8sec.
+		  So, we are adding here a "break;" right after 2 iterations for "while loop" to avoid the growing logic cone. 
+		  we are doing these changes to drastically reduce runtime taken by the “qcsat” solver for “rsnoc” from 5h30mn 
+		  downto 3h08mn with 2 iterations (and 2h45mn with 1 iteration). Here, we kept the iterations to 2 (not 1) 
+		  because designs like (EDA-871..*, are sensitive to these iterations, resulting in increased no. of 
+		  registers with iterations kept upto 1). 
+		  Note: This runtime improvement is also hurting DFF optimization for "design27", resulting in 906 regs 
+		  as compare to 815.*/
+
+		iter_no++;
+		if (iter_no == 2)
 			break;
 	}
 }

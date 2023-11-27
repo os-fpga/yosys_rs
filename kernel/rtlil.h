@@ -833,7 +833,9 @@ public:
 	RTLIL::SigSpec &operator=(const RTLIL::SigSpec &other);
 
 	SigSpec(const RTLIL::Const &value);
-	SigSpec(const RTLIL::SigChunk &chunk);
+        SigSpec(RTLIL::Const &&value);
+        SigSpec(const RTLIL::SigChunk &chunk);
+        SigSpec(RTLIL::SigChunk &&chunk);
 	SigSpec(RTLIL::Wire *wire);
 	SigSpec(RTLIL::Wire *wire, int offset, int width = 1);
 	SigSpec(const std::string &str);
@@ -1050,7 +1052,7 @@ struct RTLIL::Design
 	std::vector<RTLIL::Selection> selection_stack;
 	dict<RTLIL::IdString, RTLIL::Selection> selection_vars;
 	std::string selected_active_module;
-
+	std::vector<Cell *> DFF_cells;
 	Design();
 	~Design();
 
@@ -1136,6 +1138,13 @@ struct RTLIL::Design
 #ifdef WITH_PYTHON
 	static std::map<unsigned int, RTLIL::Design*> *get_all_designs(void);
 #endif
+        
+        // For Yosys "analyze" version stores RTL file names with associated IDs
+        //
+        unsigned int rtlFilesId = 1;
+        std::map<std::string, unsigned int> rtlFiles;
+        std::vector<std::string> rtlFilesNames;
+        // (Thierry)
 };
 
 struct RTLIL::Module : public RTLIL::AttrObject
@@ -1462,6 +1471,12 @@ public:
 #ifdef WITH_PYTHON
 	static std::map<unsigned int, RTLIL::Module*> *get_all_modules(void);
 #endif
+
+        // data for Yosys "analyze" (Thierry)
+        //
+        std::string fileName = "";
+        int fileID = 0;
+        int line = 0;
 };
 
 struct RTLIL::Wire : public RTLIL::AttrObject
@@ -1563,6 +1578,10 @@ public:
 
 	bool has_memid() const;
 	bool is_mem_cell() const;
+        
+        // Line info for Yosys "analyze" (Thierry)
+        //
+        unsigned int line = 0;
 };
 
 struct RTLIL::CaseRule : public RTLIL::AttrObject
