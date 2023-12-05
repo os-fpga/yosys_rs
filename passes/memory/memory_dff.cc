@@ -267,7 +267,6 @@ struct MemoryDffWorker
 				} else {
 					continue;
 				}
-				// log("Continued=0\n");
 				SigSpec y = consumer.cell->getPort(ID::Y);
 				int mux_width = GetSize(y);
 				SigBit ybit = y.extract(consumer.offset);
@@ -345,9 +344,7 @@ struct MemoryDffWorker
 		SigSpec s_din_;
 		std::vector<SigSpec> mux_din;
 		std::vector<SigSpec> ff_chunk;
-		log("\nData = %s\n",log_signal(port.data));
 		SigSpec data = walk_muxes(port.data, muxdata);
-		log("Data = %s\nPort Data =%s\n",log_signal(data),log_signal(port.data));
 		FfData ff;
 		pool<std::pair<Cell *, int>> bits;
 		if (!merger.find_output_ff(data, ff, bits)) {
@@ -420,17 +417,14 @@ struct MemoryDffWorker
 		}
 
 		// Now inspect the mux chain.
-		// log("There is no mux\n");
 		for (auto &md : muxdata) {
 			// We only mark transparent bits after processing a complete
 			// mux, so that the transparency priority validation check
 			// below sees transparency information as of previous mux.
 			std::vector<std::pair<PortData&, int>> trans_queue;
-			// log("There is a mux\n");
 			for (int sel_idx = 0; sel_idx < GetSize(md.sig_s); sel_idx++) {
 				SigBit sbit = md.sig_s[sel_idx];
 				SigSpec &odata = md.sig_other[sel_idx];
-				log("Odata = %s\n",log_signal(odata));
 				for (int bitidx = md.base_idx; bitidx < md.base_idx+md.size; bitidx++) {
 					SigBit odbit = odata[bitidx-md.base_idx];
 					recognized = false;
@@ -524,106 +518,50 @@ struct MemoryDffWorker
 
 		// OK, it worked.
 		log("merging output FF to cell.\n");
-		std::vector<Cell *> mux_cells;
-		for (auto &cell : module->selected_cells()) {
-			if (cell->type == RTLIL::escape_id("$mux"))
-				mux_cells.push_back(cell);
-		}
-		
-		for (auto mux : mux_cells){
-			for (auto bit_pair: bits){
-				FfData _ff_(&initvals, bit_pair.first);
-				// log("Output = %s, en = %s, rst = %s, ce_rst = %d\n",log_signal(_ff_.sig_d),log_signal(_ff_.sig_ce),log_signal(_ff_.sig_srst),_ff_.ce_over_srst);
-				// log("s_din_ = %s, MuxA = %s MuxB = %s MuxY = %s FF_D = %s PData = %s\n",log_signal(s_din_),log_signal(mux->getPort(ID::A)),log_signal(mux->getPort(ID::B)),log_signal(mux->getPort(ID::Y)),log_signal(bit_pair.first->getPort(ID::D)),log_signal(port.data));
-				
-				if (!bit_pair.first->getPort(ID::D).is_chunk()){
-					std::vector<SigChunk> chunks_ = (bit_pair.first->getPort(ID::D));
-					for (auto chunk : chunks_){
-						SigSpec chunk_D = chunk;
-						ff_chunk.push_back(chunk);
-					}
-					
-				}
-				else{
-					ff_chunk.push_back(bit_pair.first->getPort(ID::D));
-				}
-				SigSpec di_reg = module->addWire(NEW_ID,GetSize(s_din_));
-				SigSpec sel_mux = module->addWire(NEW_ID,GetSize(mux->getPort(ID::S))); 
-				SigSpec ce_mux = module->addWire(NEW_ID,GetSize(_ff_.sig_ce)); 
-				SigSpec rst_mux = module->addWire(NEW_ID,GetSize(_ff_.sig_srst)); 
-				SigSpec mux_b = module->addWire(NEW_ID,GetSize(_ff_.sig_q)); 
-				SigSpec mux_y = module->addWire(NEW_ID,GetSize(_ff_.sig_d)); 
-				SigSpec feedback_q = module->addWire(NEW_ID,GetSize(_ff_.sig_q));
-				
-
-				
-				
-				if ((mux->getPort(ID::A) == port.data || mux->getPort(ID::B) == port.data)  \
-					&& (mux->getPort(ID::A) == s_din_ || mux->getPort(ID::B) == s_din_) \
-					&& (mux->getPort(ID::Y) == bit_pair.first->getPort(ID::D))){
-
-					module->addDff(NEW_ID,ff.sig_clk,mux->getPort(ID::S),sel_mux,ff.pol_clk);// din register
-					mux->setPort(ID::S,sel_mux);
-					if(mux->getPort(ID::A) == s_din_){
-						module->addDff(NEW_ID,ff.sig_clk,mux->getPort(ID::A),di_reg,ff.pol_clk);// din register
-						mux->setPort(ID::A,di_reg);
-					}
-					else{
-						module->addDff(NEW_ID,ff.sig_clk,mux->getPort(ID::B),di_reg,ff.pol_clk);// din register
-						mux->setPort(ID::B,di_reg);
-					}
-
-					module->addDff(NEW_ID,ff.sig_clk,_ff_.sig_q,feedback_q,ff.pol_clk);// din register
-					if(_ff_.has_ce)
-						module->addDff(NEW_ID,ff.sig_clk,_ff_.sig_ce,ce_mux,ff.pol_clk);// din register
-					if (_ff_.has_srst)
-						module->addDff(NEW_ID,ff.sig_clk,_ff_.sig_srst,rst_mux,ff.pol_clk);// din register
-					if (_ff_.ce_over_srst){
-						module->addMux(NEW_ID, _ff_.sig_d, _ff_.val_srst, rst_mux, mux_y);
-						module->addMux(NEW_ID, feedback_q ,mux_y, ce_mux, _ff_.sig_q);
-					}					
-					else{
-						if (_ff_.has_ce == false && _ff_.has_srst ==false)
-							mux->setPort(ID::Y,_ff_.sig_q);
-					}
-					log("Bypass mux is recognized\n");
-				}
-				else if ((std::find(ff_chunk.begin(), ff_chunk.end(), mux->getPort(ID::Y)) != ff_chunk.end()) \
-					&& (std::find(mux_din.begin(), mux_din.end(), mux->getPort(ID::B)) != mux_din.end()  \
-					|| std::find(mux_din.begin(), mux_din.end(), mux->getPort(ID::A)) != mux_din.end()) \
-					&& GetSize(bit_pair.first->getPort(ID::D))>1){
-					
-					byte_enabled = true;
-					bool is_dina = false;
-					RTLIL::SigSpec in_mux = module->addWire(NEW_ID,GetSize(mux->getPort(ID::A)));
-					RTLIL::SigSpec mem_mux = module->addWire(NEW_ID,GetSize(mux->getPort(ID::A)));
-
-					if (std::find(mux_din.begin(), mux_din.end(), mux->getPort(ID::B)) != mux_din.end()) {
-						in_mux =  mux->getPort(ID::B);
-						mem_mux = mux->getPort(ID::A);
-					}
-					else{
-						is_dina = true;
-						in_mux =  mux->getPort(ID::A);
-						mem_mux = mux->getPort(ID::B);
-					}
-					int bit_matched = 0;
-					if (GetSize(mem_mux)!= GetSize(port.data)){
-						for (auto bit_mux : mem_mux){
-							for (auto bit_pdata : port.data){
-								if (bit_mux == bit_pdata) bit_matched++;
-							}
+		if (recognized){
+			std::vector<Cell *> mux_cells;
+			for (auto &cell : module->selected_cells()) {
+				if (cell->type == RTLIL::escape_id("$mux"))
+					mux_cells.push_back(cell);
+			}
+			
+			for (auto mux : mux_cells){
+				for (auto bit_pair: bits){
+					FfData _ff_(&initvals, bit_pair.first);
+					if (!bit_pair.first->getPort(ID::D).is_chunk()){
+						std::vector<SigChunk> chunks_ = (bit_pair.first->getPort(ID::D));
+						for (auto chunk : chunks_){
+							SigSpec chunk_D = chunk;
+							ff_chunk.push_back(chunk);
 						}
+						
 					}
-					if (bit_matched == GetSize(mem_mux)){
-						RTLIL::SigSpec mux_y_reg = module->addWire(NEW_ID,GetSize(_ff_.sig_d));
+					else{
+						ff_chunk.clear();
+						ff_chunk.push_back(bit_pair.first->getPort(ID::D));
+					}
+					SigSpec di_reg = module->addWire(NEW_ID,GetSize(s_din_));
+					SigSpec sel_mux = module->addWire(NEW_ID,GetSize(mux->getPort(ID::S))); 
+					SigSpec ce_mux = module->addWire(NEW_ID,GetSize(_ff_.sig_ce)); 
+					SigSpec rst_mux = module->addWire(NEW_ID,GetSize(_ff_.sig_srst)); 
+					SigSpec mux_b = module->addWire(NEW_ID,GetSize(_ff_.sig_q)); 
+					SigSpec mux_y = module->addWire(NEW_ID,GetSize(_ff_.sig_d)); 
+					SigSpec feedback_q = module->addWire(NEW_ID,GetSize(_ff_.sig_q));
+					
+					if ((mux->getPort(ID::A) == port.data || mux->getPort(ID::B) == port.data)  \
+						&& (mux->getPort(ID::A) == s_din_ || mux->getPort(ID::B) == s_din_) \
+						&& (mux->getPort(ID::Y) == bit_pair.first->getPort(ID::D))){
+
 						module->addDff(NEW_ID,ff.sig_clk,mux->getPort(ID::S),sel_mux,ff.pol_clk);// din register
 						mux->setPort(ID::S,sel_mux);
-						module->addDff(NEW_ID,ff.sig_clk,in_mux,di_reg,ff.pol_clk);// din register
-						if (is_dina)
+						if(mux->getPort(ID::A) == s_din_){
+							module->addDff(NEW_ID,ff.sig_clk,mux->getPort(ID::A),di_reg,ff.pol_clk);// din register
 							mux->setPort(ID::A,di_reg);
-						else
+						}
+						else{
+							module->addDff(NEW_ID,ff.sig_clk,mux->getPort(ID::B),di_reg,ff.pol_clk);// din register
 							mux->setPort(ID::B,di_reg);
+						}
 
 						module->addDff(NEW_ID,ff.sig_clk,_ff_.sig_q,feedback_q,ff.pol_clk);// din register
 						if(_ff_.has_ce)
@@ -637,118 +575,109 @@ struct MemoryDffWorker
 						else{
 							if (_ff_.has_ce == false && _ff_.has_srst ==false)
 								mux->setPort(ID::Y,_ff_.sig_q);
-							else if(_ff_.has_ce == true && _ff_.has_srst ==false){
-								mux_y_reg = _ff_.sig_d;
-								module->addMux(NEW_ID, feedback_q ,mux_y_reg, ce_mux, _ff_.sig_q);	
+						}
+						log("Bypass mux is recognized\n");
+					}
+					else if (((std::find(ff_chunk.begin(), ff_chunk.end(), mux->getPort(ID::Y)) != ff_chunk.end()) \
+						||(mux->getPort(ID::Y) == bit_pair.first->getPort(ID::D))) \
+						&& (std::find(mux_din.begin(), mux_din.end(), mux->getPort(ID::B)) != mux_din.end()  \
+						|| std::find(mux_din.begin(), mux_din.end(), mux->getPort(ID::A)) != mux_din.end()) \
+						&& GetSize(bit_pair.first->getPort(ID::D))>1){
+						bool is_dina = false;
+						RTLIL::SigSpec in_mux = module->addWire(NEW_ID,GetSize(mux->getPort(ID::A)));
+						RTLIL::SigSpec mem_mux = module->addWire(NEW_ID,GetSize(mux->getPort(ID::A)));
+
+						if (std::find(mux_din.begin(), mux_din.end(), mux->getPort(ID::B)) != mux_din.end()) {
+							in_mux =  mux->getPort(ID::B);
+							mem_mux = mux->getPort(ID::A);
+						}
+						else{
+							is_dina = true;
+							in_mux =  mux->getPort(ID::A);
+							mem_mux = mux->getPort(ID::B);
+						}
+						int bit_matched = 0;
+						if (GetSize(mem_mux)!= GetSize(port.data)){
+							for (auto bit_mux : mem_mux){
+								for (auto bit_pdata : port.data){
+									if (bit_mux == bit_pdata) bit_matched++;
+								}
 							}
 						}
-						log("Mux for EDA-893 is recognized\n");
+						if (bit_matched == GetSize(mem_mux)){
+							RTLIL::SigSpec mux_y_reg = module->addWire(NEW_ID,GetSize(_ff_.sig_d));
+							module->addDff(NEW_ID,ff.sig_clk,mux->getPort(ID::S),sel_mux,ff.pol_clk);// din register
+							mux->setPort(ID::S,sel_mux);
+							module->addDff(NEW_ID,ff.sig_clk,in_mux,di_reg,ff.pol_clk);// din register
+							if (is_dina)
+								mux->setPort(ID::A,di_reg);
+							else
+								mux->setPort(ID::B,di_reg);
+
+							module->addDff(NEW_ID,ff.sig_clk,_ff_.sig_q,feedback_q,ff.pol_clk);// din register
+							if(_ff_.has_ce)
+								module->addDff(NEW_ID,ff.sig_clk,_ff_.sig_ce,ce_mux,ff.pol_clk);// din register
+							if (_ff_.has_srst)
+								module->addDff(NEW_ID,ff.sig_clk,_ff_.sig_srst,rst_mux,ff.pol_clk);// din register
+							if (_ff_.ce_over_srst){
+								module->addMux(NEW_ID, _ff_.sig_d, _ff_.val_srst, rst_mux, mux_y);
+								module->addMux(NEW_ID, feedback_q ,mux_y, ce_mux, _ff_.sig_q);
+							}					
+							else{
+								if (_ff_.has_ce == false && _ff_.has_srst ==false)
+									mux->setPort(ID::Y,_ff_.sig_q);
+								else if(_ff_.has_ce == true && _ff_.has_srst ==false){
+									mux_y_reg = _ff_.sig_d;
+									module->addMux(NEW_ID, feedback_q ,mux_y_reg, ce_mux, _ff_.sig_q);	
+								}
+							}
+						}
 					}
 				}
-				break;
 			}
-		}
 
-		// for (auto &cell : module->selected_cells()) {
-		// 	log("Cell = %s:\n",log_id(cell->type));
-		// 	for (auto &conn : cell->connections()) {
-		// 		log("\t%s = %s\n",log_id(conn.first),log_signal(conn.second));
-		// 	}
-		// }
-		
-		if (ff.has_ce && !ff.pol_ce)
-			ff.sig_ce = module->LogicNot(NEW_ID, ff.sig_ce);
-		if (ff.has_arst && !ff.pol_arst)
-			ff.sig_arst = module->LogicNot(NEW_ID, ff.sig_arst);
-		if (ff.has_srst && !ff.pol_srst)
-			ff.sig_srst = module->LogicNot(NEW_ID, ff.sig_srst);
-		port.clk = ff.sig_clk;
-		port.clk_enable = true;
-		port.clk_polarity = ff.pol_clk;
-		// if (ff.has_ce)
-		// 	port.en = ff.sig_ce;
-		// else
-		// 	port.en = State::S1;
-		// if (ff.has_arst) {
-		// 	port.arst = ff.sig_arst;
-		// 	port.arst_value = ff.val_arst;
-		// } else {
-		// 	port.arst = State::S0;
-		// }
-		// if (ff.has_srst) {
-		// 	port.srst = ff.sig_srst;
-		// 	port.srst_value = ff.val_srst;
-		// 	port.ce_over_srst = ff.ce_over_srst;
-		// } else {
-		// 	port.srst = State::S0;
-		// }
-		port.init_value = ff.val_init;
-#if 1 
-		// Ayyaz: It is skipped to use below code to handle Write first mux for write first bram
-		// log("Port.data before = %s\n",log_signal(port.data));
-		// port.data = ff.sig_q;
-		// log("Port.data after = %s\n",log_signal(port.data));
-#endif
-#if 0
-		// Ayyaz:Here in this #IF 1 block Write first mux is handled for write first bram
-		log("Recognized = %d\n",recognized);
-		if (!recognized)
-			port.data = ff.sig_q;
+			if (ff.has_ce && !ff.pol_ce)
+				ff.sig_ce = module->LogicNot(NEW_ID, ff.sig_ce);
+			if (ff.has_arst && !ff.pol_arst)
+				ff.sig_arst = module->LogicNot(NEW_ID, ff.sig_arst);
+			if (ff.has_srst && !ff.pol_srst)
+				ff.sig_srst = module->LogicNot(NEW_ID, ff.sig_srst);
+			port.clk = ff.sig_clk;
+			port.clk_enable = true;
+			port.clk_polarity = ff.pol_clk;
+			port.init_value = ff.val_init;
+		}
 		else{
-			if (ff.has_ce && ff.has_srst && port.ce_over_srst){
-				SigSpec Mux_en_reg_Y 	= module->addWire(NEW_ID,GetSize(port.data));
-				SigSpec reg_en		    = module->addWire(NEW_ID,GetSize(port.en));
-				SigSpec reg_rst		    = module->addWire(NEW_ID,GetSize(port.srst));
-				SigSpec Mux_rst_Y 		= module->addWire(NEW_ID,GetSize(port.data));
-				SigSpec Mux_rst_A 		= module->addWire(NEW_ID,GetSize(port.data));
-
-				for (int pi = 0; pi < GetSize(mem.wr_ports); pi++) {
-				SigSpec we_en_reg= module->addWire(NEW_ID,GetSize(s_bit_));
-				SigSpec we_en= module->addWire(NEW_ID,GetSize(s_bit_));
-				SigSpec di_reg		    = module->addWire(NEW_ID,GetSize(mem.wr_ports[pi].data));
-				module->addDff(NEW_ID,port.clk,mem.wr_ports[pi].data,di_reg,port.clk_polarity);// din register
-				module->addDff(NEW_ID,port.clk,s_bit_,we_en_reg,port.clk_polarity);// Wr_en register
-				module->addMux(NEW_ID,mem.rd_ports[pi].data, di_reg, we_en_reg, Mux_rst_A); //MUX dout=we_reg?din_reg:dout_mem
-
-				}	
-				module->addDff(NEW_ID,port.clk,port.srst,reg_rst,port.clk_polarity);// rst register
-				module->addMux(NEW_ID, Mux_rst_A, port.srst_value, reg_rst, Mux_rst_Y);
-				module->addDff(NEW_ID,port.clk,ff.sig_q,Mux_en_reg_Y,port.clk_polarity);// dout register
-				module->addDff(NEW_ID,port.clk,port.en,reg_en,port.clk_polarity);// en register
-				module->addMux(NEW_ID, Mux_en_reg_Y, Mux_rst_Y, reg_en, ff.sig_q); 
-			}
-			else if (ff.has_ce)
-			{
-				
-				SigSpec we_en_reg=  module->addWire(NEW_ID,GetSize(s_bit_));
-				SigSpec di_reg		    = module->addWire(NEW_ID,GetSize(s_din_));
-				SigSpec reg_en		    = module->addWire(NEW_ID,GetSize(port.en));
-				SigSpec Mux_r_Y 		= module->addWire(NEW_ID,GetSize(ff.sig_q));
-				SigSpec Mux_en_reg_Y 	= module->addWire(NEW_ID,GetSize(ff.sig_q));
-				
-				module->addDff(NEW_ID,port.clk,s_din_,di_reg,port.clk_polarity);// din register
-				module->addDff(NEW_ID,port.clk,s_bit_,we_en_reg,port.clk_polarity);// Wr_en register
-				log("Before mux failure\n");
-				module->addMux(NEW_ID,port.data, di_reg, we_en_reg, Mux_r_Y); //MUX dout1=we_reg?din_reg:dout_mem
-				log("After mux failure\n");
-				log("s_din=%s\nport.data = %s\ndi_reg=%s\nwe_en_reg=%s\nMux_r_Y=%s",log_signal(s_din_),log_signal(port.data),log_signal(di_reg),log_signal(we_en_reg),log_signal(Mux_r_Y));
-				module->addDff(NEW_ID,port.clk,port.en,reg_en,port.clk_polarity);// en register
-				module->addDff(NEW_ID,port.clk,ff.sig_q,Mux_en_reg_Y,port.clk_polarity);// dout register
-				module->addMux(NEW_ID, Mux_en_reg_Y, Mux_r_Y, reg_en, ff.sig_q); //MUX dout=en_reg?dout1:dout_reg
-			}
+			if (ff.has_ce && !ff.pol_ce)
+				ff.sig_ce = module->LogicNot(NEW_ID, ff.sig_ce);
+			if (ff.has_arst && !ff.pol_arst)
+				ff.sig_arst = module->LogicNot(NEW_ID, ff.sig_arst);
+			if (ff.has_srst && !ff.pol_srst)
+				ff.sig_srst = module->LogicNot(NEW_ID, ff.sig_srst);
+			port.clk = ff.sig_clk;
+			port.clk_enable = true;
+			port.clk_polarity = ff.pol_clk;
+			port.init_value = ff.val_init;
+			if (ff.has_ce)
+				port.en = ff.sig_ce;
 			else
-			{	
-				SigSpec we_en_reg= module->addWire(NEW_ID,GetSize(s_bit_));
-				SigSpec di_reg		    = module->addWire(NEW_ID,GetSize(s_din_));
-				SigSpec Mux_en_reg_Y 	= module->addWire(NEW_ID,GetSize(ff.sig_q));
-				module->addDff(NEW_ID,port.clk,s_din_,di_reg,port.clk_polarity);// din register
-				module->addDff(NEW_ID,port.clk,s_bit_,we_en_reg,port.clk_polarity);// Wr_en register
-				module->addMux(NEW_ID,port.data, di_reg, we_en_reg, ff.sig_q); //MUX dout=we_reg?din_reg:dout_mem
+				port.en = State::S1;
+			if (ff.has_arst) {
+				port.arst = ff.sig_arst;
+				port.arst_value = ff.val_arst;
+			} else {
+				port.arst = State::S0;
 			}
+			if (ff.has_srst) {
+				port.srst = ff.sig_srst;
+				port.srst_value = ff.val_srst;
+				port.ce_over_srst = ff.ce_over_srst;
+			} else {
+				port.srst = State::S0;
+			}
+			port.data = ff.sig_q;
 		}
-		// Awais: Write first mux is handled for write first bram/
-#endif
-		
+
 		merger.remove_output_ff(bits);
 		for (int pi = 0; pi < GetSize(mem.wr_ports); pi++) {
 			auto &pd = portdata[pi];
@@ -882,15 +811,6 @@ struct MemoryDffWorker
 	void run()
 	{
 		std::vector<Mem> memories = Mem::get_selected_memories(module);
-		
-		// for (auto &cell : module->selected_cells()) {
-		// 	if(cell->type == RTLIL::escape_id("$mux")){
-		// 		n++;
-		// 		log("%d: ===============================\n\nY=%s\nA=%s\nB=%s\nS=%s\n\n",n,log_signal(cell->getPort(ID::Y)),log_signal(cell->getPort(ID::A)),log_signal(cell->getPort(ID::B)),log_signal(cell->getPort(ID::S)));
-		// 		continue;
-		// 	}
-		// 	log("Cell = %s\n",log_id(cell->type));
-		// }
 		for (auto &mem : memories) {
 			QuickConeSat qcsat(modwalker);
 			for (int i = 0; i < GetSize(mem.rd_ports); i++) {
@@ -898,7 +818,6 @@ struct MemoryDffWorker
 					handle_rd_port(mem, qcsat, i);
 			}
 		}
-		
 		for (auto &mem : memories) {
 			for (int i = 0; i < GetSize(mem.rd_ports); i++) {
 				if (!mem.rd_ports[i].clk_enable)
