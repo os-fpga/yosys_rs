@@ -1640,6 +1640,7 @@ void Mem::emulate_read_first(FfInitVals *initvals) {
 			rd_ports[i].collision_x_mask[j] = false;
 			rd_ports[i].transparency_mask[j] = true;
 		}
+	return; // Ayyaz: This return is added to support read_first RAM with new BRAM primitives
 	for (auto &port: wr_ports) {
 		//Wire *new_data = module->addWire(NEW_ID, GetSize(port.data));
 		Wire *new_data = module->addWire(NEW_ID_NO_PREFIX("new_data"), GetSize(port.data));
