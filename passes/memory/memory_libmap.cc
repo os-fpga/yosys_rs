@@ -1744,10 +1744,15 @@ void MemMapping::emit_port(const MemConfig &cfg, std::vector<Cell*> &cells, cons
 						hw_wren.append(big_wren[bit.mux_idx][bit.bit]);
 					}
 				}
-				///below param is added to check parity exist or not incase of byte write enable
-				if (cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM36_SDP") && (width == 36))
+				///below param (PORT_B_Parity)is added to check parity exist or not incase of byte write enable
+				if ((cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM36_SDP")) && (width == 36)){
 					if ((hw_wdata[35]==State::Sx) && (hw_wdata[26]==State::Sx) && (hw_wdata[17]==State::Sx) && (hw_wdata[8]==State::Sx))
 						cell->setParam(stringf("\\PORT_%s_Parity", name), State::S1);
+				}
+				else if (cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM18_SDP") && (width == 18)){
+					if ((hw_wdata[17]==State::Sx) && (hw_wdata[8]==State::Sx))
+						cell->setParam(stringf("\\PORT_%s_Parity", name), State::S1);
+				}
 				cell->setPort(stringf("\\PORT_%s_WR_DATA", name), hw_wdata);
 				cell->setParam(stringf("\\PORT_%s_DATA_WIDTH", name), GetSize(wport.data));
 				if (pdef.wrbe_separate) {
