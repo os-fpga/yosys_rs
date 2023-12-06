@@ -2038,6 +2038,18 @@ void MemMapping::emit(const MemConfig &cfg) {
 				if (cfg.def->init == MemoryInitKind::NoUndef)
 					clean_undef(initval);
 				cell->setParam(ID::INIT, initval);
+				std::vector<State> initval_parity;
+				if ((cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM36_SDP")) || (cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM36_TDP"))){
+					for (int i=0; i< 4096 ;i++ ){
+						initval_parity.push_back(State::S0);
+					}
+				}
+				else if ((cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM18_SDP")) || (cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM18_TDP"))){
+					for (int i=0; i< 2048 ;i++ ){
+						initval_parity.push_back(State::S0);
+					}
+				}
+				cell->setParam(stringf("\\INIT_PARITY"), initval_parity);
 			}
 			cells.push_back(cell);
 		}
