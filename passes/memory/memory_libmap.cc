@@ -1745,16 +1745,18 @@ void MemMapping::emit_port(const MemConfig &cfg, std::vector<Cell*> &cells, cons
 					}
 				}
 				///below param (PORT_B_Parity)is added to check parity exist or not incase of byte write enable
-				if ((cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM36_SDP")) && (width == 36)){
-					if ((hw_wdata[35]==State::Sx) && (hw_wdata[26]==State::Sx) && (hw_wdata[17]==State::Sx) && (hw_wdata[8]==State::Sx))
-						cell->setParam(stringf("\\PORT_%s_Parity", name), State::S1);
-				}
-				else if (cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM18_SDP") && (width == 18)){
-					if ((hw_wdata[17]==State::Sx) && (hw_wdata[8]==State::Sx))
-						cell->setParam(stringf("\\PORT_%s_Parity", name), State::S1);
+				if (technology == "genesis3"){
+					if ((cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM36_SDP")) && (width == 36)){
+						if ((hw_wdata[35]==State::Sx) && (hw_wdata[26]==State::Sx) && (hw_wdata[17]==State::Sx) && (hw_wdata[8]==State::Sx))
+							cell->setParam(stringf("\\PORT_%s_Parity", name), State::S1);
+					}
+					else if (cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM18_SDP") && (width == 18)){
+						if ((hw_wdata[17]==State::Sx) && (hw_wdata[8]==State::Sx))
+							cell->setParam(stringf("\\PORT_%s_Parity", name), State::S1);
+					}
+				    cell->setParam(stringf("\\PORT_%s_DATA_WIDTH", name), GetSize(wport.data));
 				}
 				cell->setPort(stringf("\\PORT_%s_WR_DATA", name), hw_wdata);
-				cell->setParam(stringf("\\PORT_%s_DATA_WIDTH", name), GetSize(wport.data));
 				if (pdef.wrbe_separate) {
 					// TODO make some use of it
 					SigSpec en = mem.module->ReduceOr(NEW_ID, hw_wren);
@@ -1771,7 +1773,6 @@ void MemMapping::emit_port(const MemConfig &cfg, std::vector<Cell*> &cells, cons
 		} else {
 			for (auto cell: cells) {
 				cell->setPort(stringf("\\PORT_%s_WR_DATA", name), Const(State::Sx, width));
-				cell->setParam(stringf("\\PORT_%s_DATA_WIDTH", name), cfg.def->dbits[hw_wr_wide_log2]);
 				SigSpec hw_wren = Const(State::S0, width / effective_byte);
 				if (pdef.wrbe_separate) {
 					cell->setPort(stringf("\\PORT_%s_WR_EN", name), State::S0);
@@ -1856,7 +1857,9 @@ void MemMapping::emit_port(const MemConfig &cfg, std::vector<Cell*> &cells, cons
 				}
 				SigSpec hw_rdata = mem.module->addWire(NEW_ID, width);
 				cell->setPort(stringf("\\PORT_%s_RD_DATA", name), hw_rdata);
-				cell->setParam(stringf("\\PORT_%s_DATA_WIDTH", name), GetSize(rport.data));
+				if (technology == "genesis3"){
+					cell->setParam(stringf("\\PORT_%s_DATA_WIDTH", name), GetSize(rport.data));
+				}
 				SigSpec lhs;
 				SigSpec rhs;
 				//Ayyaz:  This if block is added to handle bit placement for Rapidsilicon Architecture for asymmetric BRAM
@@ -2038,18 +2041,20 @@ void MemMapping::emit(const MemConfig &cfg) {
 				if (cfg.def->init == MemoryInitKind::NoUndef)
 					clean_undef(initval);
 				cell->setParam(ID::INIT, initval);
-				std::vector<State> initval_parity;
-				if ((cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM36_SDP")) || (cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM36_TDP"))){
-					for (int i=0; i< 4096 ;i++ ){
-						initval_parity.push_back(State::S0);
+				if(technology == "genesis3"){
+					std::vector<State> initval_parity;
+					if ((cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM36_SDP")) || (cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM36_TDP"))){
+						for (int i=0; i< 4096 ;i++ ){
+							initval_parity.push_back(State::S0);
+						}
 					}
-				}
-				else if ((cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM18_SDP")) || (cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM18_TDP"))){
-					for (int i=0; i< 2048 ;i++ ){
-						initval_parity.push_back(State::S0);
+					else if ((cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM18_SDP")) || (cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM18_TDP"))){
+						for (int i=0; i< 2048 ;i++ ){
+							initval_parity.push_back(State::S0);
+						}
 					}
+					cell->setParam(stringf("\\INIT_PARITY"), initval_parity);
 				}
-				cell->setParam(stringf("\\INIT_PARITY"), initval_parity);
 			}
 			cells.push_back(cell);
 		}
