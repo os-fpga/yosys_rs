@@ -1561,6 +1561,8 @@ std::vector<SigSpec> generate_mux(Mem &mem, int rpidx, const Swizzle &swz) {
 
 void MemMapping::emit_port(const MemConfig &cfg, std::vector<Cell*> &cells, const PortVariant &pdef, const char *name, int wpidx, int rpidx, const std::vector<int> &hw_addr_swizzle) {
 	
+	int read_port_size;
+	int write_port_size;
 	for (auto &it: pdef.options)
 		for (auto cell: cells)
 			cell->setParam(stringf("\\PORT_%s_OPTION_%s", name, it.first.c_str()), it.second);
@@ -1704,19 +1706,34 @@ void MemMapping::emit_port(const MemConfig &cfg, std::vector<Cell*> &cells, cons
 		if (effective_byte == 0 || effective_byte > width)
 			effective_byte = width;
 		if (wpidx != -1) {
-			auto &wport = mem.wr_ports[wpidx];                 			
+			auto &wport = mem.wr_ports[wpidx];
+			write_port_size =  GetSize(wport.data);
 			Swizzle port_swz = gen_swizzle(mem, cfg, wport.wide_log2, hw_wr_wide_log2);
 			std::vector<SigSpec> big_wren = generate_demux(mem, wpidx, port_swz);
 			for (int rd = 0; rd < cfg.repl_d; rd++) {
 				auto cell = cells[rd];
 				SigSpec hw_wdata;
 				SigSpec hw_wren;
-				// original memory_libmap flow
-				for (auto &bit : port_swz.bits[rd]) {
-					if (!bit.valid) {
-						hw_wdata.append(State::Sx);
-					} else {
-						hw_wdata.append(wport.data[bit.bit]);
+				SigSpec hw_remaining_bits;
+				// Ayyaz: This if block is added to handle  bit placement for Rapidsilicon Architecture for asymmetric BRAM
+				if(mem.width < cfg.def->byte && write_port_size >= cfg.def->byte){
+					for (auto &bit : port_swz.bits[rd]) {
+						if (!bit.valid) {
+							hw_remaining_bits.append(State::Sx);
+						} else {
+							hw_wdata.append(wport.data[bit.bit]);
+						}
+					}
+					hw_wdata.append(hw_remaining_bits);
+				}
+				else{
+					// original memory_libmap flow
+					for (auto &bit : port_swz.bits[rd]) {
+						if (!bit.valid) {
+							hw_wdata.append(State::Sx);
+						} else {
+							hw_wdata.append(wport.data[bit.bit]);
+						}
 					}
 				}
 				for (int i = 0; i < GetSize(port_swz.bits[rd]); i += effective_byte) {
@@ -1727,7 +1744,17 @@ void MemMapping::emit_port(const MemConfig &cfg, std::vector<Cell*> &cells, cons
 						hw_wren.append(big_wren[bit.mux_idx][bit.bit]);
 					}
 				}
+				///below param (PORT_B_Parity)is added to check parity exist or not incase of byte write enable
+				if ((cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM36_SDP")) && (width == 36)){
+					if ((hw_wdata[35]==State::Sx) && (hw_wdata[26]==State::Sx) && (hw_wdata[17]==State::Sx) && (hw_wdata[8]==State::Sx))
+						cell->setParam(stringf("\\PORT_%s_Parity", name), State::S1);
+				}
+				else if (cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM18_SDP") && (width == 18)){
+					if ((hw_wdata[17]==State::Sx) && (hw_wdata[8]==State::Sx))
+						cell->setParam(stringf("\\PORT_%s_Parity", name), State::S1);
+				}
 				cell->setPort(stringf("\\PORT_%s_WR_DATA", name), hw_wdata);
+				cell->setParam(stringf("\\PORT_%s_DATA_WIDTH", name), GetSize(wport.data));
 				if (pdef.wrbe_separate) {
 					// TODO make some use of it
 					SigSpec en = mem.module->ReduceOr(NEW_ID, hw_wren);
@@ -1744,6 +1771,7 @@ void MemMapping::emit_port(const MemConfig &cfg, std::vector<Cell*> &cells, cons
 		} else {
 			for (auto cell: cells) {
 				cell->setPort(stringf("\\PORT_%s_WR_DATA", name), Const(State::Sx, width));
+				cell->setParam(stringf("\\PORT_%s_DATA_WIDTH", name), cfg.def->dbits[hw_wr_wide_log2]);
 				SigSpec hw_wren = Const(State::S0, width / effective_byte);
 				if (pdef.wrbe_separate) {
 					cell->setPort(stringf("\\PORT_%s_WR_EN", name), State::S0);
@@ -1765,6 +1793,7 @@ void MemMapping::emit_port(const MemConfig &cfg, std::vector<Cell*> &cells, cons
 		if (rpidx != -1) {
 			auto &rport = mem.rd_ports[rpidx];
 			auto &rpcfg = cfg.rd_ports[rpidx];
+			read_port_size=GetSize(rport.data);
 			Swizzle port_swz = gen_swizzle(mem, cfg, rport.wide_log2, hw_rd_wide_log2);
 			std::vector<SigSpec> big_rdata = generate_mux(mem, rpidx, port_swz);
 			for (int rd = 0; rd < cfg.repl_d; rd++) {
@@ -1827,8 +1856,22 @@ void MemMapping::emit_port(const MemConfig &cfg, std::vector<Cell*> &cells, cons
 				}
 				SigSpec hw_rdata = mem.module->addWire(NEW_ID, width);
 				cell->setPort(stringf("\\PORT_%s_RD_DATA", name), hw_rdata);
+				cell->setParam(stringf("\\PORT_%s_DATA_WIDTH", name), GetSize(rport.data));
 				SigSpec lhs;
 				SigSpec rhs;
+				//Ayyaz:  This if block is added to handle bit placement for Rapidsilicon Architecture for asymmetric BRAM
+				if (mem.width < cfg.def->byte && read_port_size >= cfg.def->byte ){ 
+					int j=0;
+					for (int i = 0; i < GetSize(hw_rdata); i++) {
+						auto &bit = port_swz.bits[rd][i];
+						if (bit.valid) {
+							lhs.append(big_rdata[bit.mux_idx][bit.bit]);
+							rhs.append(hw_rdata[j]);
+							j++;
+						}
+					}
+				}
+				else{
 				// Original memory_libmap flow
 					for (int i = 0; i < GetSize(hw_rdata); i++) {
 						auto &bit = port_swz.bits[rd][i];
@@ -1837,6 +1880,7 @@ void MemMapping::emit_port(const MemConfig &cfg, std::vector<Cell*> &cells, cons
 							rhs.append(hw_rdata[i]);
 						}
 					}
+				}
 				mem.module->connect(lhs, rhs);
 			}
 		} else {
@@ -1994,6 +2038,18 @@ void MemMapping::emit(const MemConfig &cfg) {
 				if (cfg.def->init == MemoryInitKind::NoUndef)
 					clean_undef(initval);
 				cell->setParam(ID::INIT, initval);
+				std::vector<State> initval_parity;
+				if ((cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM36_SDP")) || (cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM36_TDP"))){
+					for (int i=0; i< 4096 ;i++ ){
+						initval_parity.push_back(State::S0);
+					}
+				}
+				else if ((cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM18_SDP")) || (cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM18_TDP"))){
+					for (int i=0; i< 2048 ;i++ ){
+						initval_parity.push_back(State::S0);
+					}
+				}
+				cell->setParam(stringf("\\INIT_PARITY"), initval_parity);
 			}
 			cells.push_back(cell);
 		}
