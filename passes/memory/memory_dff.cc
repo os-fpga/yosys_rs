@@ -518,7 +518,7 @@ struct MemoryDffWorker
 
 		// OK, it worked.
 		log("merging output FF to cell.\n");
-		if (recognized){
+		if (recognized && module->design->scratchpad_get_string("synth_rs.tech_rs").c_str() == "NEW"){
 			std::vector<Cell *> mux_cells;
 			bool matched = false;
 			for (auto &cell : module->selected_cells()) {
