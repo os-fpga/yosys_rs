@@ -2268,21 +2268,23 @@ struct MemoryLibMapPass : public Pass {
 								ff_data.has_ce = true;
 								ff_data.sig_ce = port.en;
 							}
-							if(port.arst != State::S0){
-								SigSpec rst 	= module->addWire(NEW_ID,GetSize(port.arst));
-								rst = module->Not(NEW_ID, port.arst);
-								ff_data.has_arst = true;
-								ff_data.sig_arst = rst;
-								ff_data.val_arst = port.arst_value;
-							}
-							if(port.srst != State::S0){
-								ff_data.has_srst = true;
-								SigSpec rst 	= module->addWire(NEW_ID,GetSize(port.srst));
-								rst = module->Not(NEW_ID, port.srst);
-								ff_data.sig_srst = rst;
-								ff_data.val_srst = port.srst_value;
-								ff_data.ce_over_srst = port.ce_over_srst;
-							}
+							// if (gen3_model != "NEW"){
+							// 	if(port.arst != State::S0){
+							// 		SigSpec rst 	= module->addWire(NEW_ID,GetSize(port.arst));
+							// 		rst = module->Not(NEW_ID, port.arst);
+							// 		ff_data.has_arst = true;
+							// 		ff_data.sig_arst = rst;
+							// 		ff_data.val_arst = port.arst_value;
+							// 	}
+							// 	if(port.srst != State::S0){
+							// 		ff_data.has_srst = true;
+							// 		SigSpec rst 	= module->addWire(NEW_ID,GetSize(port.srst));
+							// 		rst = module->Not(NEW_ID, port.srst);
+							// 		ff_data.sig_srst = rst;
+							// 		ff_data.val_srst = port.srst_value;
+							// 		ff_data.ce_over_srst = port.ce_over_srst;
+							// 	}
+							// }
 							ff_data.sig_d = Mux_Y;
 							ff_data.sig_q = Mux_B;
 							ff_data.val_init = port.init_value ;
