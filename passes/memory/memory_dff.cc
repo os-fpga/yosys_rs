@@ -746,34 +746,36 @@ struct MemoryDffWorker
 			log("address FF has async set and/or reset, not supported.\n");
 			return;
 		}
-		for (int i = 0; i < GetSize(mem.wr_ports); i++) {
-			SigBit we_en1;
-			auto &wport = mem.wr_ports[i];
-			bool add_logic =false;
-			for (auto cell : module->cells()){
-				if ((cell->type == ID($mux) || cell->type == ID($pmux))){
-					if ((cell->getPort(ID::Y)==wport.addr) && (cell->getPort(ID::B) == ff.sig_d)){ // if (wport.addr == rdport.addr)?
-					    add_logic=true;
-						log_debug("\nvalue of write port id = %d , value of read port id =%d, MUX B port  :%s , MUX A port addres : %s  Read port : %s",i,idx,log_signal(cell->getPort(ID::B)),log_signal(cell->getPort(ID::A)),log_signal(ff.sig_d));
-						log_debug("\nMUX SELECT = %s",log_signal(cell->getPort(ID::S)));
-						we_en1=cell->getPort(ID::S);
-						break;
+		if (module->design->scratchpad_get_string("synth_rs.tech_rs") == "NEW"){
+			for (int i = 0; i < GetSize(mem.wr_ports); i++) {
+				SigBit we_en1;
+				auto &wport = mem.wr_ports[i];
+				bool add_logic =false;
+				for (auto cell : module->cells()){
+					if ((cell->type == ID($mux) || cell->type == ID($pmux))){
+						if ((cell->getPort(ID::Y)==wport.addr) && (cell->getPort(ID::B) == ff.sig_d)){ // if (wport.addr == rdport.addr)?
+							add_logic=true;
+							log_debug("\nvalue of write port id = %d , value of read port id =%d, MUX B port  :%s , MUX A port addres : %s  Read port : %s",i,idx,log_signal(cell->getPort(ID::B)),log_signal(cell->getPort(ID::A)),log_signal(ff.sig_d));
+							log_debug("\nMUX SELECT = %s",log_signal(cell->getPort(ID::S)));
+							we_en1=cell->getPort(ID::S);
+							break;
+						}
 					}
 				}
-			}
-			if (add_logic){
-				SigBit we_en_reg       = module->addWire(NEW_ID);
-				SigBit we_en           = module->addWire(NEW_ID);
-				SigSpec di_reg		   = module->addWire(NEW_ID,GetSize(wport.data));
-				we_en=we_en1;
-				module->addDff(NEW_ID,ff.sig_clk,wport.data,di_reg,ff.pol_clk);
-				module->addDff(NEW_ID,ff.sig_clk,we_en,we_en_reg,ff.pol_clk);// Wr_en register
-				SigSpec Mux_Y 		= module->addWire(NEW_ID,GetSize(port.data));
-				SigSpec Mux_A 		= module->addWire(NEW_ID,GetSize(port.data));
-				Mux_Y = port.data;
-				port.data = Mux_A;
-				module->addMux(NEW_ID,port.data, di_reg, we_en_reg, Mux_Y); //MUX dout=we_reg?din_reg:dout_mem
-				add_logic=false;
+				if (add_logic){
+					SigBit we_en_reg       = module->addWire(NEW_ID);
+					SigBit we_en           = module->addWire(NEW_ID);
+					SigSpec di_reg		   = module->addWire(NEW_ID,GetSize(wport.data));
+					we_en=we_en1;
+					module->addDff(NEW_ID,ff.sig_clk,wport.data,di_reg,ff.pol_clk);
+					module->addDff(NEW_ID,ff.sig_clk,we_en,we_en_reg,ff.pol_clk);// Wr_en register
+					SigSpec Mux_Y 		= module->addWire(NEW_ID,GetSize(port.data));
+					SigSpec Mux_A 		= module->addWire(NEW_ID,GetSize(port.data));
+					Mux_Y = port.data;
+					port.data = Mux_A;
+					module->addMux(NEW_ID,port.data, di_reg, we_en_reg, Mux_Y); //MUX dout=we_reg?din_reg:dout_mem
+					add_logic=false;
+				}
 			}
 		}
 		// Trick part: this transform is invalid if the initial
