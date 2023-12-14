@@ -1630,6 +1630,7 @@ bool Mem::emulate_read_first_ok() {
 
 void Mem::emulate_read_first(FfInitVals *initvals) {
 	log_assert(emulate_read_first_ok());
+	
 	for (int i = 0; i < GetSize(rd_ports); i++)
 		for (int j = 0; j < GetSize(wr_ports); j++)
 			if (rd_ports[i].transparency_mask[j])
@@ -1640,7 +1641,9 @@ void Mem::emulate_read_first(FfInitVals *initvals) {
 			rd_ports[i].collision_x_mask[j] = false;
 			rd_ports[i].transparency_mask[j] = true;
 		}
-	return; // Ayyaz: This return is added to support read_first RAM with new BRAM primitives
+	// Ayyaz: This return is added to support read_first RAM with new BRAM primitives
+	if (module->design->scratchpad_get_string("synth_rs.tech_rs") == "NEW")	
+		return; 
 	for (auto &port: wr_ports) {
 		//Wire *new_data = module->addWire(NEW_ID, GetSize(port.data));
 		Wire *new_data = module->addWire(NEW_ID_NO_PREFIX("new_data"), GetSize(port.data));
