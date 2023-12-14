@@ -29,6 +29,7 @@
 USING_YOSYS_NAMESPACE
 PRIVATE_NAMESPACE_BEGIN
 bool match_wr = false;
+string new_primitive = "";
 struct MuxData {
 	int base_idx;
 	int size;
@@ -518,159 +519,161 @@ struct MemoryDffWorker
 
 		// OK, it worked.
 		log("merging output FF to cell.\n");
-		if (recognized && module->design->scratchpad_get_string("synth_rs.tech_rs").c_str() == "NEW"){
-			std::vector<Cell *> mux_cells;
-			bool matched = false;
-			for (auto &cell : module->selected_cells()) {
-				if (cell->type == RTLIL::escape_id("$mux"))
-					mux_cells.push_back(cell);
-			}
-			
-			for (auto mux : mux_cells){
-				for (auto bit_pair: bits){
-					FfData _ff_(&initvals, bit_pair.first);
-					if (!bit_pair.first->getPort(ID::D).is_chunk()){
-						std::vector<SigChunk> chunks_ = (bit_pair.first->getPort(ID::D));
-						for (auto chunk : chunks_){
-							SigSpec chunk_D = chunk;
-							ff_chunk.push_back(chunk);
-						}
-						
-					}
-					else{
-						ff_chunk.clear();
-						ff_chunk.push_back(bit_pair.first->getPort(ID::D));
-					}
-					SigSpec di_reg = module->addWire(NEW_ID,GetSize(s_din_));
-					SigSpec sel_mux = module->addWire(NEW_ID,GetSize(mux->getPort(ID::S))); 
-					SigSpec ce_mux = module->addWire(NEW_ID,GetSize(_ff_.sig_ce)); 
-					SigSpec rst_mux = module->addWire(NEW_ID,GetSize(_ff_.sig_srst)); 
-					SigSpec mux_b = module->addWire(NEW_ID,GetSize(_ff_.sig_q)); 
-					SigSpec mux_y = module->addWire(NEW_ID,GetSize(_ff_.sig_d)); 
-					SigSpec feedback_q = module->addWire(NEW_ID,GetSize(_ff_.sig_q));
-					
-					if ((mux->getPort(ID::A) == s_din_ || mux->getPort(ID::B) == s_din_) \
-						&& (mux->getPort(ID::Y) == bit_pair.first->getPort(ID::D))){
-						
-						matched = true;
-						module->addDff(NEW_ID,ff.sig_clk,mux->getPort(ID::S),sel_mux,ff.pol_clk);
-						mux->setPort(ID::S,sel_mux);
-						if(mux->getPort(ID::A) == s_din_){
-							module->addDff(NEW_ID,ff.sig_clk,mux->getPort(ID::A),di_reg,ff.pol_clk);
-							mux->setPort(ID::A,di_reg);
+		if (recognized){
+			if (new_primitive=="NEW"){
+				std::vector<Cell *> mux_cells;
+				bool matched = false;
+				for (auto &cell : module->selected_cells()) {
+					if (cell->type == RTLIL::escape_id("$mux"))
+						mux_cells.push_back(cell);
+				}
+				
+				for (auto mux : mux_cells){
+					for (auto bit_pair: bits){
+						FfData _ff_(&initvals, bit_pair.first);
+						if (!bit_pair.first->getPort(ID::D).is_chunk()){
+							std::vector<SigChunk> chunks_ = (bit_pair.first->getPort(ID::D));
+							for (auto chunk : chunks_){
+								SigSpec chunk_D = chunk;
+								ff_chunk.push_back(chunk);
+							}
+							
 						}
 						else{
-							module->addDff(NEW_ID,ff.sig_clk,mux->getPort(ID::B),di_reg,ff.pol_clk);
-							mux->setPort(ID::B,di_reg);
+							ff_chunk.clear();
+							ff_chunk.push_back(bit_pair.first->getPort(ID::D));
 						}
+						SigSpec di_reg = module->addWire(NEW_ID,GetSize(s_din_));
+						SigSpec sel_mux = module->addWire(NEW_ID,GetSize(mux->getPort(ID::S))); 
+						SigSpec ce_mux = module->addWire(NEW_ID,GetSize(_ff_.sig_ce)); 
+						SigSpec rst_mux = module->addWire(NEW_ID,GetSize(_ff_.sig_srst)); 
+						SigSpec mux_b = module->addWire(NEW_ID,GetSize(_ff_.sig_q)); 
+						SigSpec mux_y = module->addWire(NEW_ID,GetSize(_ff_.sig_d)); 
+						SigSpec feedback_q = module->addWire(NEW_ID,GetSize(_ff_.sig_q));
+						
+						if ((mux->getPort(ID::A) == s_din_ || mux->getPort(ID::B) == s_din_) \
+							&& (mux->getPort(ID::Y) == bit_pair.first->getPort(ID::D))){
+							
+							matched = true;
+							module->addDff(NEW_ID,ff.sig_clk,mux->getPort(ID::S),sel_mux,ff.pol_clk);
+							mux->setPort(ID::S,sel_mux);
+							if(mux->getPort(ID::A) == s_din_){
+								module->addDff(NEW_ID,ff.sig_clk,mux->getPort(ID::A),di_reg,ff.pol_clk);
+								mux->setPort(ID::A,di_reg);
+							}
+							else{
+								module->addDff(NEW_ID,ff.sig_clk,mux->getPort(ID::B),di_reg,ff.pol_clk);
+								mux->setPort(ID::B,di_reg);
+							}
 
-						module->addDff(NEW_ID,ff.sig_clk,_ff_.sig_q,feedback_q,ff.pol_clk);
-						if(_ff_.has_ce)
-							module->addDff(NEW_ID,ff.sig_clk,_ff_.sig_ce,ce_mux,ff.pol_clk);
-						if (_ff_.has_srst)
-							module->addDff(NEW_ID,ff.sig_clk,_ff_.sig_srst,rst_mux,ff.pol_clk);
-						if (_ff_.ce_over_srst){
-							module->addMux(NEW_ID, _ff_.sig_d, _ff_.val_srst, rst_mux, mux_y);
-							module->addMux(NEW_ID, feedback_q ,mux_y, ce_mux, _ff_.sig_q);
-						}					
-						else{
-							if (_ff_.has_ce == false && _ff_.has_srst ==false)
-								mux->setPort(ID::Y,_ff_.sig_q);
-							else if(_ff_.has_ce == true && _ff_.has_srst ==false){
-								// mux_y_reg = _ff_.sig_d;
-								module->addMux(NEW_ID, feedback_q ,_ff_.sig_d, ce_mux, _ff_.sig_q);	
+							module->addDff(NEW_ID,ff.sig_clk,_ff_.sig_q,feedback_q,ff.pol_clk);
+							if(_ff_.has_ce)
+								module->addDff(NEW_ID,ff.sig_clk,_ff_.sig_ce,ce_mux,ff.pol_clk);
+							if (_ff_.has_srst)
+								module->addDff(NEW_ID,ff.sig_clk,_ff_.sig_srst,rst_mux,ff.pol_clk);
+							if (_ff_.ce_over_srst){
+								module->addMux(NEW_ID, _ff_.sig_d, _ff_.val_srst, rst_mux, mux_y);
+								module->addMux(NEW_ID, feedback_q ,mux_y, ce_mux, _ff_.sig_q);
+							}					
+							else{
+								if (_ff_.has_ce == false && _ff_.has_srst ==false)
+									mux->setPort(ID::Y,_ff_.sig_q);
+								else if(_ff_.has_ce == true && _ff_.has_srst ==false){
+									// mux_y_reg = _ff_.sig_d;
+									module->addMux(NEW_ID, feedback_q ,_ff_.sig_d, ce_mux, _ff_.sig_q);	
+								}
 							}
 						}
-					}
-					else if (((std::find(ff_chunk.begin(), ff_chunk.end(), mux->getPort(ID::Y)) != ff_chunk.end()) \
-						||(mux->getPort(ID::Y) == bit_pair.first->getPort(ID::D))) \
-						&& (std::find(mux_din.begin(), mux_din.end(), mux->getPort(ID::B)) != mux_din.end()  \
-						|| std::find(mux_din.begin(), mux_din.end(), mux->getPort(ID::A)) != mux_din.end()) \
-						&& GetSize(bit_pair.first->getPort(ID::D))>1){
-						
-						matched = true;
-						bool is_dina = false;
-						RTLIL::SigSpec in_mux = module->addWire(NEW_ID,GetSize(mux->getPort(ID::A)));
-						RTLIL::SigSpec mem_mux = module->addWire(NEW_ID,GetSize(mux->getPort(ID::A)));
+						else if (((std::find(ff_chunk.begin(), ff_chunk.end(), mux->getPort(ID::Y)) != ff_chunk.end()) \
+							||(mux->getPort(ID::Y) == bit_pair.first->getPort(ID::D))) \
+							&& (std::find(mux_din.begin(), mux_din.end(), mux->getPort(ID::B)) != mux_din.end()  \
+							|| std::find(mux_din.begin(), mux_din.end(), mux->getPort(ID::A)) != mux_din.end()) \
+							&& GetSize(bit_pair.first->getPort(ID::D))>1){
+							
+							matched = true;
+							bool is_dina = false;
+							RTLIL::SigSpec in_mux = module->addWire(NEW_ID,GetSize(mux->getPort(ID::A)));
+							RTLIL::SigSpec mem_mux = module->addWire(NEW_ID,GetSize(mux->getPort(ID::A)));
 
-						if (std::find(mux_din.begin(), mux_din.end(), mux->getPort(ID::B)) != mux_din.end()) {
-							in_mux =  mux->getPort(ID::B);
-							mem_mux = mux->getPort(ID::A);
-						}
-						else{
-							is_dina = true;
-							in_mux =  mux->getPort(ID::A);
-							mem_mux = mux->getPort(ID::B);
-						}
-						// int bit_matched = 0;
-						// if (GetSize(mem_mux)!= GetSize(port.data)){
-						// 	for (auto bit_mux : mem_mux){
-						// 		for (auto bit_pdata : port.data){
-						// 			if (bit_mux == bit_pdata) bit_matched++;
-						// 		}
-						// 	}
-						// }
-						// if (bit_matched == GetSize(mem_mux)){
-						RTLIL::SigSpec mux_y_reg = module->addWire(NEW_ID,GetSize(_ff_.sig_d));
-						module->addDff(NEW_ID,ff.sig_clk,mux->getPort(ID::S),sel_mux,ff.pol_clk);
-						mux->setPort(ID::S,sel_mux);
-						module->addDff(NEW_ID,ff.sig_clk,in_mux,di_reg,ff.pol_clk);
-						if (is_dina)
-							mux->setPort(ID::A,di_reg);
-						else
-							mux->setPort(ID::B,di_reg);
-
-						module->addDff(NEW_ID,ff.sig_clk,_ff_.sig_q,feedback_q,ff.pol_clk);
-						if(_ff_.has_ce)
-							module->addDff(NEW_ID,ff.sig_clk,_ff_.sig_ce,ce_mux,ff.pol_clk);
-						if (_ff_.has_srst)
-							module->addDff(NEW_ID,ff.sig_clk,_ff_.sig_srst,rst_mux,ff.pol_clk);
-						if (_ff_.ce_over_srst){
-							module->addMux(NEW_ID, _ff_.sig_d, _ff_.val_srst, rst_mux, mux_y);
-							module->addMux(NEW_ID, feedback_q ,mux_y, ce_mux, _ff_.sig_q);
-						}					
-						else{
-							if (_ff_.has_ce == false && _ff_.has_srst ==false)
-								mux->setPort(ID::Y,_ff_.sig_q);
-							else if(_ff_.has_ce == true && _ff_.has_srst ==false){
-								mux_y_reg = _ff_.sig_d;
-								module->addMux(NEW_ID, feedback_q ,mux_y_reg, ce_mux, _ff_.sig_q);	
+							if (std::find(mux_din.begin(), mux_din.end(), mux->getPort(ID::B)) != mux_din.end()) {
+								in_mux =  mux->getPort(ID::B);
+								mem_mux = mux->getPort(ID::A);
 							}
+							else{
+								is_dina = true;
+								in_mux =  mux->getPort(ID::A);
+								mem_mux = mux->getPort(ID::B);
+							}
+							// int bit_matched = 0;
+							// if (GetSize(mem_mux)!= GetSize(port.data)){
+							// 	for (auto bit_mux : mem_mux){
+							// 		for (auto bit_pdata : port.data){
+							// 			if (bit_mux == bit_pdata) bit_matched++;
+							// 		}
+							// 	}
+							// }
+							// if (bit_matched == GetSize(mem_mux)){
+							RTLIL::SigSpec mux_y_reg = module->addWire(NEW_ID,GetSize(_ff_.sig_d));
+							module->addDff(NEW_ID,ff.sig_clk,mux->getPort(ID::S),sel_mux,ff.pol_clk);
+							mux->setPort(ID::S,sel_mux);
+							module->addDff(NEW_ID,ff.sig_clk,in_mux,di_reg,ff.pol_clk);
+							if (is_dina)
+								mux->setPort(ID::A,di_reg);
+							else
+								mux->setPort(ID::B,di_reg);
+
+							module->addDff(NEW_ID,ff.sig_clk,_ff_.sig_q,feedback_q,ff.pol_clk);
+							if(_ff_.has_ce)
+								module->addDff(NEW_ID,ff.sig_clk,_ff_.sig_ce,ce_mux,ff.pol_clk);
+							if (_ff_.has_srst)
+								module->addDff(NEW_ID,ff.sig_clk,_ff_.sig_srst,rst_mux,ff.pol_clk);
+							if (_ff_.ce_over_srst){
+								module->addMux(NEW_ID, _ff_.sig_d, _ff_.val_srst, rst_mux, mux_y);
+								module->addMux(NEW_ID, feedback_q ,mux_y, ce_mux, _ff_.sig_q);
+							}					
+							else{
+								if (_ff_.has_ce == false && _ff_.has_srst ==false)
+									mux->setPort(ID::Y,_ff_.sig_q);
+								else if(_ff_.has_ce == true && _ff_.has_srst ==false){
+									mux_y_reg = _ff_.sig_d;
+									module->addMux(NEW_ID, feedback_q ,mux_y_reg, ce_mux, _ff_.sig_q);	
+								}
+							}
+							// }
 						}
-						// }
 					}
 				}
-			}
-			if (ff.has_ce && !ff.pol_ce)
-				ff.sig_ce = module->LogicNot(NEW_ID, ff.sig_ce);
-			if (ff.has_arst && !ff.pol_arst)
-				ff.sig_arst = module->LogicNot(NEW_ID, ff.sig_arst);
-			if (ff.has_srst && !ff.pol_srst)
-				ff.sig_srst = module->LogicNot(NEW_ID, ff.sig_srst);
-			port.clk = ff.sig_clk;
-			port.clk_enable = true;
-			port.clk_polarity = ff.pol_clk;
-			port.init_value = ff.val_init;
-			
-			if (matched==false){
-				if (ff.has_ce)
-					port.en = ff.sig_ce;
-				else
-					port.en = State::S1;
-				if (ff.has_arst) {
-					port.arst = ff.sig_arst;
-					port.arst_value = ff.val_arst;
-				} else {
-					port.arst = State::S0;
+				if (ff.has_ce && !ff.pol_ce)
+					ff.sig_ce = module->LogicNot(NEW_ID, ff.sig_ce);
+				if (ff.has_arst && !ff.pol_arst)
+					ff.sig_arst = module->LogicNot(NEW_ID, ff.sig_arst);
+				if (ff.has_srst && !ff.pol_srst)
+					ff.sig_srst = module->LogicNot(NEW_ID, ff.sig_srst);
+				port.clk = ff.sig_clk;
+				port.clk_enable = true;
+				port.clk_polarity = ff.pol_clk;
+				port.init_value = ff.val_init;
+				
+				if (matched==false){
+					if (ff.has_ce)
+						port.en = ff.sig_ce;
+					else
+						port.en = State::S1;
+					if (ff.has_arst) {
+						port.arst = ff.sig_arst;
+						port.arst_value = ff.val_arst;
+					} else {
+						port.arst = State::S0;
+					}
+					if (ff.has_srst) {
+						port.srst = ff.sig_srst;
+						port.srst_value = ff.val_srst;
+						port.ce_over_srst = ff.ce_over_srst;
+					} else {
+						port.srst = State::S0;
+					}
+					port.data = ff.sig_q;
 				}
-				if (ff.has_srst) {
-					port.srst = ff.sig_srst;
-					port.srst_value = ff.val_srst;
-					port.ce_over_srst = ff.ce_over_srst;
-				} else {
-					port.srst = State::S0;
-				}
-				port.data = ff.sig_q;
 			}
 		}
 		else{
@@ -746,7 +749,7 @@ struct MemoryDffWorker
 			log("address FF has async set and/or reset, not supported.\n");
 			return;
 		}
-		if (module->design->scratchpad_get_string("synth_rs.tech_rs") == "NEW"){
+		if (new_primitive == "NEW"){
 			for (int i = 0; i < GetSize(mem.wr_ports); i++) {
 				SigBit we_en1;
 				auto &wport = mem.wr_ports[i];
@@ -888,6 +891,7 @@ struct MemoryDffPass : public Pass {
 		}
 		extra_args(args, argidx, design);
 
+		new_primitive = design->scratchpad_get_string("synth_rs.tech_rs");
 		for (auto mod : design->selected_modules()) {
 			MemoryDffWorker worker(mod, flag_no_rw_check);
 			worker.run();
