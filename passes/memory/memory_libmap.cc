@@ -38,6 +38,7 @@ using namespace MemLibrary;
 #define FACTOR_DEMUX 0.5
 #define FACTOR_EMU 2
 std::string technology = "";
+std::string gen3_model = "";
 
 struct PassOptions {
 	bool no_auto_distributed;
@@ -1716,7 +1717,7 @@ void MemMapping::emit_port(const MemConfig &cfg, std::vector<Cell*> &cells, cons
 				SigSpec hw_wren;
 				SigSpec hw_remaining_bits;
 				// Ayyaz: This if block is added to handle  bit placement for Rapidsilicon Architecture for asymmetric BRAM
-				if(mem.width < cfg.def->byte && write_port_size >= cfg.def->byte){
+				if(mem.width < cfg.def->byte && write_port_size >= cfg.def->byte && ((technology == "genesis3") && (gen3_model == "NEW"))){
 					for (auto &bit : port_swz.bits[rd]) {
 						if (!bit.valid) {
 							hw_remaining_bits.append(State::Sx);
@@ -1745,7 +1746,7 @@ void MemMapping::emit_port(const MemConfig &cfg, std::vector<Cell*> &cells, cons
 					}
 				}
 				///below param (PORT_B_Parity)is added to check parity exist or not incase of byte write enable
-				if (technology == "genesis3"){
+				if ((technology == "genesis3") && (gen3_model == "NEW")){
 					if ((cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM36_SDP")) && (width == 36)){
 						if ((hw_wdata[35]==State::Sx) && (hw_wdata[26]==State::Sx) && (hw_wdata[17]==State::Sx) && (hw_wdata[8]==State::Sx))
 							cell->setParam(stringf("\\PORT_%s_Parity", name), State::S1);
@@ -1857,13 +1858,14 @@ void MemMapping::emit_port(const MemConfig &cfg, std::vector<Cell*> &cells, cons
 				}
 				SigSpec hw_rdata = mem.module->addWire(NEW_ID, width);
 				cell->setPort(stringf("\\PORT_%s_RD_DATA", name), hw_rdata);
-				if (technology == "genesis3"){
+
+				if ((technology == "genesis3") && (gen3_model == "NEW")){
 					cell->setParam(stringf("\\PORT_%s_DATA_WIDTH", name), GetSize(rport.data));
 				}
 				SigSpec lhs;
 				SigSpec rhs;
 				//Ayyaz:  This if block is added to handle bit placement for Rapidsilicon Architecture for asymmetric BRAM
-				if (mem.width < cfg.def->byte && read_port_size >= cfg.def->byte ){ 
+				if (mem.width < cfg.def->byte && read_port_size >= cfg.def->byte  && ((technology == "genesis3") && (gen3_model == "NEW"))){ 
 					int j=0;
 					for (int i = 0; i < GetSize(hw_rdata); i++) {
 						auto &bit = port_swz.bits[rd][i];
@@ -2041,7 +2043,8 @@ void MemMapping::emit(const MemConfig &cfg) {
 				if (cfg.def->init == MemoryInitKind::NoUndef)
 					clean_undef(initval);
 				cell->setParam(ID::INIT, initval);
-				if(technology == "genesis3"){
+
+				if((technology == "genesis3") && (gen3_model == "NEW")){
 					std::vector<State> initval_parity;
 					if ((cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM36_SDP")) || (cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM36_TDP"))){
 						for (int i=0; i< 4096 ;i++ ){
@@ -2136,6 +2139,7 @@ struct MemoryLibMapPass : public Pass {
 		opts.no_auto_block = false;
 		opts.no_auto_huge = false;
 		opts.logic_cost_ram = 1.0;
+		gen3_model = design->scratchpad_get_string("synth_rs.tech_rs");
 		/*Lilit*
 		 * The threshold value for logic_cost_rom has been choosen according 
 		 * to the experiments that have been done by comparing BRAM inference 
@@ -2155,7 +2159,7 @@ struct MemoryLibMapPass : public Pass {
 				continue;
 			}
 			if (args[argidx] == "-tech" && argidx+1 < args.size()) {
-				technology = args[++argidx];
+				technology = args[++argidx]; // Getting model version OLD or NEW
 				continue;
 			}
 			if (args[argidx] == "-D" && argidx+1 < args.size()) {
@@ -2185,7 +2189,8 @@ struct MemoryLibMapPass : public Pass {
 			break;
 		}
 		extra_args(args, argidx, design);
-
+		
+		
 		Library lib = parse_library(lib_files, defines);
 		float counter = 0;
 		for (auto module : design->selected_modules()) {
