@@ -33,7 +33,19 @@
 #define ABC_COMMAND_CTR "strash; ifraig; scorr; dc2; dretime; strash; &get -n; &dch -f; &nf {D}; &put; buffer; upsize {D}; dnsize {D}; stime -p"
 #define ABC_COMMAND_LUT "strash; ifraig; scorr; dc2; dretime; strash; dch -f; if; mfs2"
 #define ABC_COMMAND_SOP "strash; ifraig; scorr; dc2; dretime; strash; dch -f; cover {I} {P}"
-#define ABC_COMMAND_DFL "strash; ifraig -P 1000; scorr -L 6; dc2; scleanup; strash; &get -n; &dch -f; &nf {D}; &put"
+
+// Fast version (ex. LU32PEEng design )
+//
+#define ABC_COMMAND_DFL0 "strash; ifraig -P 1000; &get -n; &scorr; &put; ifraig -P 1000; scleanup; strash; &get -n; &saveaig; &syn2; &saveaig -a; &loadaig; &nf -C 32 -a {D}; &put"
+
+#define ABC_COMMAND_DFL1 "strash; ifraig -P 1000; scorr -L 5 -M 2 -C 50; ifraig -P 1000; scleanup; strash; &get -n; &saveaig; &syn2; &saveaig -a; &loadaig; &nf -C 32 -a {D}; &put"
+
+// DFL with "dc2"
+// (ex: good impact on usbuart)
+//
+#define ABC_COMMAND_DFL2 "strash; ifraig -P 1000; scorr -L 5 -M 2 -C 50; dc2; scleanup; strash; &get -n; &dch -f -C 300; &nf -C 32 {D}; &put"
+
+#define ABC_COMMAND_DFL3 "strash; ifraig -P 1000; scorr -L 5 -M 2 -C 50; ifraig -P 1000; &get -n; &saveaig; &dc2; &saveaig -a; &loadaig; &put; scleanup; strash; &get -n; &saveaig; &syn2; &saveaig -a; &loadaig; ifraig -P 1000; &nf -C 32 -a {D}; &put"
 
 #define ABC_FAST_COMMAND_LIB "strash; dretime; map {D}"
 #define ABC_FAST_COMMAND_CTR "strash; dretime; map {D}; buffer; upsize {D}; dnsize {D}; stime -p"
@@ -56,6 +68,8 @@
 #include <sstream>
 #include <climits>
 #include <vector>
+#include <chrono>
+
 
 #ifndef _WIN32
 #  include <unistd.h>
@@ -714,7 +728,7 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
                 std::vector<std::string> &genlib_files, std::string constr_file,
                 bool cleanup, vector<int> lut_costs, bool dff_mode, std::string clk_str, 
                 bool keepff, std::string delay_target, std::string sop_inputs, 
-                std::string sop_products, std::string lutin_shared, bool fast_mode,
+                std::string sop_products, std::string lutin_shared, bool fast_mode, std::string dfl_arg,
 		const std::vector<RTLIL::Cell*> &cells, bool show_tempdir, bool sop_mode, 
                 bool abc_dress)
 {
@@ -845,7 +859,7 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 	else if (sop_mode)
 		abc_script += fast_mode ? ABC_FAST_COMMAND_SOP : ABC_COMMAND_SOP;
 	else
-		abc_script += fast_mode ? ABC_FAST_COMMAND_DFL : ABC_COMMAND_DFL;
+		abc_script += fast_mode ? ABC_FAST_COMMAND_DFL : ((dfl_arg == "2") ? ABC_COMMAND_DFL2 : ((dfl_arg == "0") ? ABC_COMMAND_DFL0 : ABC_COMMAND_DFL1));
 
 	if (script_file.empty() && !delay_target.empty())
 		for (size_t pos = abc_script.find("dretime;"); pos != std::string::npos; pos = abc_script.find("dretime;", pos+1))
@@ -1048,6 +1062,8 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 		log_header(design, "Executing ABC.\n");
 
 		auto &cell_cost = cmos_cost ? CellCosts::cmos_gate_cost() : CellCosts::default_gate_cost();
+
+                auto startTime = std::chrono::high_resolution_clock::now();
 
 		buffer = stringf("%s/stdcells.genlib", tempdir_name.c_str());
 		f = fopen(buffer.c_str(), "wt");
@@ -1412,6 +1428,13 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 		log("ABC RESULTS:           input signals: %8d\n", in_wires);
 		log("ABC RESULTS:          output signals: %8d\n", out_wires);
 #endif
+                auto endTime = std::chrono::high_resolution_clock::now();
+                auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(endTime - startTime);
+
+                float totalTime = elapsed.count() * 1e-9;
+
+                log("[Time = %.2f sec.]\n", totalTime);
+
 
 		delete mapped_design;
 	}
@@ -1486,7 +1509,9 @@ struct AbcPass : public Pass {
 		log("%s\n", fold_abc_cmd(ABC_COMMAND_SOP).c_str());
 		log("\n");
 		log("        otherwise:\n");
-		log("%s\n", fold_abc_cmd(ABC_COMMAND_DFL).c_str());
+		log("%s\n", fold_abc_cmd(ABC_COMMAND_DFL1).c_str());
+		log("        or:\n");
+		log("%s (with -dfl)\n", fold_abc_cmd(ABC_COMMAND_DFL2).c_str());
 		log("\n");
 		log("    -fast\n");
 		log("        use different default scripts that are slightly faster (at the cost\n");
@@ -1650,6 +1675,7 @@ struct AbcPass : public Pass {
 		std::vector<std::string> liberty_files, genlib_files;
 		std::string delay_target, sop_inputs, sop_products, lutin_shared = "-S 1";
 		bool fast_mode = false, dff_mode = false, keepff = false, cleanup = true;
+                std::string dfl_arg = "1";
 		bool show_tempdir = false, sop_mode = false;
 		bool abc_dress = false;
 		vector<int> lut_costs;
@@ -1689,6 +1715,7 @@ struct AbcPass : public Pass {
 		g_arg = design->scratchpad_get_string("abc.g", g_arg);
 
 		fast_mode = design->scratchpad_get_bool("abc.fast", fast_mode);
+		dfl_arg = design->scratchpad_get_string("abc.dfl", dfl_arg);
 		dff_mode = design->scratchpad_get_bool("abc.dff", dff_mode);
 		if (design->scratchpad.count("abc.clk")) {
 			clk_str = design->scratchpad_get_string("abc.clk");
@@ -1792,6 +1819,10 @@ struct AbcPass : public Pass {
 			}
 			if (arg == "-fast") {
 				fast_mode = true;
+				continue;
+			}
+			if (arg == "-dfl" && argidx+1 < args.size()) {
+				dfl_arg = args[++argidx];
 				continue;
 			}
 			if (arg == "-dff") {
@@ -2036,7 +2067,7 @@ struct AbcPass : public Pass {
 
 			if (!dff_mode || !clk_str.empty()) {
 				abc_module(design, mod, script_file, exe_file, liberty_files, genlib_files, constr_file, cleanup, lut_costs, dff_mode, clk_str, keepff,
-						delay_target, sop_inputs, sop_products, lutin_shared, fast_mode, mod->selected_cells(), show_tempdir, sop_mode, abc_dress);
+						delay_target, sop_inputs, sop_products, lutin_shared, fast_mode, dfl_arg, mod->selected_cells(), show_tempdir, sop_mode, abc_dress);
 				continue;
 			}
 
@@ -2267,7 +2298,7 @@ struct AbcPass : public Pass {
 				abc_module(design, mod, script_file, exe_file, liberty_files, 
                                            genlib_files, constr_file, cleanup, lut_costs, 
                                            !clk_sig.empty(), "$", keepff, delay_target, sop_inputs, 
-                                           sop_products, lutin_shared, fast_mode, it.second, 
+                                           sop_products, lutin_shared, fast_mode, dfl_arg, it.second, 
                                            show_tempdir, sop_mode, abc_dress);
 				assign_map.set(mod);
 			}
