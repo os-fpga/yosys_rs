@@ -798,7 +798,7 @@ static void check_auto_nosync(AstNode *node)
 }
 
 static int maxNbSimplifyCalls = 0;
-#define MAX_NB_SIMPLY_CALLS 10000000
+#define MAX_NB_SIMPLY_CALLS 100000000
 
 // convert the AST into a simpler AST that has all parameters substituted by their
 // values, unrolled for-loops, expanded generate blocks, etc. when this function
@@ -811,7 +811,7 @@ bool AstNode::simplifyRec(bool const_fold, bool at_zero, bool in_lvalue, int sta
 	static int recursion_counter = 0;
 	static bool deep_recursion_warning = true;
 
-	if (recursion_counter++ == 1000 && deep_recursion_warning) {
+	if (recursion_counter++ == 10000 && deep_recursion_warning) {
 		log_error("Deep/Wide recursion in AST simplifier.\nDoes this design contain overly long or deeply nested expressions, or excessive recursion?\n");
 		deep_recursion_warning = false;
 	}
