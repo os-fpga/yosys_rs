@@ -3402,7 +3402,9 @@ const RTLIL::Const &RTLIL::Cell::getParam(RTLIL::IdString paramname) const
 		if (m)
 			return m->parameter_default_values.at(paramname);
 	}
-	throw std::out_of_range("Cell::getParam()");
+	//throw std::out_of_range("Cell::getParam()"); 
+	//updated above line: Missing param name will also be printed along with an error makes debug easy 
+	throw std::out_of_range(stringf("Cell::getParam(%s)",paramname.c_str()));
 }
 
 void RTLIL::Cell::sort()
