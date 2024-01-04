@@ -2232,9 +2232,9 @@ struct MemoryLibMapPass : public Pass {
 					Ayyaz: whereas for new_RS BRAM primitves they have added a condition that we can not
 							read while writing at the same address location. So, for old BRAM primitves we
 							were adding registers in the write path in mem.cc (registering 'data_in', 'wr_en', 'wr_addr') 
-							to delay the writing operation and givng read high periority (making read-first), 
-							for new RS_BRAM_primitves we don't need to add these extra registers as this collision
-							is already handled in the simulation models by gving an error:
+							to delay the writing operation and givng read high priority (making read-first), 
+							for new RS_BRAM_primitives we don't need to add these extra registers as this collision
+							is already handled in the simulation models by giving an error:
 							["ERROR: Memory collision occured on TDP_RAM36K instance at time where port B 
 							is writing to the same address, as port A is reading"].
 							For now we are adding flags {((technology == "genesis3") && (gen3_model == "NEW"))}
