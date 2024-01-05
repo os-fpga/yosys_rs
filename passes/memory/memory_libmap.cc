@@ -2228,11 +2228,23 @@ struct MemoryLibMapPass : public Pass {
 					}
 				}
 				/*
-					Awais: If memory is a read first TDP ram, soft logic is infered
+					Awais: If memory is a read first TDP ram, soft logic is infered for old BRAM primitves.
+					Ayyaz: whereas for new_RS BRAM primitves they have added a condition that we can not
+							read while writing at the same address location. So, for old BRAM primitves we
+							were adding registers in the write path in mem.cc (registering 'data_in', 'wr_en', 'wr_addr') 
+							to delay the writing operation and givng read high priority (making read-first), 
+							for new RS_BRAM_primitives we don't need to add these extra registers as this collision
+							is already handled in the simulation models by giving an error:
+							["ERROR: Memory collision occured on TDP_RAM36K instance at time where port B 
+							is writing to the same address, as port A is reading"].
+							For now we are adding flags {((technology == "genesis3") && (gen3_model == "NEW"))}
+							to separate the two conditions in below check.
+
 					original: if(idx == -1)
 				*/
 
-				if (idx == -1 or ((GetSize(mem.rd_ports)>1 or GetSize(mem.wr_ports)>1) and mem.emulate_read_first_ok() and wtrans_new == true)) {
+				if (idx == -1 or ((GetSize(mem.rd_ports)>1 or GetSize(mem.wr_ports)>1) and mem.emulate_read_first_ok() and wtrans_new == true 
+									and !((technology == "genesis3") && (gen3_model == "NEW")))) {
 					log("using FF mapping for memory %s.%s\n", log_id(module->name), log_id(mem.memid));
 				} else {
 				
