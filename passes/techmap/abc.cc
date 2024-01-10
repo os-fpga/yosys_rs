@@ -740,6 +740,13 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 	pi_map.clear();
 	po_map.clear();
 
+        // safety net : if Partition size is too big, e.g. above 100K logic cells, we call the fastest
+        // ABC script which is DFL0 otherwise we can blow up runtime with DFL1 or DFL2. (Thierry)
+        //
+        if (1 && (cells.size() > 100000)) {
+          dfl_arg = "0";
+        }
+
 	if (clk_str != "$")
 	{
 		clk_polarity = true;
@@ -1054,8 +1061,8 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 	fprintf(f, ".end\n");
 	fclose(f);
 
-	log("Extracted %d gates and %d wires to a netlist network with %d inputs and %d outputs.\n",
-			count_gates, GetSize(signal_list), count_input, count_output);
+	log("Extracted %d gates and %d wires to a netlist network with %d inputs and %d outputs (dfl=%s).\n",
+			count_gates, GetSize(signal_list), count_input, count_output, dfl_arg.c_str());
 	log_push();
 	if (count_output > 0)
 	{
