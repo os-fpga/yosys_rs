@@ -1,5 +1,5 @@
 /* Rapid Silicon Copyright 2023
-*/
+ */
 /*
  *  yosys -- Yosys Open SYnthesis Suite
  *
@@ -19,31 +19,35 @@
  *
  */
 
-/* 
+/*
   This piece of code extract important information from RTLIL::Design class
   directly. These important information includes:
     a. Number of OCLA instances being instantiated (if there is)
-    b. Each signals that user would like to probe/debug
-    c. Memory Depth of the buffer to store raw data
-    d. How each OCLA instance connected to AXIL interconnect
-        -- useful for SW to determine what base addr to talk to each instance
-    e. a lot more
+    b. Number of OCLA Debug Subsystem instances being instantiated (if there is)
+        - this must be 1 instance
+        - OCLA instance(s) must be instantiated by OCLA Debug Subsystem
+    c. Each signals that user would like to probe/debug
+    d. Memory Depth of the buffer to store raw data
+    e. Base address of each OCLA instance
+    f. a lot more
 */
 /*
   Author: Chai, Chung Shien
 */
 
-#include "kernel/rtlil.h"
-#include "kernel/register.h"
-#include "kernel/sigtools.h"
-#include "kernel/celltypes.h"
-#include "kernel/cellaigs.h"
-#include "kernel/log.h"
 #include <string>
+
+#include "kernel/cellaigs.h"
+#include "kernel/celltypes.h"
+#include "kernel/log.h"
+#include "kernel/register.h"
+#include "kernel/rtlil.h"
+#include "kernel/sigtools.h"
 
 USING_YOSYS_NAMESPACE
 PRIVATE_NAMESPACE_BEGIN
 #define USE_LOCAL_GEN_STRING 0
+#define MAXIMUM_SUPPORTED_PROBE 15
 
 #if USE_LOCAL_GEN_STRING
 std::string gen_string(const char* format_string, ...) {
@@ -75,7 +79,7 @@ std::string gen_string(const char* format_string, ...) {
   return string;
 }
 #else
-  #define gen_string(...) stringf(__VA_ARGS__)
+#define gen_string(...) stringf(__VA_ARGS__)
 #endif
 
 void post_msg(std::ofstream& json, int space, std::string string) {
@@ -95,39 +99,70 @@ void post_msg(std::ofstream& json, int space, std::string string) {
 }
 
 #if USE_LOCAL_GEN_STRING
-  #define JSON_POST_MSG(space, ...) \
-    { post_msg(json, space, gen_string(__VA_ARGS__)); }
+#define JSON_POST_MSG(space, ...) \
+  { post_msg(json, space, gen_string(__VA_ARGS__)); }
 #else
-  #define JSON_POST_MSG(space, ...) \
-    { post_msg(json, space, stringf(__VA_ARGS__)); }
+#define JSON_POST_MSG(space, ...) \
+  { post_msg(json, space, stringf(__VA_ARGS__)); }
 #endif
+
+enum PARAM_TYPE { PARAM_IS_UINT32, PARAM_IS_UINT64, PARAM_IS_STR };
 
 /*
   Storing module parameter information in this struct
-    a. Parameter can be either string or uint32_t (determined by is_str)
+    a. Parameter can be either uint32_t, uint64_t, std::string (determined by
+       type)
     b. Parameter can only be assigned once (determined by is_assigned)
-    c. Depend on is_str, the pointer ptr will be cast to std::string* or uint32_t*
+    c. The pointer ptr will be casted accordingly
 */
 struct PARAM_INFO {
-  PARAM_INFO(void* p = nullptr, bool s = false) :
-    is_str(s), ptr(p) {
-  }
-  bool is_str = false;
+  PARAM_INFO(void* p = nullptr, PARAM_TYPE t = PARAM_IS_UINT32)
+      : type(t), ptr(p) {}
+  PARAM_TYPE type = PARAM_IS_UINT32;
   bool is_assigned = false;
   void* ptr = nullptr;
+};
+
+/*
+  This struct store the information of the signal. The information include:
+    a. name
+    b. width size
+    c. offset index
+  Example of signals include:
+    a. signals that user want to probe/debug
+    b. signals that user want to use as trigger inputs (not supported, might
+       remove)
+*/
+struct OCLA_SIGNAL {
+  OCLA_SIGNAL(std::string f, std::string n, uint32_t w, uint32_t o, bool s)
+      : fullname(f), name(n), width(w), offset(o), show_index(s) {
+    size_t index = name.rfind(".");
+    if (index != std::string::npos) {
+      name = name.substr(index + 1);
+    }
+    if (name.size() > 0 && name[0] == '\\') {
+      name = name.substr(1);
+    }
+    log_assert(width);
+  }
+  std::string fullname = "";
+  std::string name = "";
+  uint32_t width = 0;
+  uint32_t offset = 0;
+  bool show_index = false;
 };
 
 /*
   This is base structure of the IP
   There will be two IPs that we need to detect:
     a. OCLA IP
-    b. AXIL Interconnect IP
+    b. OCLA Debug Subsystem IP
   Both IP will always has IP_TYPE, IP_VERSION and IP_ID parameter
 */
 struct MODULE_IP {
-  MODULE_IP(std::string n = "") : name (n) {
+  MODULE_IP(std::string n = "") : name(n) {
     log_assert(name.size());
-    params["\\IP_TYPE"] = PARAM_INFO(&type, true);
+    params["\\IP_TYPE"] = PARAM_INFO(&type, PARAM_IS_STR);
     params["\\IP_VERSION"] = PARAM_INFO(&version);
     params["\\IP_ID"] = PARAM_INFO(&id);
   }
@@ -146,25 +181,60 @@ struct MODULE_IP {
       goto SET_PARAM_ERROR;
     }
     log_assert(params[name].ptr != nullptr);
-    if (params[name].is_str) {
-      if (value.size() >= 2 && value[0] == '"' && value[value.size()-1] == '"') {
+    if (params[name].type == PARAM_IS_STR) {
+      if (value.size() >= 2 && value[0] == '"' &&
+          value[value.size() - 1] == '"') {
         std::string* string_ptr = (std::string*)(params[name].ptr);
-        (* string_ptr) = value.substr(1, value.size() - 2);
+        (*string_ptr) = value.substr(1, value.size() - 2);
         JSON_POST_MSG(1, "Param %s - %s", name.c_str(), string_ptr->c_str());
       } else {
-        JSON_POST_MSG(1, "Error: Param %s value %s does not follow string format", name.c_str(), value.c_str());
+        JSON_POST_MSG(1,
+                      "Error: Param %s value %s does not follow string format",
+                      name.c_str(), value.c_str());
+        goto SET_PARAM_ERROR;
+      }
+    } else if (params[name].type == PARAM_IS_UINT64) {
+      // For uint64_t, the format is 64'<sequence of 64 0 or 1>
+      if (value.size() == 67 && value.substr(0, 3) == "64'") {
+        std::string binary = value.substr(3);
+        uint64_t* number_ptr = (uint64_t*)(params[name].ptr);
+        auto iter = binary.begin();
+        (*number_ptr) = 0;
+        while (iter != binary.end()) {
+          if (*iter != '0' && *iter != '1') {
+            break;
+          }
+          (*number_ptr) <<= (uint64_t)(1);
+          if (*iter == '1') {
+            (*number_ptr) |= (uint64_t)(1);
+          }
+          iter++;
+        }
+        if (iter != binary.end()) {
+          JSON_POST_MSG(
+              1, "Error: Param %s value %s does not follow uint64_t format",
+              name.c_str(), value.c_str());
+          goto SET_PARAM_ERROR;
+        }
+        JSON_POST_MSG(1, "Param %s - %lu (0x%016lX)", name.c_str(),
+                      (*number_ptr), (*number_ptr));
+      } else {
+        JSON_POST_MSG(
+            1, "Error: Param %s value %s does not follow uint64_t format",
+            name.c_str(), value.c_str());
         goto SET_PARAM_ERROR;
       }
     } else {
       uint32_t* number_ptr = (uint32_t*)(params[name].ptr);
-      (* number_ptr) = (uint32_t)(atol(value.c_str()));
-      JSON_POST_MSG(1, "Param %s - %d (0x%08X)", name.c_str(), (* number_ptr), (* number_ptr));
+      (*number_ptr) = (uint32_t)(atol(value.c_str()));
+      JSON_POST_MSG(1, "Param %s - %u (0x%08X)", name.c_str(), (*number_ptr),
+                    (*number_ptr));
     }
     params[name].is_assigned = true;
     goto SET_PARAM_END;
-SET_PARAM_ERROR:
+  SET_PARAM_ERROR:
     status = false;
-SET_PARAM_END:
+  SET_PARAM_END:
     return status;
   }
   bool check_all_params(std::ofstream& json) {
@@ -196,14 +266,15 @@ struct OCLA_MODULE : MODULE_IP {
     params["\\PROBE_WIDHT"] = PARAM_INFO(&probe_width);
     params["\\NO_OF_PROBES"] = PARAM_INFO(&probes_count);
     params["\\NO_OF_TRIGGER_INPUTS"] = PARAM_INFO(&trigger_inputs_count);
+    params["\\INDEX"] = PARAM_INFO(&index);
   }
   /*
     This function to determine if the detected parameter meet the requirement
   */
   bool check_type(std::ofstream& json) {
     bool status = false;
-    if (type == "ocla" && mem_depth > 0 && probe_width > 0 && probe_width <= 32 &&
-        probes_count > 0) {
+    if (type == "ocla" && mem_depth > 0 && probe_width > 0 &&
+        probe_width <= 32 && probes_count > 0) {
       status = true;
     } else {
       JSON_POST_MSG(1, "Error: Fail to validate parameters");
@@ -213,25 +284,55 @@ struct OCLA_MODULE : MODULE_IP {
     }
     return status;
   }
+  /*
+    Validate if all the information that we extract is good
+  */
+  bool finalize(std::ofstream& json, int space) {
+    uint32_t total_s = 0;
+    bool status = true;
+    // probes
+    for (auto& s : probes) {
+      total_s += s.width;
+    }
+    if (total_s != probes_count) {
+      JSON_POST_MSG(
+          space,
+          "Error: Invalid total probe signal(s) bus size %d (NO_OF_PROBES %d)",
+          total_s, probes_count);
+      goto FINALIZE_ERROR;
+    }
+    goto FINALIZE_END;
+  FINALIZE_ERROR:
+    status = false;
+  FINALIZE_END:
+    return status;
+  }
   uint32_t axi_addr_width = 0;
   uint32_t axi_data_width = 0;
   uint32_t mem_depth = 0;
   uint32_t probe_width = 0;
   uint32_t probes_count = 0;
   uint32_t trigger_inputs_count = 0;
+  uint32_t index = 0;
+  uint32_t base_address = 0;
+  std::vector<OCLA_SIGNAL> probes;
 };
 
 /*
-  AXIL Interconnect IP derived MODULE_IP
+  OCLA Debug Subsystem IP derived MODULE_IP
     Beside the 3 essential paramters, this IP need more parameter information
 */
-struct AXIL_INTERCONNECT_MODULE : MODULE_IP {
-  AXIL_INTERCONNECT_MODULE(std::string n) : MODULE_IP(n) {
-    params["\\ADDR_WIDTH"] = PARAM_INFO(&addr_width);
-    params["\\DATA_WIDTH"] = PARAM_INFO(&data_width);
-    params["\\M_COUNT"] = PARAM_INFO(&count);
-    for (int i = 0; i < 16; i++) {
-      params[gen_string("\\M%02d_BASE_ADDR", i)] = PARAM_INFO(&base_addresses[i]);
+struct OCLA_DEBUG_SUBSYSTEM_MODULE : MODULE_IP {
+  OCLA_DEBUG_SUBSYSTEM_MODULE(std::string n) : MODULE_IP(n) {
+    params["\\MODE"] = PARAM_INFO(&mode, PARAM_IS_STR);
+    params["\\CORES"] = PARAM_INFO(&cores);
+    params["\\Total_Probes"] = PARAM_INFO(&total_probes);
+    for (uint32_t i = 0; i < MAXIMUM_SUPPORTED_PROBE; i++) {
+      params[gen_string("\\Probe%d", i + 1)] = PARAM_INFO(&ip_probe_count[i]);
+      params[gen_string("\\IF%d_BaseAddress", i + 1)] =
+          PARAM_INFO(&ip_address[i]);
+      params[gen_string("\\IF%d_Probes", i + 1)] =
+          PARAM_INFO(&ip_probe_info[i], PARAM_IS_UINT64);
     }
   }
   /*
@@ -239,133 +340,24 @@ struct AXIL_INTERCONNECT_MODULE : MODULE_IP {
   */
   bool check_type(std::ofstream& json) {
     bool status = false;
-    if (type == "AXIL_IC" && count > 0 && count <= 16) {
+    if (type == "ocla" && mode == "NATIVE" && cores > 0 &&
+        cores <= MAXIMUM_SUPPORTED_PROBE) {
       status = true;
     } else {
       JSON_POST_MSG(1, "Error: Fail to validate parameters");
       JSON_POST_MSG(2, "IP_TYPE: %s", type.c_str());
-      JSON_POST_MSG(2, "M_COUNT: %d", count);
+      JSON_POST_MSG(2, "MODE: %s", mode.c_str());
+      JSON_POST_MSG(2, "CORES: %d", cores);
     }
     return status;
   }
-  uint32_t addr_width = 0;
-  uint32_t data_width = 0;
-  uint32_t count = 0;
-  uint32_t base_addresses[16];
-  uint32_t tracking = 0;
-};
 
-/*
-  This struct store the information of the signal. The information include:
-    a. name
-    b. width size
-    c. offset index
-  Example of signals include:
-    a. signals that user want to probe/debug
-    b. signals that user want to use as trigger inputs
-    c. special signal which is s_axil_awready, we need to trace this signal connection,
-        so that we know how each OCLA instance is routed to AXIL Interconnect master port
-        Once we know which port index is being used by a particular OCLA, we know the base
-        address to talk to this OCLA instance
-*/
-struct OCLA_SIGNAL {
-  OCLA_SIGNAL(std::string f, std::string n, uint32_t w, uint32_t o, bool s) :
-    fullname(f), name(n), width(w), offset(o), show_index(s) {
-    size_t index = name.rfind(".");
-    if (index != std::string::npos) {
-      name = name.substr(index+1);
-    }
-    if (name.size() > 0 && name[0] == '\\') {
-      name = name.substr(1);
-    }
-    log_assert(width);
-  }
-  std::string fullname = "";
-  std::string name = "";
-  uint32_t width = 0;
-  uint32_t offset = 0;
-  bool show_index = false;
-};
-
-/*
-  When using IP Catalog, each IP will be instantiated by a wrapper
-  This struct is the IP wrapper/instantiator
-*/
-struct OCLA_INSTANTIATOR {
-  OCLA_INSTANTIATOR(std::string m, std::string i, OCLA_MODULE* o,
-                    std::vector<OCLA_SIGNAL> p, std::vector<OCLA_SIGNAL> t, 
-                    OCLA_SIGNAL a, uint32_t in, std::vector<std::string> cs) :
-    module(m), instance(i), ocla(o), probes(p), trigger_inputs(t), awready(a), 
-    index(in), connection_chain(cs) {
-  }
-  /*
-    Validate if all the information that we extract is good
-  */
-  bool finalize(AXIL_INTERCONNECT_MODULE* axil, std::ofstream& json, int space) {
-    uint32_t total_s = 0;
-    if (!status) {
-      JSON_POST_MSG(space, "Error: Already has been marked as invalid instantiator");
-      goto FINALIZE_END;
-    }
-    if (index >= axil->count) {
-      JSON_POST_MSG(space, "Error: Invalid AXIL Interconnect connection index %d (AXIL master count %d)", 
-                    index, axil->count);
-      goto FINALIZE_ERROR;
-    }
-
-    if (axil->tracking & (1 << index)) {
-      JSON_POST_MSG(space, "Error: Invalid AXIL Interconnect connection index %d because it had been used", 
-                            index);
-      goto FINALIZE_ERROR;
-    } 
-    
-    // probes
-    for (auto& s : probes) {
-      total_s += s.width;
-    }
-    if (total_s != ocla->probes_count) {
-      JSON_POST_MSG(space, "Error: Invalid total probe signal(s) bus size %d (NO_OF_PROBES %d)", 
-                            total_s, ocla->probes_count);
-      goto FINALIZE_ERROR;
-    }
-    // trigger inputs
-    if (ocla->trigger_inputs_count > 0 && trigger_inputs.size() == 0) {
-      ocla->trigger_inputs_count = 0;
-      JSON_POST_MSG(space, "Warning: overwrite NO_OF_TRIGGER_INPUTS=0 since trigger_inputs signals is not specified");
-    }
-    total_s = 0;
-    for (auto& s : trigger_inputs) {
-      total_s += s.width;
-    }
-    if (total_s != ocla->trigger_inputs_count) {
-      JSON_POST_MSG(space, "Error: Invalid total trigger_input signal(s) bus size %d (NO_OF_TRIGGER_INPUTS %d)", 
-                            total_s, ocla->trigger_inputs_count);
-      goto FINALIZE_ERROR;
-    }
-    // awready
-    if (awready.width != 1) {
-      JSON_POST_MSG(space, "Error: Invalid s_axil_awready bus size %d", awready.width);
-      goto FINALIZE_ERROR;
-    }
-    addr = axil->base_addresses[index];
-    axil->tracking |= (1 << index);
-    goto FINALIZE_END;
-    
-FINALIZE_ERROR:
-    status = false;
-FINALIZE_END:
-    return status;
-  }
-  std::string module = "";
-  std::string instance = "";
-  OCLA_MODULE* ocla = nullptr;
-  std::vector<OCLA_SIGNAL> probes;
-  std::vector<OCLA_SIGNAL> trigger_inputs;
-  OCLA_SIGNAL awready;
-  uint32_t index = 0;
-  std::vector<std::string> connection_chain;
-  uint32_t addr = 0;
-  bool status = true;
+  std::string mode = "";
+  uint32_t cores = 0;
+  uint32_t total_probes = 0;
+  uint32_t ip_probe_count[MAXIMUM_SUPPORTED_PROBE] = {0};
+  uint32_t ip_address[MAXIMUM_SUPPORTED_PROBE] = {0};
+  uint64_t ip_probe_info[MAXIMUM_SUPPORTED_PROBE] = {0};
 };
 
 class OCLA_Analyzer {
@@ -389,131 +381,172 @@ class OCLA_Analyzer {
       log_error("Cannot find top module\n");
     }
     uint32_t ocla_count = 0;
-    std::string connection_name = "";
+    std::string cmd = "";
+    std::string ocla_debug_subsystem_instantiator = "";
+    std::string ocla_debug_subsystem_connection_name = "";
     std::vector<OCLA_MODULE*> ocla_modules;
-    std::vector<AXIL_INTERCONNECT_MODULE*> axil_interconnect_modules;
+    std::vector<OCLA_DEBUG_SUBSYSTEM_MODULE*> ocla_debug_subsystem_modules;
     std::vector<std::string> ocla_instantiator_names;
-    std::vector<OCLA_MODULE*> ocla_instantiated_modules;
-    std::vector<OCLA_INSTANTIATOR> ocla_instantiators;
-    // Step 1: Get all the OCLA IP and AXIL Interconnect IPs
-    get_modules(design, ocla_modules, axil_interconnect_modules, json);
+    // Step 1: Get all the OCLA and OCLA Debug Subsystem IPs
+    get_modules(design, ocla_modules, ocla_debug_subsystem_modules, json);
+
     // Step 2: Check the detected IP counts
-    //    a. User can instantiate as many OCLA instances (as long as it is connected to AXIL Interconnet)
-    //    b. AXIL Interconnect can support maximum of 16 master ports
-    //    c. Limitation: we only support one AXIL Interconnect IP for now
-    if (ocla_modules.size() == 0 || axil_interconnect_modules.size() != 1) {
-      JSON_POST_MSG(0, "Warning/Error: OCLA module count=%ld, AXIL Interconnect module count=%ld", 
-                        ocla_modules.size(), axil_interconnect_modules.size());
+    //    a. User can instantiate as many OCLA instances
+    //    b. They are all instantiated by OCLA Debug Subsystem
+    if (ocla_modules.size() == 0 || ocla_debug_subsystem_modules.size() != 1) {
+      JSON_POST_MSG(0,
+                    "Warning/Error: OCLA module count=%ld, OCLA Debug "
+                    "Subsystem module count=%ld",
+                    ocla_modules.size(), ocla_debug_subsystem_modules.size());
       goto ANALYZE_MSG_END;
     }
-    // Step 3: Make sure there is only one AXIL Interconnect all the way up to top
-    if (!check_unique_axil_interconnect(design, axil_interconnect_modules[0]->name, connection_name, json)) {
-      JSON_POST_MSG(1, "Error: Currently only support one AXIL Interconnect instance in a design");
+
+    // Step 3: Make sure there is only one OCLA Debug Subsystem all the way up
+    // to top
+    if (!check_unique_ocla_debug_subsystem(
+            design, ocla_debug_subsystem_modules[0]->name,
+            ocla_debug_subsystem_instantiator,
+            ocla_debug_subsystem_connection_name, json)) {
+      JSON_POST_MSG(1,
+                    "Error: Currently only support one OCLA Debug Subsystem "
+                    "instance in a design");
       goto ANALYZE_MSG_END;
     }
+
     // Step 4: For each OCLA IP, grab all the instantiator (or wrapper)
     for (auto& o : ocla_modules) {
-      get_ocla_instantiator(design, o, ocla_instantiator_names, ocla_instantiated_modules, json);
+      get_ocla_instantiator(design, o, ocla_instantiator_names, json);
     }
+
     // Step 5: Make sure we successfully grab at least 1 instantiator
     if (ocla_instantiator_names.size() == 0) {
       JSON_POST_MSG(0, "Error: Does not find any OCLA instantiator");
       goto ANALYZE_MSG_END;
     }
-    log_assert(ocla_instantiator_names.size() == ocla_instantiated_modules.size());
-    // Step 6: Black box instantiator module and Flatten the design
-    for (auto& n : ocla_instantiator_names) {
-      std::string cmd = gen_string("blackbox %s", n.c_str());
+
+    // Step 6: Match OCLA instantiator
+    if (!sanity_check(ocla_debug_subsystem_modules[0], ocla_modules,
+                      ocla_instantiator_names, json)) {
+      JSON_POST_MSG(0, "Error: Sanity check fail");
+      goto ANALYZE_MSG_END;
+    }
+
+    // Step 7: Black box OCLA Debug Subsystem instantiator module and Flatten
+    // the design
+#if 1
+    cmd = gen_string("blackbox %s", ocla_debug_subsystem_instantiator.c_str());
+    JSON_POST_MSG(0, "Run command: %s", cmd.c_str());
+    run_pass(cmd.c_str(), design);
+#elif 0
+    cmd = gen_string("blackbox %s",
+                     ocla_debug_subsystem_modules[0]->name.c_str());
+    JSON_POST_MSG(0, "Run command: %s", cmd.c_str());
+    run_pass(cmd.c_str(), design);
+#else
+    for (auto& o : ocla_modules) {
+      cmd = gen_string("blackbox %s", o->name.c_str());
       JSON_POST_MSG(0, "Run command: %s", cmd.c_str());
       run_pass(cmd.c_str(), design);
     }
-    JSON_POST_MSG(0, "Run command: flatten");
-    run_pass("flatten", design);
-    // Step 7: Once the flatten the design, start to grab all the signals information
-    for (size_t i = 0; i < ocla_instantiator_names.size(); i++) {
-      get_ocla_instantiator(design->top_module(), ocla_instantiator_names[i], ocla_instantiated_modules[i], 
-                            ocla_instantiators, connection_name, json);
+#endif
+    cmd = "flatten";
+    JSON_POST_MSG(0, "Run command: %s", cmd.c_str());
+    run_pass(cmd.c_str(), design);
+#if 0
+    cmd = "write_rtlil ocla.rtlil";
+    JSON_POST_MSG(0, "Run command: %s", cmd.c_str());
+    run_pass(cmd.c_str(), design);
+#endif
+
+    // Step 8: Once the flatten the design, start to grab all the signals
+    // information
+    if (!get_ocla_signals(design->top_module(), ocla_modules,
+                          ocla_debug_subsystem_instantiator, json)) {
+      JSON_POST_MSG(0, "Error: Fail to get probe signals");
+      goto ANALYZE_MSG_END;
     }
-    JSON_POST_MSG(0, "Total detected OCLA Instantiator: %ld", ocla_instantiators.size());
-    // Step 8: Loop through the instantiator that we gathered so far and perform final validation
-    for (auto& inst : ocla_instantiators) {
-      JSON_POST_MSG(1, "Instance: %s, Module: %s", inst.instance.c_str(), inst.module.c_str());
+
+    // Step 9: Loop through the instantiator that we gathered so far and perform
+    // final validation
+    for (auto& o : ocla_modules) {
+      JSON_POST_MSG(1, "Module: %s", o->name.c_str());
       JSON_POST_MSG(2, "Final checking ...");
-      if (inst.finalize(axil_interconnect_modules[0], json, 3)) {
+      if (o->finalize(json, 3)) {
         JSON_POST_MSG(3, "Probes:");
-        for (auto& sig : inst.probes) {
+        for (auto& sig : o->probes) {
           JSON_POST_MSG(4, "--> %s", sig.fullname.c_str());
-          JSON_POST_MSG(5, ": %s (width=%d, offset=%d)", sig.name.c_str(), sig.width, sig.offset);
+          JSON_POST_MSG(5, ": %s (width=%d, offset=%d)", sig.name.c_str(),
+                        sig.width, sig.offset);
         }
-        JSON_POST_MSG(3, "Trigger Inputs:");
-        for (auto& sig : inst.trigger_inputs) {
-          JSON_POST_MSG(4, "--> %s", sig.fullname.c_str());
-          JSON_POST_MSG(5, ": %s (width=%d, offset=%d)", sig.name.c_str(), sig.width, sig.offset);
-        }
-        JSON_POST_MSG(3, "AXIL AWReady:");
-        JSON_POST_MSG(4, "--> %s (width=%d, offset=%d)", inst.awready.name.c_str(), inst.awready.width, inst.awready.offset);
-        for (auto& cs : inst.connection_chain) {
-          JSON_POST_MSG(5, ": %s", cs.c_str());
-        }
-        JSON_POST_MSG(3, "Connected to AXIL Interconnect #%d", inst.index);
         ocla_count++;
       } else {
-        JSON_POST_MSG(3, "Error: Disqualify this instance");
+        JSON_POST_MSG(3, "Error: Disqualify this module");
+        ocla_count = 0;
+        break;
       }
     }
-ANALYZE_MSG_END:
+  ANALYZE_MSG_END:
     json << "    \"End of OCLA Analysis\"\n  ]";
-    // Step 9: There is is valid detected OCLA instance, then we dump those information is JSON file
+
+    // Step 10: There is no error detected in all OCLA instance, then we dump
+    // those information is JSON file
     if (ocla_count) {
       json << ",\n  \"ocla\" : [\n";
       uint32_t index = 0;
-      for (auto& inst : ocla_instantiators) {
-        if (inst.status) {
-          json << "    {\n",
-          json_write_param(inst.ocla, json, 3);
-          json << gen_string(",\n      \"addr\" : %d", inst.addr).c_str();
-          json_write_signals("probes", inst.probes, json);
-          index++;
-          if (index < ocla_count) {
-            json << "    },\n";
-          } else {
-            json << "    }\n";
-          }
+      for (auto& o : ocla_modules) {
+        json << "    {\n", json_write_param(o, json, 3);
+        json << gen_string(",\n      \"addr\" : %d", o->base_address).c_str();
+        json_write_signals("probes", o->probes, json);
+        index++;
+        if (index < ocla_count) {
+          json << "    },\n";
+        } else {
+          json << "    }\n";
         }
       }
       json << "  ]";
-      json << ",\n  \"axil\" : {\n";
-      json_write_param(axil_interconnect_modules[0], json, 2);
+      json << ",\n  \"ocla_debug_subsystem\" : {\n";
+      json_write_param(ocla_debug_subsystem_modules[0], json, 2);
       json << "\n  }";
     }
-    // Step 10: Take care of memory leak
+
+    // Step 11: Take care of memory leak
     while (ocla_modules.size()) {
       delete ocla_modules.back();
       ocla_modules.pop_back();
     }
-    while (axil_interconnect_modules.size()) {
-      delete axil_interconnect_modules.back();
-      axil_interconnect_modules.pop_back();
+    while (ocla_debug_subsystem_modules.size()) {
+      delete ocla_debug_subsystem_modules.back();
+      ocla_debug_subsystem_modules.pop_back();
     }
     json << "\n}\n";
   }
+
  private:
   /*
-    Convert RTLIL::Const to string: normally is parameter or const signal (example: 4'b0000, 5'h3)
+    Convert RTLIL::Const to string: normally is parameter or const signal
+    (example: 4'b0000, 5'h3)
   */
-  static void dump_const(std::ostringstream &f, const RTLIL::Const &data, int width = -1, int offset = 0, bool autoint = true) {
+  static void dump_const(std::ostringstream& f, const RTLIL::Const& data,
+                         int width = -1, int offset = 0, bool autoint = true) {
     if (width < 0) {
       width = data.bits.size() - offset;
     }
-    if ((data.flags & RTLIL::CONST_FLAG_STRING) == 0 || width != (int)data.bits.size()) {
+    if ((data.flags & RTLIL::CONST_FLAG_STRING) == 0 ||
+        width != (int)data.bits.size()) {
       if (width == 32 && autoint) {
         int32_t val = 0;
         for (int i = 0; i < width; i++) {
-          log_assert(offset+i < (int)data.bits.size());
-          switch (data.bits[offset+i]) {
-            case State::S0: break;
-            case State::S1: val |= 1 << i; break;
-            default: val = -1; break;
+          log_assert(offset + i < (int)data.bits.size());
+          switch (data.bits[offset + i]) {
+            case State::S0:
+              break;
+            case State::S1:
+              val |= 1 << i;
+              break;
+            default:
+              val = -1;
+              break;
           }
         }
         if (val >= 0) {
@@ -525,15 +558,27 @@ ANALYZE_MSG_END:
       if (data.is_fully_undef()) {
         f << "x";
       } else {
-        for (int i = offset+width-1; i >= offset; i--) {
+        for (int i = offset + width - 1; i >= offset; i--) {
           log_assert(i < (int)data.bits.size());
           switch (data.bits[i]) {
-            case State::S0: f << stringf("0"); break;
-            case State::S1: f << stringf("1"); break;
-            case RTLIL::Sx: f << stringf("x"); break;
-            case RTLIL::Sz: f << stringf("z"); break;
-            case RTLIL::Sa: f << stringf("-"); break;
-            case RTLIL::Sm: f << stringf("m"); break;
+            case State::S0:
+              f << stringf("0");
+              break;
+            case State::S1:
+              f << stringf("1");
+              break;
+            case RTLIL::Sx:
+              f << stringf("x");
+              break;
+            case RTLIL::Sz:
+              f << stringf("z");
+              break;
+            case RTLIL::Sa:
+              f << stringf("-");
+              break;
+            case RTLIL::Sm:
+              f << stringf("m");
+              break;
           }
         }
       }
@@ -560,7 +605,8 @@ ANALYZE_MSG_END:
   /*
     Convert RTLIL::SigSpec to string/OCLA_SIGNAL
   */
-  static void dump_sigspec(std::ostringstream &f, std::vector<OCLA_SIGNAL>& ss, const RTLIL::SigSpec &sig, bool autoint=true) {
+  static void dump_sigspec(std::ostringstream& f, std::vector<OCLA_SIGNAL>& ss,
+                           const RTLIL::SigSpec& sig, bool autoint = true) {
     if (sig.is_chunk()) {
       OCLA_SIGNAL s = dump_sigchunk(f, sig.as_chunk(), autoint);
       ss.push_back(s);
@@ -577,7 +623,8 @@ ANALYZE_MSG_END:
   /*
     Convert RTLIL::SigChunk to string/OCLA_SIGNAL
   */
-  static OCLA_SIGNAL dump_sigchunk(std::ostringstream &f, const RTLIL::SigChunk &chunk, bool autoint) {
+  static OCLA_SIGNAL dump_sigchunk(std::ostringstream& f,
+                                   const RTLIL::SigChunk& chunk, bool autoint) {
     std::ostringstream temp;
     std::string name = "";
     bool show_index = false;
@@ -586,27 +633,43 @@ ANALYZE_MSG_END:
       name = temp.str();
     } else {
       name = chunk.wire->name.c_str();
-      show_index = !(chunk.width == chunk.wire->width && chunk.width == 1 && chunk.offset == 0);
+      show_index = !(chunk.width == chunk.wire->width && chunk.width == 1 &&
+                     chunk.offset == 0);
       if (chunk.width == chunk.wire->width && chunk.offset == 0) {
         temp << stringf("%s", chunk.wire->name.c_str());
       } else if (chunk.width == 1) {
         temp << stringf("%s [%d]", chunk.wire->name.c_str(), chunk.offset);
       } else {
-        temp << stringf("%s [%d:%d]", chunk.wire->name.c_str(), chunk.offset+chunk.width-1, chunk.offset);
+        temp << stringf("%s [%d:%d]", chunk.wire->name.c_str(),
+                        chunk.offset + chunk.width - 1, chunk.offset);
       }
     }
     f << temp.str().c_str();
-    return OCLA_SIGNAL(temp.str(), name, (uint32_t)(chunk.width), (uint32_t)(chunk.offset), show_index);
+    return OCLA_SIGNAL(temp.str(), name, (uint32_t)(chunk.width),
+                       (uint32_t)(chunk.offset), show_index);
   }
   /*
-    Get OCLA and AXIL Interconnect module (if there is any)
+    Check if the module match the module name that we are looking for
   */
-  static void get_modules(RTLIL::Design* design, std::vector<OCLA_MODULE*>& ocla_modules, 
-                          std::vector<AXIL_INTERCONNECT_MODULE*>& axil_interconnect_modules,
-                          std::ofstream& json) {
+  static bool match_module_name(const RTLIL::Module* module,
+                                const std::string& module_name) {
+    log_assert(module != nullptr);
+    log_assert(module_name.size());
+    std::string fullname = gen_string("\\%s", module_name.c_str());
+    return module->name == fullname ||
+           (module->name.size() > fullname.size() &&
+            module->name.substr(module->name.size() - fullname.size()) ==
+                fullname);
+  }
+  /*
+    Get OCLA and OCLA Debug Subsystem module (if there is any)
+  */
+  static void get_modules(
+      RTLIL::Design* design, std::vector<OCLA_MODULE*>& ocla_modules,
+      std::vector<OCLA_DEBUG_SUBSYSTEM_MODULE*>& ocla_debug_subsystem_modules,
+      std::ofstream& json) {
     for (auto module : design->modules()) {
-      if (module->name == "\\ocla" ||
-          (module->name.size() > 5 && module->name.substr(module->name.size() - 5) == "\\ocla")) {
+      if (match_module_name(module, "ocla")) {
         printf("OCLA Module: %s\n", module->name.c_str());
         JSON_POST_MSG(0, "Detected Potential OCLA: %s", module->name.c_str());
         OCLA_MODULE* m = new (OCLA_MODULE)(module->name.c_str());
@@ -614,37 +677,55 @@ ANALYZE_MSG_END:
         MODULE_IP* ip = (MODULE_IP*)(m);
         get_module_params(module, ip, json);
         if (ip != nullptr && m->check_type(json)) {
-          ocla_modules.push_back(m);
+          auto iter = ocla_modules.begin();
+          while (iter != ocla_modules.end()) {
+            if (m->index < (*iter)->index) {
+              break;
+            }
+            iter++;
+          }
+          if (iter != ocla_modules.end()) {
+            ocla_modules.insert(iter, m);
+          } else {
+            ocla_modules.push_back(m);
+          }
           JSON_POST_MSG(1, "Qualified as OCLA module");
         } else {
           JSON_POST_MSG(1, "Error: this is not qualified as OCLA module");
         }
-      } else if (module->name == "\\axil_interconnect" ||
-                (module->name.size() > 18 && module->name.substr(module->name.size() - 18) == "\\axil_interconnect")) {
-        printf("AXIL Interconnect Module: %s\n", module->name.c_str());
-        JSON_POST_MSG(0, "Detected Potential AXIL Interconnect: %s", module->name.c_str());
-        AXIL_INTERCONNECT_MODULE* m = new (AXIL_INTERCONNECT_MODULE)(module->name.c_str());
+      } else if (match_module_name(module, "ocla_debug_subsystem")) {
+        printf("OCLA Debug Subsystem Module: %s\n", module->name.c_str());
+        JSON_POST_MSG(0, "Detected Potential OCLA Debug Subsystem: %s",
+                      module->name.c_str());
+        OCLA_DEBUG_SUBSYSTEM_MODULE* m =
+            new (OCLA_DEBUG_SUBSYSTEM_MODULE)(module->name.c_str());
         log_assert(m != nullptr);
         MODULE_IP* ip = (MODULE_IP*)(m);
         get_module_params(module, ip, json);
         if (ip != nullptr && m->check_type(json)) {
-          axil_interconnect_modules.push_back(m);
-          JSON_POST_MSG(1, "Qualified as AXIL Interconnect module");
+          ocla_debug_subsystem_modules.push_back(m);
+          JSON_POST_MSG(1, "Qualified as OCLA Debug Subsystem module");
         } else {
-          JSON_POST_MSG(1, "Error: this is not qualified as AXIL Interconnect module");
+          JSON_POST_MSG(
+              1, "Error: this is not qualified as OCLA Debug Subsystem module");
         }
       }
     }
   }
   /*
-    Make sure there is only AXIL Interconnect IP being instantiated - all the way up to top
+    Make sure there is only one OCLA Debug Subsystem IP being instantiated - all
+    the way up to top
   */
-  static bool check_unique_axil_interconnect(RTLIL::Design* design, std::string module_name, 
-                                              std::string& connection_name, std::ofstream& json) {
+  static bool check_unique_ocla_debug_subsystem(RTLIL::Design* design,
+                                                std::string module_name,
+                                                std::string& instantiator,
+                                                std::string& connection_name,
+                                                std::ofstream& json) {
     bool status = true;
     RTLIL::Module* top_module = design->top_module();
-    JSON_POST_MSG(0, "Check uniqueness of AXIL Interconnect");
+    JSON_POST_MSG(0, "Check uniqueness of OCLA Debug Subsystem");
     int level = 0;
+    instantiator = "";
     connection_name = "";
     while (status) {
       JSON_POST_MSG(1, "Module: %s", module_name.c_str());
@@ -652,11 +733,13 @@ ANALYZE_MSG_END:
       for (auto m : design->modules()) {
         for (auto cell : m->cells()) {
           if (std::string(cell->type.c_str()) == module_name) {
-            JSON_POST_MSG(2, "Instantiated by %s as %s", m->name.c_str(), cell->name.c_str());
+            JSON_POST_MSG(2, "Instantiated by %s as %s", m->name.c_str(),
+                          cell->name.c_str());
             module_names.push_back(m->name.c_str());
             if (level) {
               if (connection_name.size()) {
-                connection_name = gen_string("%s.%s", cell->name.c_str(), connection_name.substr(1).c_str());
+                connection_name = gen_string("%s.%s", cell->name.c_str(),
+                                             connection_name.substr(1).c_str());
               } else {
                 connection_name = cell->name.c_str();
               }
@@ -670,15 +753,174 @@ ANALYZE_MSG_END:
         if (std::string(top_module->name.c_str()) == module_name) {
           JSON_POST_MSG(3, "This is top module");
           if (level >= 2) {
-            JSON_POST_MSG(3, "Connection chain for AXIL Interconnect: %s", connection_name.c_str());
+            JSON_POST_MSG(3, "Connection chain for OCLA Debug Subsystem: %s",
+                          connection_name.c_str());
           } else {
-            JSON_POST_MSG(3, "Hierarchy level for AXIL Interconnect is out of expectation");
+            JSON_POST_MSG(3,
+                          "Hierarchy level for OCLA Debug Subsystem is out of "
+                          "expectation");
             status = false;
           }
           break;
         }
+        if (level == 1) {
+          instantiator = module_names[0];
+        }
       } else {
         status = false;
+      }
+    }
+    if (status && instantiator.size() > 0) {
+      JSON_POST_MSG(1, "OCLA Debug Subsystem Instantiator: %s",
+                    instantiator.c_str());
+    }
+    return status;
+  }
+  /*
+    Sanity check of all retrieved parameter information
+  */
+  static bool sanity_check(
+      const OCLA_DEBUG_SUBSYSTEM_MODULE* ocla_debug_subsystem_module,
+      const std::vector<OCLA_MODULE*> ocla_modules,
+      const std::vector<std::string> ocla_instantiator_names,
+      std::ofstream& json) {
+    JSON_POST_MSG(0, "Sanity Check");
+    log_assert(ocla_modules.size());
+    bool status = true;
+    if (ocla_modules.size() != ocla_instantiator_names.size()) {
+      JSON_POST_MSG(1,
+                    "Error: Not all the OCLA module (count=%ld) found the "
+                    "instantiator (count=%ld)",
+                    ocla_modules.size(), ocla_instantiator_names.size());
+      status = false;
+    }
+    if (status) {
+      if (ocla_debug_subsystem_module->cores !=
+          (uint32_t)(ocla_modules.size())) {
+        JSON_POST_MSG(1,
+                      "Error: OCLA Debug Subsystem paramter CORES=%d does not "
+                      "match with detected OCLA module count=%ld",
+                      ocla_debug_subsystem_module->cores, ocla_modules.size());
+        status = false;
+      }
+    }
+    if (status) {
+      JSON_POST_MSG(1, "Check module parameter INDEX sequence, must be 0 .. %d",
+                    ocla_debug_subsystem_module->cores - 1);
+      uint32_t sequence = 0;
+      for (auto m : ocla_modules) {
+        if (m->index != sequence) {
+          JSON_POST_MSG(2,
+                        "Error: Module %s has unexpected INDEX, "
+                        "expectation=%d, but found %d",
+                        m->name.c_str(), sequence, m->index);
+          status = false;
+        }
+        sequence++;
+      }
+    }
+    if (status) {
+      std::string expected_instantiator_name =
+          ocla_debug_subsystem_module->name;
+      JSON_POST_MSG(1, "All modules should be instantiated by %s",
+                    expected_instantiator_name.c_str());
+      for (auto n : ocla_instantiator_names) {
+        if (n != expected_instantiator_name) {
+          JSON_POST_MSG(2, "Found unexpected instantiator: %s", n.c_str());
+          status = false;
+        }
+      }
+    }
+    if (status) {
+      JSON_POST_MSG(
+          1, "Parameter IP_TYPE=%s, IP_VERSION=0x%08X, IP_ID=0x%08X must match",
+          ocla_debug_subsystem_module->type.c_str(),
+          ocla_debug_subsystem_module->version,
+          ocla_debug_subsystem_module->id);
+      for (auto m : ocla_modules) {
+        if (ocla_debug_subsystem_module->type != m->type ||
+            ocla_debug_subsystem_module->version != m->version ||
+            ocla_debug_subsystem_module->id != m->id) {
+          JSON_POST_MSG(2,
+                        "Error: Module %s has mismatch paramerer IP_TYPE=%s, "
+                        "IP_VERSION=0x%08X, IP_ID=0x%08X",
+                        m->name.c_str(), m->type.c_str(), m->version, m->id);
+          status = false;
+        }
+      }
+    }
+    if (status) {
+      uint32_t axi_addr_width = ocla_modules[0]->axi_addr_width;
+      uint32_t axi_data_width = ocla_modules[0]->axi_data_width;
+      JSON_POST_MSG(1,
+                    "Parameter AXI_ADDR_WIDTH=%d, AXI_DATA_WIDTH=%d must match",
+                    axi_addr_width, axi_data_width);
+      for (auto m : ocla_modules) {
+        if (axi_addr_width != m->axi_addr_width ||
+            axi_data_width != m->axi_data_width) {
+          JSON_POST_MSG(2,
+                        "Error: Module %s has mismatch paramerer "
+                        "AXI_ADDR_WIDTH=%d, AXI_DATA_WIDTH=%d",
+                        m->name.c_str(), m->axi_addr_width, m->axi_data_width);
+          status = false;
+        }
+      }
+    }
+    if (status) {
+      JSON_POST_MSG(1, "Parameter NO_OF_PROBES must match");
+      for (auto m : ocla_modules) {
+        if (m->probes_count !=
+            ocla_debug_subsystem_module->ip_probe_count[m->index]) {
+          JSON_POST_MSG(2,
+                        "Error: Module %s has mismatch paramerer "
+                        "NO_OF_PROBES=%d, instantiator parameter Param%d=%d",
+                        m->name.c_str(), m->probes_count, m->index + 1,
+                        ocla_debug_subsystem_module->ip_probe_count[m->index]);
+          status = false;
+        }
+      }
+    }
+    if (status && ocla_modules.size() < MAXIMUM_SUPPORTED_PROBE) {
+      JSON_POST_MSG(1, "Unused Probe[%ld..15] must be null",
+                    ocla_modules.size() + 1);
+      for (uint32_t i = ocla_debug_subsystem_module->cores;
+           i < MAXIMUM_SUPPORTED_PROBE; i++) {
+        if (ocla_debug_subsystem_module->ip_probe_count[i]) {
+          JSON_POST_MSG(2, "Error: Probe%d is not null", i);
+          status = false;
+        }
+      }
+    }
+    if (status) {
+      JSON_POST_MSG(1, "Parameter Total_Probes must match");
+      uint32_t total_probes = 0;
+      for (uint32_t i = 0; i < MAXIMUM_SUPPORTED_PROBE; i++) {
+        total_probes += ocla_debug_subsystem_module->ip_probe_count[i];
+      }
+      if (total_probes != ocla_debug_subsystem_module->total_probes) {
+        JSON_POST_MSG(2,
+                      "Error: Total_probes by calculation (%d) does not match "
+                      "with definition (%d)",
+                      total_probes, ocla_debug_subsystem_module->total_probes);
+        status = false;
+      }
+    }
+    if (status) {
+      JSON_POST_MSG(1, "Parameter IF[1..%ld]_BaseAddress must not conflict",
+                    ocla_modules.size());
+      std::vector<uint32_t> addresses;
+      for (auto m : ocla_modules) {
+        m->base_address = ocla_debug_subsystem_module->ip_address[m->index];
+        if (std::find(addresses.begin(), addresses.end(), m->base_address) ==
+            addresses.end()) {
+          JSON_POST_MSG(2, "Module %s has base address 0x%08X", m->name.c_str(),
+                        m->base_address);
+          addresses.push_back(m->base_address);
+        } else {
+          JSON_POST_MSG(2, "Error: Module %s has conflict base address 0x%08X",
+                        m->name.c_str(), m->base_address);
+          status = false;
+        }
       }
     }
     return status;
@@ -686,9 +928,10 @@ ANALYZE_MSG_END:
   /*
     Retrieve parameter from the module
   */
-  static void get_module_params(RTLIL::Module* module, MODULE_IP*& ip, std::ofstream& json) {
-    for (const auto &p : module->avail_parameters) {
-      const auto &it = module->parameter_default_values.find(p);
+  static void get_module_params(RTLIL::Module* module, MODULE_IP*& ip,
+                                std::ofstream& json) {
+    for (const auto& p : module->avail_parameters) {
+      const auto& it = module->parameter_default_values.find(p);
       if (it != module->parameter_default_values.end()) {
         std::ostringstream param;
         dump_const(param, it->second);
@@ -711,20 +954,19 @@ ANALYZE_MSG_END:
       a. This function only get the information name.
       b. This is done before we blackbox the instantiator and flatten the design
   */
-  static void get_ocla_instantiator(RTLIL::Design* design, OCLA_MODULE* module, 
+  static void get_ocla_instantiator(RTLIL::Design* design, OCLA_MODULE* module,
                                     std::vector<std::string>& instantiators,
-                                    std::vector<OCLA_MODULE*>& instantiated_modules,
                                     std::ofstream& json) {
     bool found = false;
-    JSON_POST_MSG(0, "Check instantiator for OCLA module %s", module->name.c_str());
+    JSON_POST_MSG(0, "Check instantiator for OCLA module %s",
+                  module->name.c_str());
     for (auto m : design->modules()) {
       for (auto cell : m->cells()) {
         if (std::string(cell->type.c_str()) == module->name) {
           JSON_POST_MSG(1, "Instantiated by %s", m->name.c_str());
           instantiators.push_back(std::string(m->name.c_str()));
-          instantiated_modules.push_back(module);
           found = true;
-        }        
+        }
       }
     }
     if (!found) {
@@ -736,122 +978,80 @@ ANALYZE_MSG_END:
       a. This function retrieve all other information that we need:
           - probed signals
           - trigger signals
-          - s_axil_awready
       b. This is done after we blackbox the instantiator and flatten the design
   */
-  static void get_ocla_instantiator(RTLIL::Module* top_module, std::string instantiator_module, 
-                                    OCLA_MODULE* module, std::vector<OCLA_INSTANTIATOR>& instantiators, 
-                                    std::string connection_name, std::ofstream& json) {
-    bool found = false;
-    JSON_POST_MSG(0, "Restrive OCLA information: %s", instantiator_module.c_str());
+  static bool get_ocla_signals(RTLIL::Module* top_module,
+                               std::vector<OCLA_MODULE*>& modules,
+                               std::string instantiator_module,
+                               std::ofstream& json) {
+    bool status = true;
+    JSON_POST_MSG(0, "Restrive OCLA signals from instantiator: %s",
+                  instantiator_module.c_str());
+    log_assert(modules.size());
+    for (auto m : modules) {
+      log_assert(m->probes.size() == 0);
+    }
     for (auto cell : top_module->cells()) {
       if (std::string(cell->type.c_str()) == instantiator_module) {
         JSON_POST_MSG(1, "Instantiated as %s", cell->name.c_str());
-        std::vector<OCLA_SIGNAL> probes;
-        std::vector<OCLA_SIGNAL> input_triggers;
-        std::vector<OCLA_SIGNAL> awready;
-        for (auto &connection : cell->connections()) {
+        for (auto& connection : cell->connections()) {
           std::ostringstream wire;
-          if (std::string(connection.first.c_str()) == "\\i_probes") {
-            dump_sigspec(wire, probes, connection.second);
-            JSON_POST_MSG(2, "\\i_probes connected to %s", wire.str().c_str());
-          } else if (std::string(connection.first.c_str()) == "\\i_trigger_input") {
-            dump_sigspec(wire, input_triggers, connection.second);
-            JSON_POST_MSG(2, "\\i_trigger_inputs connected to %s", wire.str().c_str());
-          } else if (std::string(connection.first.c_str()) == "\\s_axil_awready") {
-            dump_sigspec(wire, awready, connection.second);
-            JSON_POST_MSG(2, "\\s_axil_awready connected to %s", wire.str().c_str());
+          std::string connection_name = std::string(connection.first.c_str());
+          for (auto m : modules) {
+            std::string module_probe_name =
+                gen_string("\\probe%d", m->index + 1);
+            if (connection_name == module_probe_name) {
+              JSON_POST_MSG(2, "Potential Probe Connection: %s",
+                            connection_name.c_str());
+              if (m->probes.size() == 0) {
+                dump_sigspec(wire, m->probes, connection.second);
+                JSON_POST_MSG(3, "Connected to %s", wire.str().c_str());
+                if (m->probes.size() == 0) {
+                  JSON_POST_MSG(3, "Fail to parse connection %s",
+                                module_probe_name.c_str());
+                  status = false;
+                }
+                break;
+              } else {
+                JSON_POST_MSG(3, "Duplicated connection");
+                status = false;
+              }
+            }
           }
         }
-        if (probes.size() > 0 && awready.size() == 1) {
-          std::vector<std::string> connections;
-          int index = search_axil_interconnection(top_module, connection_name, awready[0].fullname, 
-                                                  connections, json);
-          if (index >= 0) {
-            instantiators.push_back(OCLA_INSTANTIATOR(instantiator_module, 
-                                                      cell->name.c_str(), 
-                                                      module,
-                                                      probes, 
-                                                      input_triggers, 
-                                                      awready[0],
-                                                      (uint32_t)(index),
-                                                      connections));
-            found = true;
-          } else {
-            JSON_POST_MSG(2, "Error: Could not find AXIL Interconnect connection chain for %s", 
-                              awready[0].fullname.c_str());
-          }
-        } else {
-          JSON_POST_MSG(2, "Error: Probes count=%ld, AWReady count=%ld (bus=%d)", 
-                        probes.size(), awready.size(), awready.size() ? awready[0].width : -1);
+      }
+    }
+    if (status) {
+      for (auto m : modules) {
+        if (m->probes.size() == 0) {
+          JSON_POST_MSG(2, "Module %s (INDEX=%d) failed to get probe signals",
+                        m->name.c_str(), m->index);
+          status = false;
         }
       }
     }
-    if (!found) {
-      JSON_POST_MSG(1, "Warning: Does not detect OCLA instantiator instantiated by top module or there is error in detecting signals");
-    }
-  }
-  /*
-    This function search the connection how the OCLA is being connected to AXIL Interconnect IP
-  */
-  static int search_axil_interconnection(RTLIL::Module* top_module, std::string connection_name,
-                                          std::string awready, std::vector<std::string>& connections,
-                                          std::ofstream& json) {
-    JSON_POST_MSG(2, "Searching AXIL Interconnect connection for %s", awready.c_str());
-    JSON_POST_MSG(3, "Expected end connection chain: %s", connection_name.c_str());
-    int index = -1;
-    int iteration = 0;
-    std::string src = awready;
-    bool found = true;
-    while (index == -1 && found && iteration < 100) {
-      found = false;
-      std::vector<OCLA_SIGNAL> temp;
-      std::ostringstream connection;
-      for (auto iter = top_module->connections().begin(); iter != top_module->connections().end(); ++iter) {
-        temp.clear();
-        connection.str("");
-        connection.clear();
-        dump_sigspec(connection, temp, iter->second);
-        if (std::string(connection.str()) == src) {
-          temp.clear();
-          connection.str("");
-          connection.clear();
-          dump_sigspec(connection, temp, iter->first);
-          src = std::string(connection.str());
-          connections.push_back(src);
-          JSON_POST_MSG(4, "-> %s", src.c_str());
-          found = true;
-          break;
-        }
-      }
-      for (int i = 0; i < 16 && found; i++) {
-        std::string stop_signal = gen_string("%s.m%02d_axil_awready", connection_name.c_str(), i);
-        if (stop_signal == src) {
-          index = i;
-          JSON_POST_MSG(5, "Found complete connection chain at index %d", index);
-          break;
-        }
-      }
-      iteration++;
-    }
-    return index;
+    return status;
   }
   /*
     Write out IP/Module parameter into JSON file
   */
-  static void json_write_param(MODULE_IP* ip, std::ofstream& json, uint32_t space) {
+  static void json_write_param(MODULE_IP* ip, std::ofstream& json,
+                               uint32_t space) {
     std::string info = "";
     size_t index = 0;
     for (auto& p : ip->params) {
       for (uint32_t i = 0; i < space; i++) {
         json << "  ";
       }
-      if (p.second.is_str) {
+      if (p.second.type == PARAM_IS_STR) {
         std::string* ptr = (std::string*)(p.second.ptr);
         info = gen_string("\"%s\" : \"%s\"", p.first.c_str(), ptr->c_str());
+      } else if (p.second.type == PARAM_IS_UINT64) {
+        uint64_t* ptr = (uint64_t*)(p.second.ptr);
+        info = gen_string("\"%s\" : %lu", p.first.c_str(), *ptr);
       } else {
         uint32_t* ptr = (uint32_t*)(p.second.ptr);
-        info = gen_string("\"%s\" : %d", p.first.c_str(), *ptr);
+        info = gen_string("\"%s\" : %u", p.first.c_str(), *ptr);
       }
       for (auto& c : info) {
         if (c != '\\') {
@@ -867,7 +1067,9 @@ ANALYZE_MSG_END:
   /*
     Write out IP/Module signals into JSON file
   */
-  static void json_write_signals(std::string name, std::vector<OCLA_SIGNAL>& signals, std::ofstream& json) {
+  static void json_write_signals(std::string name,
+                                 std::vector<OCLA_SIGNAL>& signals,
+                                 std::ofstream& json) {
     json << gen_string(",\n      \"%s\" : [\n", name.c_str()).c_str();
     size_t index = 0;
     for (auto& s : signals) {
@@ -885,9 +1087,12 @@ ANALYZE_MSG_END:
       if (!s.show_index) {
         json << gen_string("        \"%s\"", s.name.c_str()).c_str();
       } else if (s.width == 1) {
-        json << gen_string("        \"%s[%d]\"", s.name.c_str(), s.offset).c_str();
+        json << gen_string("        \"%s[%d]\"", s.name.c_str(), s.offset)
+                    .c_str();
       } else {
-        json << gen_string("        \"%s[%d:%d]\"", s.name.c_str(), s.offset + s.width - 1, s.offset).c_str();
+        json << gen_string("        \"%s[%d:%d]\"", s.name.c_str(),
+                           s.offset + s.width - 1, s.offset)
+                    .c_str();
       }
 #endif
       index++;
@@ -902,35 +1107,38 @@ ANALYZE_MSG_END:
 };
 
 struct OCLA_AnalyzerPass : public Pass {
+  OCLA_AnalyzerPass()
+      : Pass("ocla_analyze",
+             "Analyze OCLA information from the design for Raptor") {}
 
-  OCLA_AnalyzerPass() : Pass("ocla_analyze", "Analyze OCLA information from the design for Raptor") { }
-
-  void help() override
-  {
+  void help() override {
     log("\n");
     log("    ocla_analyze\n");
     log("\n");
-    log("Analyze OCLA information from the design for Raptor and write out 'ocla.json'\n");
+    log("Analyze OCLA information from the design for Raptor and write out "
+        "'ocla.json'\n");
     log("\n");
     log("    -top <top_module_name>\n");
-    log("       performs Analyze from the top module with name 'top_module_name'.\n");
+    log("       performs Analyze from the top module with name "
+        "'top_module_name'.\n");
     log("    -auto-top\n");
-    log("       detects automatically the top module. If several tops, it picks up the one with deepest hierarchy. Analyze from this selected top module.\n");
+    log("       detects automatically the top module. If several tops, it "
+        "picks up the one with deepest hierarchy. Analyze from this selected "
+        "top module.\n");
     log("    -file <output json file>\n");
-    log("       writes the output to the specified file. Optional, if not specified, the default name is ocla.json\n");
+    log("       writes the output to the specified file. Optional, if not "
+        "specified, the default name is ocla.json\n");
     log("\n");
   }
 
-  void execute(std::vector<std::string> args, RTLIL::Design *design) override
-  {
+  void execute(std::vector<std::string> args, RTLIL::Design* design) override {
     // Parse Analyze command arguments
     std::string top_name = "";
     std::string json_name = "ocla.json";
     bool is_auto = false;
     size_t argidx;
-    for (argidx = 1; argidx < args.size(); argidx++)
-    {
-      if (args[argidx] == "-top" && argidx+1 < args.size()) {
+    for (argidx = 1; argidx < args.size(); argidx++) {
+      if (args[argidx] == "-top" && argidx + 1 < args.size()) {
         top_name = args[++argidx];
         continue;
       }
@@ -938,7 +1146,7 @@ struct OCLA_AnalyzerPass : public Pass {
         is_auto = true;
         continue;
       }
-      if (args[argidx] == "-file" && argidx+1 < args.size()) {
+      if (args[argidx] == "-file" && argidx + 1 < args.size()) {
         json_name = args[++argidx];
         continue;
       }
