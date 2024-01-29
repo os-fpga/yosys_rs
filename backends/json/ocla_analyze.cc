@@ -48,6 +48,8 @@ USING_YOSYS_NAMESPACE
 PRIVATE_NAMESPACE_BEGIN
 #define USE_LOCAL_GEN_STRING 0
 #define MAXIMUM_SUPPORTED_PROBE 15
+#define AXILite_SINGLE_BUS_SIGNALS 152
+#define AXI4_SINGLE_BUS_SIGNALS 214
 
 #if USE_LOCAL_GEN_STRING
 std::string gen_string(const char* format_string, ...) {
@@ -145,6 +147,14 @@ struct OCLA_SIGNAL {
     }
     log_assert(width);
   }
+  OCLA_SIGNAL(std::string signal, uint32_t w, uint32_t i, bool no_extra_index)
+      : width(w) {
+    log_assert(width);
+    show_index = width > 1;
+    fullname = gen_string("%s%s", signal.c_str(),
+                          no_extra_index ? "" : gen_string("_%d", i).c_str());
+    name = fullname;
+  }
   std::string fullname = "";
   std::string name = "";
   uint32_t width = 0;
@@ -193,42 +203,65 @@ struct MODULE_IP {
                       name.c_str(), value.c_str());
         goto SET_PARAM_ERROR;
       }
-    } else if (params[name].type == PARAM_IS_UINT64) {
-      // For uint64_t, the format is 64'<sequence of 64 0 or 1>
-      if (value.size() == 67 && value.substr(0, 3) == "64'") {
-        std::string binary = value.substr(3);
-        uint64_t* number_ptr = (uint64_t*)(params[name].ptr);
-        auto iter = binary.begin();
-        (*number_ptr) = 0;
-        while (iter != binary.end()) {
-          if (*iter != '0' && *iter != '1') {
-            break;
-          }
-          (*number_ptr) <<= (uint64_t)(1);
-          if (*iter == '1') {
-            (*number_ptr) |= (uint64_t)(1);
-          }
-          iter++;
-        }
-        if (iter != binary.end()) {
-          JSON_POST_MSG(
-              1, "Error: Param %s value %s does not follow uint64_t format",
-              name.c_str(), value.c_str());
+    } else {
+      log_assert(params[name].type == PARAM_IS_UINT32 ||
+                 params[name].type == PARAM_IS_UINT64);
+      uint64_t u64 = 0;
+      size_t index = value.find("'");
+      if (index != std::string::npos) {
+        std::string bit_size_str = value.substr(0, index);
+        std::string bin_value = value.substr(index + 1);
+        if (bit_size_str.find_first_not_of("1234567890") != std::string::npos ||
+            bin_value.find_first_not_of("10") != std::string::npos) {
+          JSON_POST_MSG(1,
+                        "Error: Param %s value %s does not follow binary "
+                        "format ({bit size string}'{binary sring})",
+                        name.c_str(), value.c_str());
           goto SET_PARAM_ERROR;
         }
+        uint32_t bit_size = stol(bit_size_str);
+        if (bit_size == 0 || bit_size != (uint32_t)(bin_value.size())) {
+          JSON_POST_MSG(1,
+                        "Error: Param %s value %s does not valid bit size and "
+                        "binary string size",
+                        name.c_str(), value.c_str());
+          goto SET_PARAM_ERROR;
+        }
+        if (params[name].type == PARAM_IS_UINT32) {
+          if (bit_size > 32) {
+            JSON_POST_MSG(1, "Error: Param uint32_t %s value %s exceed 32 bits",
+                          name.c_str(), value.c_str());
+            goto SET_PARAM_ERROR;
+          }
+        } else {
+          if (bit_size > 64) {
+            JSON_POST_MSG(1, "Error: Param uint64_t %s value %s exceed 64 bits",
+                          name.c_str(), value.c_str());
+            goto SET_PARAM_ERROR;
+          }
+        }
+        u64 = stoll(bin_value, nullptr, 2);
+      } else {
+        if (value.find_first_not_of("1234567890") != std::string::npos) {
+          JSON_POST_MSG(1,
+                        "Error: Param %s value %s does not follow decimal "
+                        "format ({decimal sring})",
+                        name.c_str(), value.c_str());
+          goto SET_PARAM_ERROR;
+        }
+        u64 = (uint64_t)(stoll(value));
+      }
+      if (params[name].type == PARAM_IS_UINT32) {
+        uint32_t* number_ptr = (uint32_t*)(params[name].ptr);
+        (*number_ptr) = (uint32_t)(u64);
+        JSON_POST_MSG(1, "Param %s - %u (0x%08X)", name.c_str(), (*number_ptr),
+                      (*number_ptr));
+      } else {
+        uint64_t* number_ptr = (uint64_t*)(params[name].ptr);
+        (*number_ptr) = u64;
         JSON_POST_MSG(1, "Param %s - %lu (0x%016lX)", name.c_str(),
                       (*number_ptr), (*number_ptr));
-      } else {
-        JSON_POST_MSG(
-            1, "Error: Param %s value %s does not follow uint64_t format",
-            name.c_str(), value.c_str());
-        goto SET_PARAM_ERROR;
       }
-    } else {
-      uint32_t* number_ptr = (uint32_t*)(params[name].ptr);
-      (*number_ptr) = (uint32_t)(atol(value.c_str()));
-      JSON_POST_MSG(1, "Param %s - %u (0x%08X)", name.c_str(), (*number_ptr),
-                    (*number_ptr));
     }
     params[name].is_assigned = true;
     goto SET_PARAM_END;
@@ -263,9 +296,7 @@ struct OCLA_MODULE : MODULE_IP {
     params["\\AXI_ADDR_WIDTH"] = PARAM_INFO(&axi_addr_width);
     params["\\AXI_DATA_WIDTH"] = PARAM_INFO(&axi_data_width);
     params["\\MEM_DEPTH"] = PARAM_INFO(&mem_depth);
-    params["\\PROBE_WIDHT"] = PARAM_INFO(&probe_width);
     params["\\NO_OF_PROBES"] = PARAM_INFO(&probes_count);
-    params["\\NO_OF_TRIGGER_INPUTS"] = PARAM_INFO(&trigger_inputs_count);
     params["\\INDEX"] = PARAM_INFO(&index);
   }
   /*
@@ -273,14 +304,13 @@ struct OCLA_MODULE : MODULE_IP {
   */
   bool check_type(std::ofstream& json) {
     bool status = false;
-    if (type == "ocla" && mem_depth > 0 && probe_width > 0 &&
-        probe_width <= 32 && probes_count > 0) {
+    if (type == "ocla" && mem_depth > 0 && probes_count > 0) {
       status = true;
     } else {
       JSON_POST_MSG(1, "Error: Fail to validate parameters");
       JSON_POST_MSG(2, "IP_TYPE: %s", type.c_str());
       JSON_POST_MSG(2, "MEM_DEPTH: %d", mem_depth);
-      JSON_POST_MSG(2, "PROBE_WIDHT: %d", probe_width);
+      JSON_POST_MSG(2, "NO_OF_PROBES: %d", probes_count);
     }
     return status;
   }
@@ -310,9 +340,7 @@ struct OCLA_MODULE : MODULE_IP {
   uint32_t axi_addr_width = 0;
   uint32_t axi_data_width = 0;
   uint32_t mem_depth = 0;
-  uint32_t probe_width = 0;
   uint32_t probes_count = 0;
-  uint32_t trigger_inputs_count = 0;
   uint32_t index = 0;
   uint32_t base_address = 0;
   std::vector<OCLA_SIGNAL> probes;
@@ -325,10 +353,14 @@ struct OCLA_MODULE : MODULE_IP {
 struct OCLA_DEBUG_SUBSYSTEM_MODULE : MODULE_IP {
   OCLA_DEBUG_SUBSYSTEM_MODULE(std::string n) : MODULE_IP(n) {
     params["\\MODE"] = PARAM_INFO(&mode, PARAM_IS_STR);
+    params["\\AXI_TYPE"] = PARAM_INFO(&axi_type, PARAM_IS_STR);
     params["\\CORES"] = PARAM_INFO(&cores);
-    params["\\Total_Probes"] = PARAM_INFO(&total_probes);
+    params["\\No_AXI_Bus"] = PARAM_INFO(&no_axi_bus);
+    params["\\PROBES_SUM"] = PARAM_INFO(&probes_sum);
+    params["\\AXI_Core_BaseAddress"] = PARAM_INFO(&axi_core_address);
     for (uint32_t i = 0; i < MAXIMUM_SUPPORTED_PROBE; i++) {
-      params[gen_string("\\Probe%d", i + 1)] = PARAM_INFO(&ip_probe_count[i]);
+      params[gen_string("\\Probe%d_Width", i + 1)] =
+          PARAM_INFO(&ip_probe_count[i]);
       params[gen_string("\\IF%d_BaseAddress", i + 1)] =
           PARAM_INFO(&ip_address[i]);
       params[gen_string("\\IF%d_Probes", i + 1)] =
@@ -340,24 +372,36 @@ struct OCLA_DEBUG_SUBSYSTEM_MODULE : MODULE_IP {
   */
   bool check_type(std::ofstream& json) {
     bool status = false;
-    if (type == "ocla" && mode == "NATIVE" && cores > 0 &&
+    if (type == "ocla" &&
+        (mode == "NATIVE" || ((mode == "AXI" || mode == "NATIVE_AXI") &&
+                              (axi_type == "AXI4" || axi_type == "AXILite") &&
+                              no_axi_bus > 0 && no_axi_bus <= 4)) &&
+        (mode == "NATIVE_AXI" ? (cores > 1)
+                              : (mode == "AXI" ? cores == 1 : cores > 0)) &&
         cores <= MAXIMUM_SUPPORTED_PROBE) {
       status = true;
     } else {
       JSON_POST_MSG(1, "Error: Fail to validate parameters");
       JSON_POST_MSG(2, "IP_TYPE: %s", type.c_str());
       JSON_POST_MSG(2, "MODE: %s", mode.c_str());
+      if (mode == "AXI" || mode == "NATIVE_AXI") {
+        JSON_POST_MSG(2, "AXI_TYPE: %s", axi_type.c_str());
+        JSON_POST_MSG(2, "No_AXI_Bus: %d", no_axi_bus);
+      }
       JSON_POST_MSG(2, "CORES: %d", cores);
     }
     return status;
   }
 
   std::string mode = "";
+  std::string axi_type = "";
   uint32_t cores = 0;
-  uint32_t total_probes = 0;
+  uint32_t no_axi_bus = 0;
+  uint32_t probes_sum = 0;
   uint32_t ip_probe_count[MAXIMUM_SUPPORTED_PROBE] = {0};
   uint32_t ip_address[MAXIMUM_SUPPORTED_PROBE] = {0};
   uint64_t ip_probe_info[MAXIMUM_SUPPORTED_PROBE] = {0};
+  uint32_t axi_core_address = 0;
 };
 
 class OCLA_Analyzer {
@@ -460,8 +504,13 @@ class OCLA_Analyzer {
 
     // Step 8: Once the flatten the design, start to grab all the signals
     // information
-    if (!get_ocla_signals(design->top_module(), ocla_modules,
-                          ocla_debug_subsystem_instantiator, json)) {
+    if (!get_ocla_signals(design->top_module(),
+                          ocla_debug_subsystem_modules[0]->mode == "NATIVE"
+                              ? "NATIVE"
+                              : ocla_debug_subsystem_modules[0]->axi_type,
+                          ocla_debug_subsystem_modules[0]->no_axi_bus,
+                          ocla_modules, ocla_debug_subsystem_instantiator,
+                          json)) {
       JSON_POST_MSG(0, "Error: Fail to get probe signals");
       goto ANALYZE_MSG_END;
     }
@@ -867,21 +916,57 @@ class OCLA_Analyzer {
       }
     }
     if (status) {
-      JSON_POST_MSG(1, "Parameter NO_OF_PROBES must match");
+      JSON_POST_MSG(1, "Parameter NO_OF_PROBES and Param{x}_Width must match");
       for (auto m : ocla_modules) {
-        if (m->probes_count !=
-            ocla_debug_subsystem_module->ip_probe_count[m->index]) {
-          JSON_POST_MSG(2,
-                        "Error: Module %s has mismatch paramerer "
-                        "NO_OF_PROBES=%d, instantiator parameter Param%d=%d",
-                        m->name.c_str(), m->probes_count, m->index + 1,
-                        ocla_debug_subsystem_module->ip_probe_count[m->index]);
-          status = false;
+        if (ocla_debug_subsystem_module->mode == "NATIVE" ||
+            ((m->index + 1) < (uint32_t)(ocla_modules.size()))) {
+          if (m->probes_count !=
+              ocla_debug_subsystem_module->ip_probe_count[m->index]) {
+            JSON_POST_MSG(
+                2,
+                "Error: Module %s has mismatch paramerer "
+                "NO_OF_PROBES=%d, instantiator parameter Param%d_Width=%d",
+                m->name.c_str(), m->probes_count, m->index + 1,
+                ocla_debug_subsystem_module->ip_probe_count[m->index]);
+            status = false;
+          }
+        } else {
+          JSON_POST_MSG(1,
+                        "Last OCLA INDEX=%d must match AXI Protocol Bus Size",
+                        m->index);
+          if (ocla_debug_subsystem_module->ip_probe_count[m->index] != 0) {
+            JSON_POST_MSG(
+                2,
+                "Error: Instantiator parameter Param%d_Width=%d, but expect it "
+                "is 0 (last OCLA is connected to AXI)",
+                m->index + 1,
+                ocla_debug_subsystem_module->ip_probe_count[m->index]);
+            status = false;
+          }
+          uint32_t axi_expected_probes_count = 0;
+          uint32_t protocol_size = 0;
+          if (ocla_debug_subsystem_module->axi_type == "AXILite") {
+            protocol_size = AXILite_SINGLE_BUS_SIGNALS;
+          } else {
+            protocol_size = AXI4_SINGLE_BUS_SIGNALS;
+          }
+          axi_expected_probes_count =
+              ocla_debug_subsystem_module->no_axi_bus * protocol_size;
+          if (m->probes_count != axi_expected_probes_count) {
+            JSON_POST_MSG(
+                2,
+                "Error: Module %s has mismatch paramerer "
+                "NO_OF_PROBES=%d, but expected it is %d (count=%d x "
+                "protocol_size=%d)",
+                m->name.c_str(), m->probes_count, axi_expected_probes_count,
+                ocla_debug_subsystem_module->no_axi_bus, protocol_size);
+            status = false;
+          }
         }
       }
     }
     if (status && ocla_modules.size() < MAXIMUM_SUPPORTED_PROBE) {
-      JSON_POST_MSG(1, "Unused Probe[%ld..15] must be null",
+      JSON_POST_MSG(1, "Unused Probe[%ld..15]_Width must be null",
                     ocla_modules.size() + 1);
       for (uint32_t i = ocla_debug_subsystem_module->cores;
            i < MAXIMUM_SUPPORTED_PROBE; i++) {
@@ -892,16 +977,20 @@ class OCLA_Analyzer {
       }
     }
     if (status) {
-      JSON_POST_MSG(1, "Parameter Total_Probes must match");
-      uint32_t total_probes = 0;
+      JSON_POST_MSG(1, "Parameter PROBES_SUM must match");
+      uint32_t probes_sum = 0;
       for (uint32_t i = 0; i < MAXIMUM_SUPPORTED_PROBE; i++) {
-        total_probes += ocla_debug_subsystem_module->ip_probe_count[i];
+        probes_sum += ocla_debug_subsystem_module->ip_probe_count[i];
       }
-      if (total_probes != ocla_debug_subsystem_module->total_probes) {
+      if (ocla_debug_subsystem_module->mode != "NATIVE") {
+        // Last one will be AXI
+        probes_sum += ocla_modules.back()->probes_count;
+      }
+      if (probes_sum != ocla_debug_subsystem_module->probes_sum) {
         JSON_POST_MSG(2,
-                      "Error: Total_probes by calculation (%d) does not match "
+                      "Error: PROBES_SUM by calculation (%d) does not match "
                       "with definition (%d)",
-                      total_probes, ocla_debug_subsystem_module->total_probes);
+                      probes_sum, ocla_debug_subsystem_module->probes_sum);
         status = false;
       }
     }
@@ -981,12 +1070,13 @@ class OCLA_Analyzer {
       b. This is done after we blackbox the instantiator and flatten the design
   */
   static bool get_ocla_signals(RTLIL::Module* top_module,
+                               const std::string& axi_type, uint32_t no_axi_bus,
                                std::vector<OCLA_MODULE*>& modules,
                                std::string instantiator_module,
                                std::ofstream& json) {
     bool status = true;
-    JSON_POST_MSG(0, "Restrive OCLA signals from instantiator: %s",
-                  instantiator_module.c_str());
+    JSON_POST_MSG(0, "Restrive OCLA signals (type=%s) from instantiator: %s",
+                  axi_type.c_str(), instantiator_module.c_str());
     log_assert(modules.size());
     for (auto m : modules) {
       log_assert(m->probes.size() == 0);
@@ -1023,10 +1113,68 @@ class OCLA_Analyzer {
     }
     if (status) {
       for (auto m : modules) {
-        if (m->probes.size() == 0) {
-          JSON_POST_MSG(2, "Module %s (INDEX=%d) failed to get probe signals",
-                        m->name.c_str(), m->index);
-          status = false;
+        if ((axi_type == "NATIVE") ||
+            ((m->index + 1) < (uint32_t)(modules.size()))) {
+          if (m->probes.size() == 0) {
+            JSON_POST_MSG(2, "Module %s (INDEX=%d) failed to get probe signals",
+                          m->name.c_str(), m->index);
+            status = false;
+          }
+        } else {
+          if (m->probes.size() != 0) {
+            JSON_POST_MSG(2,
+                          "Module %s (INDEX=%d) is AXI protocol, there "
+                          "shouldn't be any probe signal, but found there is",
+                          m->name.c_str(), m->index);
+            status = false;
+          }
+          if (status) {
+            if (axi_type == "AXILite") {
+              for (uint32_t i = 0; i < no_axi_bus; i++) {
+                m->probes.push_back(
+                    OCLA_SIGNAL("AWADDR", 32, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("AWPROT", 3, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("AWVALID", 1, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("AWREADY", 1, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("WDATA", 32, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("WSTRB", 4, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("WVALID", 1, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("WREADY", 1, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("BRESP", 2, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("BVALID", 1, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("BREADY", 1, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("ARADDR", 32, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("ARPROT", 3, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("ARVALID", 1, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("ARREADY", 1, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("RDATA", 32, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("RRESP", 2, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("RVALID", 1, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("RREADY", 1, i, no_axi_bus == 1));
+              }
+            } else {
+              JSON_POST_MSG(2, "Need to figure AXI4 protocol bus signals");
+              status = false;
+            }
+          }
         }
       }
     }
