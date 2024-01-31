@@ -1747,7 +1747,8 @@ void MemMapping::emit_port(const MemConfig &cfg, std::vector<Cell*> &cells, cons
 				}
 				///below param (PORT_B_Parity)is added to check parity exist or not incase of byte write enable
 				if ((technology == "genesis3") && (gen3_model == "NEW")){
-					if ((cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM36_SDP")) && (width == 36)){
+					if (((cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM36_SDP")) || 
+					(cfg.def->id == RTLIL::escape_id("$__RS_FACTOR_BRAM36_TDP"))) && (width == 36)){
 						if ((hw_wdata[35]==State::Sx) && (hw_wdata[26]==State::Sx) && (hw_wdata[17]==State::Sx) && (hw_wdata[8]==State::Sx))
 							cell->setParam(stringf("\\PORT_%s_Parity", name), State::S1);
 					}
