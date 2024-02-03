@@ -47,9 +47,9 @@
 USING_YOSYS_NAMESPACE
 PRIVATE_NAMESPACE_BEGIN
 #define USE_LOCAL_GEN_STRING 0
-#define MAXIMUM_SUPPORTED_PROBE 15
+#define MAXIMUM_SUPPORTED_PROBE_CORE 15
 #define AXILite_SINGLE_BUS_SIGNALS 152
-#define AXI4_SINGLE_BUS_SIGNALS 214
+#define AXI4_SINGLE_BUS_SIGNALS 250
 
 #if USE_LOCAL_GEN_STRING
 std::string gen_string(const char* format_string, ...) {
@@ -126,6 +126,15 @@ struct PARAM_INFO {
 };
 
 /*
+  Storing the information about Probe to Core Mapping
+*/
+struct PROBE2CORE_PARAM_INFO {
+  PROBE2CORE_PARAM_INFO(uint32_t c = 0, uint32_t o = 0) : core(c), offset(o) {}
+  uint32_t core = 0;
+  uint32_t offset = 0;
+};
+
+/*
   This struct store the information of the signal. The information include:
     a. name
     b. width size
@@ -151,8 +160,9 @@ struct OCLA_SIGNAL {
       : width(w) {
     log_assert(width);
     show_index = width > 1;
-    fullname = gen_string("%s%s", signal.c_str(),
-                          no_extra_index ? "" : gen_string("_%d", i).c_str());
+    fullname =
+        gen_string("%s%s", signal.c_str(),
+                   no_extra_index ? "" : gen_string("_%d", i + 1).c_str());
     name = fullname;
   }
   std::string fullname = "";
@@ -304,7 +314,7 @@ struct OCLA_MODULE : MODULE_IP {
   */
   bool check_type(std::ofstream& json) {
     bool status = false;
-    if (type == "ocla" && mem_depth > 0 && probes_count > 0) {
+    if (type == "OCLA" && mem_depth > 0 && probes_count > 0) {
       status = true;
     } else {
       JSON_POST_MSG(1, "Error: Fail to validate parameters");
@@ -317,18 +327,51 @@ struct OCLA_MODULE : MODULE_IP {
   /*
     Validate if all the information that we extract is good
   */
-  bool finalize(std::ofstream& json, int space) {
+  bool finalize(std::ofstream& json, uint32_t* probe_widths, int space) {
     uint32_t total_s = 0;
+    size_t probe_index = 0;
     bool status = true;
     // probes
     for (auto& s : probes) {
       total_s += s.width;
     }
     if (total_s != probes_count) {
-      JSON_POST_MSG(
-          space,
-          "Error: Invalid total probe signal(s) bus size %d (NO_OF_PROBES %d)",
-          total_s, probes_count);
+      JSON_POST_MSG(space,
+                    "Error: OCLA module at INDEX=%d has invalid total probe "
+                    "signal(s) bus size %d (NO_OF_PROBES %d)",
+                    index, total_s, probes_count);
+      goto FINALIZE_ERROR;
+    }
+    if (is_axi) {
+      goto FINALIZE_END;
+    }
+    JSON_POST_MSG(space, "Checking signal alignment");
+    for (auto p : probe_order) {
+      uint32_t probe_width = probe_widths[p];
+      JSON_POST_MSG(space + 1,
+                    "OCLA Module at INDEX=%d should have signals that aligned "
+                    "with number %d, starting at signal #%ld",
+                    index, probe_width, probe_index);
+      while (probe_width) {
+        if (probe_index >= probes.size()) {
+          JSON_POST_MSG(space + 2,
+                        "Does not have enough signal for the checking");
+          goto FINALIZE_ERROR;
+        }
+        if (probes[probe_index].width > probe_width) {
+          JSON_POST_MSG(space + 2, "Signal %s exceed boundary",
+                        probes[probe_index].fullname.c_str());
+          goto FINALIZE_ERROR;
+        }
+        probe_width -= probes[probe_index].width;
+        probe_index++;
+      }
+    }
+    if (probe_index != probes.size()) {
+      JSON_POST_MSG(space + 1,
+                    "The checking not able to cover all signal. Total signal "
+                    "count=%ld, but only cover %ld",
+                    probes.size(), probe_index);
       goto FINALIZE_ERROR;
     }
     goto FINALIZE_END;
@@ -337,6 +380,7 @@ struct OCLA_MODULE : MODULE_IP {
   FINALIZE_END:
     return status;
   }
+  bool is_axi = false;
   uint32_t axi_addr_width = 0;
   uint32_t axi_data_width = 0;
   uint32_t mem_depth = 0;
@@ -344,6 +388,7 @@ struct OCLA_MODULE : MODULE_IP {
   uint32_t index = 0;
   uint32_t base_address = 0;
   std::vector<OCLA_SIGNAL> probes;
+  std::vector<uint32_t> probe_order;
 };
 
 /*
@@ -352,18 +397,20 @@ struct OCLA_MODULE : MODULE_IP {
 */
 struct OCLA_DEBUG_SUBSYSTEM_MODULE : MODULE_IP {
   OCLA_DEBUG_SUBSYSTEM_MODULE(std::string n) : MODULE_IP(n) {
-    params["\\MODE"] = PARAM_INFO(&mode, PARAM_IS_STR);
-    params["\\AXI_TYPE"] = PARAM_INFO(&axi_type, PARAM_IS_STR);
-    params["\\CORES"] = PARAM_INFO(&cores);
+    params["\\Mode"] = PARAM_INFO(&mode, PARAM_IS_STR);
+    params["\\Axi_Type"] = PARAM_INFO(&axi_type, PARAM_IS_STR);
+    params["\\Sampling_Clk"] = PARAM_INFO(&sampling_clk, PARAM_IS_STR);
+    params["\\Cores"] = PARAM_INFO(&cores);
+    params["\\No_Probes"] = PARAM_INFO(&no_probes);
     params["\\No_AXI_Bus"] = PARAM_INFO(&no_axi_bus);
-    params["\\PROBES_SUM"] = PARAM_INFO(&probes_sum);
+    params["\\Probes_Sum"] = PARAM_INFO(&probes_sum);
     params["\\AXI_Core_BaseAddress"] = PARAM_INFO(&axi_core_address);
-    for (uint32_t i = 0; i < MAXIMUM_SUPPORTED_PROBE; i++) {
-      params[gen_string("\\Probe%d_Width", i + 1)] =
-          PARAM_INFO(&ip_probe_count[i]);
-      params[gen_string("\\IF%d_BaseAddress", i + 1)] =
+    for (uint32_t i = 0; i < MAXIMUM_SUPPORTED_PROBE_CORE; i++) {
+      params[gen_string("\\Probe%02d_Width", i + 1)] =
+          PARAM_INFO(&ip_probe_width[i]);
+      params[gen_string("\\IF%02d_BaseAddress", i + 1)] =
           PARAM_INFO(&ip_address[i]);
-      params[gen_string("\\IF%d_Probes", i + 1)] =
+      params[gen_string("\\IF%02d_Probes", i + 1)] =
           PARAM_INFO(&ip_probe_info[i], PARAM_IS_UINT64);
     }
   }
@@ -372,36 +419,181 @@ struct OCLA_DEBUG_SUBSYSTEM_MODULE : MODULE_IP {
   */
   bool check_type(std::ofstream& json) {
     bool status = false;
-    if (type == "ocla" &&
-        (mode == "NATIVE" || ((mode == "AXI" || mode == "NATIVE_AXI") &&
-                              (axi_type == "AXI4" || axi_type == "AXILite") &&
-                              no_axi_bus > 0 && no_axi_bus <= 4)) &&
-        (mode == "NATIVE_AXI" ? (cores > 1)
-                              : (mode == "AXI" ? cores == 1 : cores > 0)) &&
-        cores <= MAXIMUM_SUPPORTED_PROBE) {
-      status = true;
-    } else {
+    if (type == "OCLA") {
+      if (mode == "NATIVE") {
+        if (no_probes > 0 && cores > 0 && no_probes >= cores &&
+            cores <= MAXIMUM_SUPPORTED_PROBE_CORE) {
+          status = true;
+        }
+      } else if (mode == "AXI") {
+        if (no_probes == 0 && cores == 1 &&
+            (axi_type == "AXI4" || axi_type == "AXILite") && no_axi_bus > 0 &&
+            no_axi_bus <= 4) {
+          status = true;
+        }
+      } else if (mode == "NATIVE_AXI") {
+        if (no_probes > 0 && cores > 1 && no_probes >= (cores - 1) &&
+            cores <= MAXIMUM_SUPPORTED_PROBE_CORE &&
+            (axi_type == "AXI4" || axi_type == "AXILite") && no_axi_bus > 0 &&
+            no_axi_bus <= 4) {
+          status = true;
+        }
+      }
+    }
+    if (!status) {
       JSON_POST_MSG(1, "Error: Fail to validate parameters");
       JSON_POST_MSG(2, "IP_TYPE: %s", type.c_str());
-      JSON_POST_MSG(2, "MODE: %s", mode.c_str());
+      JSON_POST_MSG(2, "Mode: %s", mode.c_str());
       if (mode == "AXI" || mode == "NATIVE_AXI") {
-        JSON_POST_MSG(2, "AXI_TYPE: %s", axi_type.c_str());
+        JSON_POST_MSG(2, "Axi_Type: %s", axi_type.c_str());
         JSON_POST_MSG(2, "No_AXI_Bus: %d", no_axi_bus);
       }
-      JSON_POST_MSG(2, "CORES: %d", cores);
+      JSON_POST_MSG(2, "Cores: %d", cores);
+      JSON_POST_MSG(2, "No_Probes: %d", no_probes);
     }
     return status;
   }
-
+  /*
+    This function to determine map between probe and core
+  */
+  bool map_probe_core(std::ofstream& json,
+                      const std::vector<OCLA_MODULE*>& ocla_modules) {
+    bool status = true;
+    JSON_POST_MSG(2,
+                  "OCLA module should start with zero-knowledge about probe "
+                  "mapping and width");
+    for (auto& m : ocla_modules) {
+      if (m->probe_order.size() > 0 || calculated_ip_core_width[m->index] > 0) {
+        JSON_POST_MSG(3,
+                      "Error: OCLA module at INDEX=%d start with probe mapping",
+                      m->index);
+        status = false;
+      }
+    }
+    if (status && (mode == "NATIVE" || mode == "NATIVE_AXI")) {
+      JSON_POST_MSG(2, "IF{x}_Probes must be valid");
+      uint32_t native_core = mode == "NATIVE" ? cores : cores - 1;
+      uint32_t native_probe = 0;
+      if (native_core > 0 && native_core <= MAXIMUM_SUPPORTED_PROBE_CORE) {
+        uint32_t mapping = 0;
+        for (uint32_t i = 0; i < MAXIMUM_SUPPORTED_PROBE_CORE && status; i++) {
+          if (i < native_core) {
+            if (ip_probe_info[i] == 0) {
+              JSON_POST_MSG(
+                  3, "Error: IF%02d_Probes should not be null, but found it is",
+                  i + 1);
+              status = false;
+              break;
+            }
+            uint64_t info = ip_probe_info[i];
+            uint32_t index = 0;
+            while (info) {
+              uint32_t probe = (uint32_t)(info & 0xF);
+              if (probe > 0 && probe <= MAXIMUM_SUPPORTED_PROBE_CORE &&
+                  probe <= no_probes) {
+                probe--;
+                if (mapping & (1 << probe)) {
+                  JSON_POST_MSG(3,
+                                "Error: Duplicated Probe detected at index %d "
+                                "of IF%02d_Probes=0x%016lX {Probe=%d}",
+                                index, i + 1, ip_probe_info[i], probe + 1);
+                  status = false;
+                  break;
+                }
+                if (ip_probe_width[probe] == 0) {
+                  JSON_POST_MSG(3,
+                                "Error: Expect Probe%02d_Width to be none-zero "
+                                "because of index %d of IF%02d_Probes=0x%016lX "
+                                "{Probe=%d}, but it is not",
+                                probe + 1, index, i + 1, ip_probe_info[i],
+                                probe + 1);
+                  status = false;
+                  break;
+                }
+                ocla_modules[i]->probe_order.push_back(probe);
+                probe_to_core_map[probe].core = i;
+                probe_to_core_map[probe].offset = calculated_ip_core_width[i];
+                calculated_ip_core_width[i] += ip_probe_width[probe];
+                mapping |= (1 << probe);
+                native_probe++;
+              } else {
+                JSON_POST_MSG(3,
+                              "Error: Invalid Probe detected at index %d of "
+                              "IF%02d_Probes=0x%016lX {%d}",
+                              index, i + 1, ip_probe_info[i], probe);
+                status = false;
+                break;
+              }
+              info >>= 4;
+              index++;
+            }
+          } else {
+            if (ip_probe_info[i] != 0) {
+              JSON_POST_MSG(
+                  3, "Error: IF%02d_Probes should be null, but found 0x%016lX",
+                  i + 1, ip_probe_info[i]);
+              status = false;
+              break;
+            }
+          }
+        }
+        if (status) {
+          JSON_POST_MSG(
+              2,
+              "Calculate number of probe (%d) must match paramter NO_PROBES=%d",
+              native_probe, no_probes);
+          if (native_probe != no_probes) {
+            JSON_POST_MSG(3, "Error: Comparison failed");
+            status = false;
+          }
+        }
+        if (status) {
+          JSON_POST_MSG(2,
+                        "OCLA Core Module must be associated with at least "
+                        "with one probe (except AXI probe)");
+          for (auto& m : ocla_modules) {
+            if (!m->is_axi && m->probe_order.size() == 0) {
+              JSON_POST_MSG(3,
+                            "Error: NATIVE OCLA module at INDEX=%d does not "
+                            "have any probe",
+                            m->index);
+              status = false;
+            } else if (m->is_axi && m->probe_order.size() != 0) {
+              JSON_POST_MSG(
+                  3, "Error: Detect probe at AXI OCLA module at INDEX=%d",
+                  m->index);
+              status = false;
+            }
+          }
+        }
+      } else {
+        JSON_POST_MSG(3, "Error: Estimated Native Cores value %d is invalid",
+                      native_core);
+        status = false;
+      }
+      if (status) {
+        JSON_POST_MSG(1, "Core{x}_Width information:")
+        for (uint32_t i = 0; i < native_core; i++) {
+          JSON_POST_MSG(2, "Calculated Core%02d_Width=%d", i + 1,
+                        calculated_ip_core_width[i]);
+        }
+      }
+    }
+    return status;
+  }
   std::string mode = "";
   std::string axi_type = "";
+  std::string sampling_clk = "";
   uint32_t cores = 0;
+  uint32_t no_probes = 0;
   uint32_t no_axi_bus = 0;
   uint32_t probes_sum = 0;
-  uint32_t ip_probe_count[MAXIMUM_SUPPORTED_PROBE] = {0};
-  uint32_t ip_address[MAXIMUM_SUPPORTED_PROBE] = {0};
-  uint64_t ip_probe_info[MAXIMUM_SUPPORTED_PROBE] = {0};
+  uint32_t ip_probe_width[MAXIMUM_SUPPORTED_PROBE_CORE] = {0};
+  uint32_t ip_address[MAXIMUM_SUPPORTED_PROBE_CORE] = {0};
+  uint64_t ip_probe_info[MAXIMUM_SUPPORTED_PROBE_CORE] = {0};
   uint32_t axi_core_address = 0;
+  PROBE2CORE_PARAM_INFO probe_to_core_map[MAXIMUM_SUPPORTED_PROBE_CORE];
+  uint32_t calculated_ip_core_width[MAXIMUM_SUPPORTED_PROBE_CORE] = {0};
 };
 
 class OCLA_Analyzer {
@@ -468,14 +660,20 @@ class OCLA_Analyzer {
       goto ANALYZE_MSG_END;
     }
 
-    // Step 6: Match OCLA instantiator
+    // Step 6: Set the last OCLA IP as axi
+    if (ocla_debug_subsystem_modules[0]->mode == "AXI" ||
+        ocla_debug_subsystem_modules[0]->mode == "NATIVE_AXI") {
+      ocla_modules.back()->is_axi = true;
+    }
+
+    // Step 7: Match OCLA instantiator
     if (!sanity_check(ocla_debug_subsystem_modules[0], ocla_modules,
                       ocla_instantiator_names, json)) {
       JSON_POST_MSG(0, "Error: Sanity check fail");
       goto ANALYZE_MSG_END;
     }
 
-    // Step 7: Black box OCLA Debug Subsystem instantiator module and Flatten
+    // Step 8: Black box OCLA Debug Subsystem instantiator module and Flatten
     // the design
 #if 1
     cmd = gen_string("blackbox %s", ocla_debug_subsystem_instantiator.c_str());
@@ -502,7 +700,7 @@ class OCLA_Analyzer {
     run_pass(cmd.c_str(), design);
 #endif
 
-    // Step 8: Once the flatten the design, start to grab all the signals
+    // Step 9: Once the flatten the design, start to grab all the signals
     // information
     if (!get_ocla_signals(design->top_module(),
                           ocla_debug_subsystem_modules[0]->mode == "NATIVE"
@@ -515,12 +713,13 @@ class OCLA_Analyzer {
       goto ANALYZE_MSG_END;
     }
 
-    // Step 9: Loop through the instantiator that we gathered so far and perform
-    // final validation
+    // Step 10: Loop through the instantiator that we gathered so far and
+    // perform final validation
     for (auto& o : ocla_modules) {
       JSON_POST_MSG(1, "Module: %s", o->name.c_str());
       JSON_POST_MSG(2, "Final checking ...");
-      if (o->finalize(json, 3)) {
+      if (o->finalize(
+              json, &(ocla_debug_subsystem_modules[0]->ip_probe_width[0]), 3)) {
         JSON_POST_MSG(3, "Probes:");
         for (auto& sig : o->probes) {
           JSON_POST_MSG(4, "--> %s", sig.fullname.c_str());
@@ -537,7 +736,7 @@ class OCLA_Analyzer {
   ANALYZE_MSG_END:
     json << "    \"End of OCLA Analysis\"\n  ]";
 
-    // Step 10: There is no error detected in all OCLA instance, then we dump
+    // Step 11: There is no error detected in all OCLA instance, then we dump
     // those information is JSON file
     if (ocla_count) {
       json << ",\n  \"ocla\" : [\n";
@@ -545,6 +744,28 @@ class OCLA_Analyzer {
       for (auto& o : ocla_modules) {
         json << "    {\n", json_write_param(o, json, 3);
         json << gen_string(",\n      \"addr\" : %d", o->base_address).c_str();
+        json << gen_string(",\n      \"probe_info\" : [\n").c_str();
+        size_t order_index = 0;
+        for (auto& p : o->probe_order) {
+          json << "        {\n";
+          json << gen_string("          \"index\" : %d,\n", p).c_str();
+          json << gen_string("          \"offset\" : %d,\n",
+                             ocla_debug_subsystem_modules[0]
+                                 ->probe_to_core_map[p]
+                                 .offset)
+                      .c_str();
+          json << gen_string("          \"width\" : %d\n",
+                             ocla_debug_subsystem_modules[0]->ip_probe_width[p])
+                      .c_str();
+          json << "        }";
+          order_index++;
+          if (order_index < o->probe_order.size()) {
+            json << ",\n";
+          } else {
+            json << "\n";
+          }
+        }
+        json << gen_string("      ]").c_str();
         json_write_signals("probes", o->probes, json);
         index++;
         if (index < ocla_count) {
@@ -559,7 +780,7 @@ class OCLA_Analyzer {
       json << "\n  }";
     }
 
-    // Step 11: Take care of memory leak
+    // Step 12: Take care of memory leak
     while (ocla_modules.size()) {
       delete ocla_modules.back();
       ocla_modules.pop_back();
@@ -658,7 +879,7 @@ class OCLA_Analyzer {
                            const RTLIL::SigSpec& sig, bool autoint = true) {
     if (sig.is_chunk()) {
       OCLA_SIGNAL s = dump_sigchunk(f, sig.as_chunk(), autoint);
-      ss.push_back(s);
+      ss.insert(ss.begin(), s);
     } else {
       f << stringf("{ ");
       for (auto it = sig.chunks().rbegin(); it != sig.chunks().rend(); ++it) {
@@ -916,31 +1137,28 @@ class OCLA_Analyzer {
       }
     }
     if (status) {
+      JSON_POST_MSG(1, "Probe <-> Core information mapping must be valid");
+      status = (const_cast<OCLA_DEBUG_SUBSYSTEM_MODULE*>(
+                    ocla_debug_subsystem_module))
+                   ->map_probe_core(json, ocla_modules);
+    }
+    if (status) {
       JSON_POST_MSG(1, "Parameter NO_OF_PROBES and Param{x}_Width must match");
       for (auto m : ocla_modules) {
-        if (ocla_debug_subsystem_module->mode == "NATIVE" ||
-            ((m->index + 1) < (uint32_t)(ocla_modules.size()))) {
-          if (m->probes_count !=
-              ocla_debug_subsystem_module->ip_probe_count[m->index]) {
-            JSON_POST_MSG(
-                2,
-                "Error: Module %s has mismatch paramerer "
-                "NO_OF_PROBES=%d, instantiator parameter Param%d_Width=%d",
-                m->name.c_str(), m->probes_count, m->index + 1,
-                ocla_debug_subsystem_module->ip_probe_count[m->index]);
-            status = false;
-          }
-        } else {
+        if (m->is_axi) {
           JSON_POST_MSG(1,
                         "Last OCLA INDEX=%d must match AXI Protocol Bus Size",
                         m->index);
-          if (ocla_debug_subsystem_module->ip_probe_count[m->index] != 0) {
+          if (ocla_debug_subsystem_module->calculated_ip_core_width[m->index] !=
+              0) {
             JSON_POST_MSG(
                 2,
-                "Error: Instantiator parameter Param%d_Width=%d, but expect it "
+                "Error: Instantiator calculated Core%02d_Width=%d, but expect "
+                "it "
                 "is 0 (last OCLA is connected to AXI)",
                 m->index + 1,
-                ocla_debug_subsystem_module->ip_probe_count[m->index]);
+                ocla_debug_subsystem_module
+                    ->calculated_ip_core_width[m->index]);
             status = false;
           }
           uint32_t axi_expected_probes_count = 0;
@@ -962,25 +1180,37 @@ class OCLA_Analyzer {
                 ocla_debug_subsystem_module->no_axi_bus, protocol_size);
             status = false;
           }
+        } else {
+          if (m->probes_count !=
+              ocla_debug_subsystem_module->calculated_ip_core_width[m->index]) {
+            JSON_POST_MSG(
+                2,
+                "Error: Module %s has mismatch paramerer "
+                "NO_OF_PROBES=%d, instantiator calculated Core%02d_Width=%d",
+                m->name.c_str(), m->probes_count, m->index + 1,
+                ocla_debug_subsystem_module
+                    ->calculated_ip_core_width[m->index]);
+            status = false;
+          }
         }
       }
     }
-    if (status && ocla_modules.size() < MAXIMUM_SUPPORTED_PROBE) {
-      JSON_POST_MSG(1, "Unused Probe[%ld..15]_Width must be null",
+    if (status && ocla_modules.size() < MAXIMUM_SUPPORTED_PROBE_CORE) {
+      JSON_POST_MSG(1, "Unused Probe[%02ld..15]_Width must be null",
                     ocla_modules.size() + 1);
       for (uint32_t i = ocla_debug_subsystem_module->cores;
-           i < MAXIMUM_SUPPORTED_PROBE; i++) {
-        if (ocla_debug_subsystem_module->ip_probe_count[i]) {
+           i < MAXIMUM_SUPPORTED_PROBE_CORE; i++) {
+        if (ocla_debug_subsystem_module->calculated_ip_core_width[i]) {
           JSON_POST_MSG(2, "Error: Probe%d is not null", i);
           status = false;
         }
       }
     }
     if (status) {
-      JSON_POST_MSG(1, "Parameter PROBES_SUM must match");
+      JSON_POST_MSG(1, "Parameter PROBES_SUM versus Probe{x}_Width");
       uint32_t probes_sum = 0;
-      for (uint32_t i = 0; i < MAXIMUM_SUPPORTED_PROBE; i++) {
-        probes_sum += ocla_debug_subsystem_module->ip_probe_count[i];
+      for (uint32_t i = 0; i < MAXIMUM_SUPPORTED_PROBE_CORE; i++) {
+        probes_sum += ocla_debug_subsystem_module->ip_probe_width[i];
       }
       if (ocla_debug_subsystem_module->mode != "NATIVE") {
         // Last one will be AXI
@@ -995,7 +1225,25 @@ class OCLA_Analyzer {
       }
     }
     if (status) {
-      JSON_POST_MSG(1, "Parameter IF[1..%ld]_BaseAddress must not conflict",
+      JSON_POST_MSG(1, "Parameter PROBES_SUM versus calculated Core{x}_Width");
+      uint32_t probes_sum = 0;
+      for (uint32_t i = 0; i < MAXIMUM_SUPPORTED_PROBE_CORE; i++) {
+        probes_sum += ocla_debug_subsystem_module->calculated_ip_core_width[i];
+      }
+      if (ocla_debug_subsystem_module->mode != "NATIVE") {
+        // Last one will be AXI
+        probes_sum += ocla_modules.back()->probes_count;
+      }
+      if (probes_sum != ocla_debug_subsystem_module->probes_sum) {
+        JSON_POST_MSG(2,
+                      "Error: PROBES_SUM by calculation (%d) does not match "
+                      "with definition (%d)",
+                      probes_sum, ocla_debug_subsystem_module->probes_sum);
+        status = false;
+      }
+    }
+    if (status) {
+      JSON_POST_MSG(1, "Parameter IF[01..%02ld]_BaseAddress must not conflict",
                     ocla_modules.size());
       std::vector<uint32_t> addresses;
       for (auto m : ocla_modules) {
@@ -1075,7 +1323,7 @@ class OCLA_Analyzer {
                                std::string instantiator_module,
                                std::ofstream& json) {
     bool status = true;
-    JSON_POST_MSG(0, "Restrive OCLA signals (type=%s) from instantiator: %s",
+    JSON_POST_MSG(0, "Retrieve OCLA signals (type=%s) from instantiator: %s",
                   axi_type.c_str(), instantiator_module.c_str());
     log_assert(modules.size());
     for (auto m : modules) {
@@ -1084,28 +1332,38 @@ class OCLA_Analyzer {
     for (auto cell : top_module->cells()) {
       if (std::string(cell->type.c_str()) == instantiator_module) {
         JSON_POST_MSG(1, "Instantiated as %s", cell->name.c_str());
-        for (auto& connection : cell->connections()) {
-          std::ostringstream wire;
-          std::string connection_name = std::string(connection.first.c_str());
-          for (auto m : modules) {
+        for (auto m : modules) {
+          if (m->is_axi) {
+            continue;
+          }
+          for (int i = (int)(m->probe_order.size() - 1); i >= 0; i--) {
             std::string module_probe_name =
-                gen_string("\\probe%d", m->index + 1);
-            if (connection_name == module_probe_name) {
-              JSON_POST_MSG(2, "Potential Probe Connection: %s",
-                            connection_name.c_str());
-              if (m->probes.size() == 0) {
+                gen_string("\\probe_%d", m->probe_order.at(i) + 1);
+            JSON_POST_MSG(2,
+                          "OCLA Module at INDEX=%d looking for connection %s",
+                          m->index, module_probe_name.c_str());
+            bool found = false;
+            for (auto& connection : cell->connections()) {
+              std::ostringstream wire;
+              std::string connection_name =
+                  std::string(connection.first.c_str());
+              if (connection_name == module_probe_name) {
+                found = true;
+                JSON_POST_MSG(3, "Found potential Probe Connection: %s",
+                              connection_name.c_str());
+                size_t starting_count = m->probes.size();
                 dump_sigspec(wire, m->probes, connection.second);
-                JSON_POST_MSG(3, "Connected to %s", wire.str().c_str());
-                if (m->probes.size() == 0) {
-                  JSON_POST_MSG(3, "Fail to parse connection %s",
+                JSON_POST_MSG(4, "Connected to %s", wire.str().c_str());
+                if (m->probes.size() <= starting_count) {
+                  JSON_POST_MSG(4, "Fail to parse connection %s",
                                 module_probe_name.c_str());
                   status = false;
                 }
-                break;
-              } else {
-                JSON_POST_MSG(3, "Duplicated connection");
-                status = false;
               }
+            }
+            if (!found) {
+              JSON_POST_MSG(3, "Fail to find the connection");
+              status = false;
             }
           }
         }
@@ -1113,14 +1371,7 @@ class OCLA_Analyzer {
     }
     if (status) {
       for (auto m : modules) {
-        if ((axi_type == "NATIVE") ||
-            ((m->index + 1) < (uint32_t)(modules.size()))) {
-          if (m->probes.size() == 0) {
-            JSON_POST_MSG(2, "Module %s (INDEX=%d) failed to get probe signals",
-                          m->name.c_str(), m->index);
-            status = false;
-          }
-        } else {
+        if (m->is_axi) {
           if (m->probes.size() != 0) {
             JSON_POST_MSG(2,
                           "Module %s (INDEX=%d) is AXI protocol, there "
@@ -1171,9 +1422,98 @@ class OCLA_Analyzer {
                     OCLA_SIGNAL("RREADY", 1, i, no_axi_bus == 1));
               }
             } else {
-              JSON_POST_MSG(2, "Need to figure AXI4 protocol bus signals");
-              status = false;
+              for (uint32_t i = 0; i < no_axi_bus; i++) {
+                m->probes.push_back(
+                    OCLA_SIGNAL("AWADDR", 32, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("AWPROT", 3, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("AWVALID", 1, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("AWREADY", 1, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("AWBURST", 2, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("AWSIZE", 3, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("AWLEN", 8, i, no_axi_bus == 1));
+                m->probes.push_back(OCLA_SIGNAL("AWID", 8, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("AWCACHE", 4, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("AWREGION", 4, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("AWUSER", 1, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("AWQOS", 4, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("AWLOCK", 1, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("WDATA", 32, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("WSTRB", 4, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("WVALID", 1, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("WREADY", 1, i, no_axi_bus == 1));
+                m->probes.push_back(OCLA_SIGNAL("WID", 8, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("WLAST", 1, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("BRESP", 2, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("BVALID", 1, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("BREADY", 1, i, no_axi_bus == 1));
+                m->probes.push_back(OCLA_SIGNAL("BID", 8, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("BUSER", 1, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("ARADDR", 32, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("ARPROT", 3, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("ARVALID", 1, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("ARREADY", 1, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("ARBUSRT", 2, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("ARSIZE", 3, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("ARLEN", 8, i, no_axi_bus == 1));
+                m->probes.push_back(OCLA_SIGNAL("ARID", 8, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("ARCACHE", 4, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("ARREGION", 4, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("ARUSER", 1, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("ARQOS", 4, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("ARLOCK", 1, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("RDATA", 32, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("RRESP", 2, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("RREADY", 1, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("RVALID", 1, i, no_axi_bus == 1));
+                m->probes.push_back(OCLA_SIGNAL("RID", 8, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("RUSER", 1, i, no_axi_bus == 1));
+                m->probes.push_back(
+                    OCLA_SIGNAL("RLAST", 1, i, no_axi_bus == 1));
+              }
             }
+          }
+        } else {
+          if (m->probes.size() == 0) {
+            JSON_POST_MSG(2, "Module %s (INDEX=%d) failed to get probe signals",
+                          m->name.c_str(), m->index);
+            status = false;
           }
         }
       }
