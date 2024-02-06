@@ -583,10 +583,12 @@ struct MemoryDffWorker
 								module->addMux(NEW_ID, feedback_q ,_ff_.sig_d, ce_mux, _ff_.sig_q);
 							}
 							else if(_ff_.has_ce == false && _ff_.has_srst ==true){
-								if (_ff_.pol_srst)
+								if (_ff_.pol_srst){
 									module->addMux(NEW_ID, _ff_.sig_d, _ff_.val_srst, rst_mux, _ff_.sig_q);
-								else
+								}
+								else{
 									module->addMux(NEW_ID,_ff_.val_srst, _ff_.sig_d, rst_mux, _ff_.sig_q);
+								}
 							}
 						}
 					}
@@ -637,10 +639,12 @@ struct MemoryDffWorker
 								module->addMux(NEW_ID, feedback_q ,mux_y_reg, ce_mux, _ff_.sig_q);
 							}
 							else if(_ff_.has_ce == false  && _ff_.has_srst == true){
-								if (_ff_.pol_srst)
+								if (_ff_.pol_srst){
 									module->addMux(NEW_ID, mux_y_reg, _ff_.val_srst, rst_mux, _ff_.sig_q);
-								else								 
+								}
+								else{
 									module->addMux(NEW_ID, _ff_.val_srst, mux_y_reg, rst_mux, _ff_.sig_q);
+								}
 							}
 						}
 					}
