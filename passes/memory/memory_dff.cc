@@ -583,7 +583,10 @@ struct MemoryDffWorker
 								module->addMux(NEW_ID, feedback_q ,_ff_.sig_d, ce_mux, _ff_.sig_q);
 							}
 							else if(_ff_.has_ce == false && _ff_.has_srst ==true){
-								module->addMux(NEW_ID, feedback_q ,_ff_.sig_d, rst_mux, _ff_.sig_q);
+								if (_ff_.pol_srst)
+									module->addMux(NEW_ID, _ff_.sig_d, _ff_.val_srst, rst_mux, _ff_.sig_q);
+								else
+									module->addMux(NEW_ID,_ff_.val_srst, _ff_.sig_d, rst_mux, _ff_.sig_q);
 							}
 						}
 					}
@@ -607,15 +610,7 @@ struct MemoryDffWorker
 							in_mux =  mux->getPort(ID::A);
 							mem_mux = mux->getPort(ID::B);
 						}
-						// int bit_matched = 0;
-						// if (GetSize(mem_mux)!= GetSize(port.data)){
-						// 	for (auto bit_mux : mem_mux){
-						// 		for (auto bit_pdata : port.data){
-						// 			if (bit_mux == bit_pdata) bit_matched++;
-						// 		}
-						// 	}
-						// }
-						// if (bit_matched == GetSize(mem_mux)){
+
 						RTLIL::SigSpec mux_y_reg = module->addWire(NEW_ID,GetSize(_ff_.sig_d));
 						module->addDff(NEW_ID,ff.sig_clk,mux->getPort(ID::S),sel_mux,ff.pol_clk);
 						mux->setPort(ID::S,sel_mux);
@@ -641,9 +636,11 @@ struct MemoryDffWorker
 								mux_y_reg = _ff_.sig_d;
 								module->addMux(NEW_ID, feedback_q ,mux_y_reg, ce_mux, _ff_.sig_q);
 							}
-							else if(_ff_.has_ce == true && _ff_.has_srst ==false){
-								mux_y_reg = _ff_.sig_d;
-								module->addMux(NEW_ID, feedback_q ,mux_y_reg, rst_mux, _ff_.sig_q);
+							else if(_ff_.has_ce == false  && _ff_.has_srst == true){
+								if (_ff_.pol_srst)
+									module->addMux(NEW_ID, mux_y_reg, _ff_.val_srst, rst_mux, _ff_.sig_q);
+								else								 
+									module->addMux(NEW_ID, _ff_.val_srst, mux_y_reg, rst_mux, _ff_.sig_q);
 							}
 						}
 					}
