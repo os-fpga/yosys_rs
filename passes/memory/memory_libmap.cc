@@ -1775,7 +1775,7 @@ void MemMapping::emit_port(const MemConfig &cfg, std::vector<Cell*> &cells, cons
 		} else {
 			for (auto cell: cells) {
 				if ((technology == "genesis3") && (gen3_model == "NEW")){
-				    cell->setParam(stringf("\\PORT_%s_DATA_WIDTH", name), width);
+				    cell->setParam(stringf("\\PORT_%s_DATA_WIDTH", name), State::S0);
 				}
 				cell->setPort(stringf("\\PORT_%s_WR_DATA", name), Const(State::Sx, width));
 				SigSpec hw_wren = Const(State::S0, width / effective_byte);
