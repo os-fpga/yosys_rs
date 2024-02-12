@@ -33,19 +33,24 @@
 #define ABC_COMMAND_CTR "strash; ifraig; scorr; dc2; dretime; strash; &get -n; &dch -f; &nf {D}; &put; buffer; upsize {D}; dnsize {D}; stime -p"
 #define ABC_COMMAND_LUT "strash; ifraig; scorr; dc2; dretime; strash; dch -f; if; mfs2"
 #define ABC_COMMAND_SOP "strash; ifraig; scorr; dc2; dretime; strash; dch -f; cover {I} {P}"
+#define ABC_COMMAND_DFL "strash; ifraig -P 1000; scorr -L 6; dc2; scleanup; strash; &get -n; &dch -f; &nf {D}; &put"
 
 // Fast version (ex. LU32PEEng design )
 //
-#define ABC_COMMAND_DFL0 "strash; ifraig -P 1000; &get -n; &scorr; &put; ifraig -P 1000; scleanup; strash; &get -n; &saveaig; &syn2; &saveaig -a; &loadaig; &nf -C 32 -a {D}; &put"
+// Do not use "&syn2" as it looks buggy 'EDA-2494)
+//
+//#define ABC_COMMAND_DFL0 "strash; ifraig -P 1000; &get -n; &scorr; &put; ifraig -P 1000; scleanup; strash; &get -n; &saveaig; &syn2; &saveaig -a; &loadaig; &nf -C 32 -a {D}; &put"
+#define ABC_COMMAND_DFL0 "strash; ifraig -P 1000; &get -n; &scorr; &put; ifraig -P 1000; scleanup; strash; &get -n; &nf -C 32 -a {D}; &put"
 
-#define ABC_COMMAND_DFL1 "strash; ifraig -P 1000; scorr -L 5 -M 2 -C 50; ifraig -P 1000; scleanup; strash; &get -n; &saveaig; &syn2; &saveaig -a; &loadaig; &nf -C 32 -a {D}; &put"
+// Do not use "&syn2" as it looks buggy 'EDA-2494)
+//
+//#define ABC_COMMAND_DFL1 "strash; ifraig -P 1000; scorr -L 5 -M 2 -C 50; ifraig -P 1000; scleanup; strash; &get -n; &saveaig; &syn2; &saveaig -a; &loadaig; &nf -C 32 -a {D}; &put"
+#define ABC_COMMAND_DFL1 "strash; ifraig -P 1000; scorr -L 5 -M 2 -C 50; ifraig -P 1000; scleanup; strash; &get -n; &nf -C 32 -a {D}; &put"
 
 // DFL with "dc2"
 // (ex: good impact on usbuart)
 //
 #define ABC_COMMAND_DFL2 "strash; ifraig -P 1000; scorr -L 5 -M 2 -C 50; dc2; scleanup; strash; &get -n; &dch -f -C 300; &nf -C 32 {D}; &put"
-
-#define ABC_COMMAND_DFL3 "strash; ifraig -P 1000; scorr -L 5 -M 2 -C 50; ifraig -P 1000; &get -n; &saveaig; &dc2; &saveaig -a; &loadaig; &put; scleanup; strash; &get -n; &saveaig; &syn2; &saveaig -a; &loadaig; ifraig -P 1000; &nf -C 32 -a {D}; &put"
 
 #define ABC_FAST_COMMAND_LIB "strash; dretime; map {D}"
 #define ABC_FAST_COMMAND_CTR "strash; dretime; map {D}; buffer; upsize {D}; dnsize {D}; stime -p"
