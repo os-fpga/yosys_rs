@@ -393,6 +393,13 @@ int get_highest_hot_index(RTLIL::SigSpec signal)
 	return -1;
 }
 
+void remove_mul_param(RTLIL::Cell *cell){
+	cell->parameters.erase(ID::DSP_CLK);
+	cell->parameters.erase(ID::DSP_RST);
+	cell->parameters.erase(ID::DSP_RST_POL);
+	cell->parameters.erase(ID::REG_OUT);
+}
+
 void replace_const_cells(RTLIL::Design *design, RTLIL::Module *module, bool consume_x, bool mux_undef, bool mux_bool, bool do_fine, bool keepdc, bool noclkinv)
 {
 	CellTypes ct_combinational;
@@ -1286,7 +1293,9 @@ skip_fine_alu:
 					cell->setParam(ID::A_WIDTH, cell->getParam(ID::B_WIDTH));
 					cell->setParam(ID::A_SIGNED, cell->getParam(ID::B_SIGNED));
 				}
-
+				if (arith_inverse && cell->type == ID($mul)){
+					remove_mul_param(cell);
+				}
 				cell->type = arith_inverse ? ID($neg) : ID($pos);
 				cell->unsetPort(ID::B);
 				cell->parameters.erase(ID::B_WIDTH);
