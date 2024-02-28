@@ -39,7 +39,7 @@ using namespace MemLibrary;
 #define FACTOR_EMU 2
 std::string technology = "";
 std::string gen3_model = "";
-
+RTLIL::Design *design_;
 struct PassOptions {
 	bool no_auto_distributed;
 	bool no_auto_block;
@@ -1805,8 +1805,35 @@ void MemMapping::emit_port(const MemConfig &cfg, std::vector<Cell*> &cells, cons
 			for (int rd = 0; rd < cfg.repl_d; rd++) {
 				auto cell = cells[rd];
 				if (pdef.kind == PortKind::Sr || pdef.kind == PortKind::Srsw) {
-					if (pdef.rd_en)
+					if (pdef.rd_en){
+						/*EDA-2523:In case of write_first(having addr_Registered)ram style added a bypass mux logic 
+						 around BRAM in memory_dff stage. If we don’t add this then with new_rs_simulation models we
+						 can not support this type of write_first ram style as new_rs_model does not allow simultaneous
+						 read and write at same address location giving collision error. So to counter this issue we have
+						 added this write bypass mux logic along with here making RD_en not of WR_en but after confirming
+						 same addr for both respective RD/WR ports.
+						*/
+						if (mem.get_bool_attribute(RTLIL::escape_id("new_primitive_dff_merge")) && GetSize(mem.wr_ports) !=0){
+							SigSpec wporten;
+							for (int widx = 0; widx < GetSize(mem.wr_ports); widx++) {
+								auto &wport = mem.wr_ports[widx];
+								for (auto mod : design_->selected_modules()){
+									for (auto cell : mod->cells()){
+										if ((cell->type == ID($mux) || cell->type == ID($pmux))){
+											if ((cell->getPort(ID::Y)==wport.addr) && (cell->getPort(ID::B) == rport.addr)){
+												wporten=wport.en;
+												break;
+											}
+					               		}
+									}
+								}
+							}
+							cell->setPort(stringf("\\PORT_%s_RD_EN", name), rpcfg.rd_en_to_clk_en ? State::S1 : mem.module->Not(NEW_ID, mem.module->ReduceOr(NEW_ID, wporten)));	
+						}
+						else
+						/*-------------------------------------EDA-2523--------------------------------------------*/
 						cell->setPort(stringf("\\PORT_%s_RD_EN", name), rpcfg.rd_en_to_clk_en ? State::S1 : rport.en);
+					}
 					if (pdef.rdarstval != ResetValKind::None)
 						cell->setPort(stringf("\\PORT_%s_RD_ARST", name), rport.arst);
 					if (pdef.rdsrstval != ResetValKind::None)
@@ -2197,6 +2224,7 @@ struct MemoryLibMapPass : public Pass {
 		
 		Library lib = parse_library(lib_files, defines);
 		float counter = 0;
+		design_ = design;
 		for (auto module : design->selected_modules()) {
 			MapWorker worker(module);
 			auto mems = Mem::get_selected_memories(module);
@@ -2255,7 +2283,7 @@ struct MemoryLibMapPass : public Pass {
 				// Awais: Logic added to handle no change mode of bram
 				SigMap sigmap(design->top_module());
 				FfInitVals initvals(&sigmap, design->top_module());
-				if (design->scratchpad_get_bool("memory_dff.match_wr") == false){
+				if (mem.get_bool_attribute(RTLIL::escape_id("memory_dff_match_wr")) == false){
 					bool read_first_iff = false;
 					for (int pidx = 0; pidx < GetSize(mem.rd_ports); pidx++) {
 						auto &port = mem.rd_ports[pidx];
