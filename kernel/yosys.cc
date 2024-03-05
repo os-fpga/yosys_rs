@@ -73,6 +73,8 @@
 #include <limits.h>
 #include <errno.h>
 
+#include "libs/json11/json11.hpp"
+
 #if defined(_MSC_VER) || defined(__MINGW32__) || defined(__CYGWIN__) || defined(_WIN32)
 #define F_OK 0
 #define access _access
@@ -87,6 +89,7 @@ CellTypes yosys_celltypes;
 
 #ifdef YOSYS_ENABLE_TCL
 Tcl_Interp *yosys_tcl_interp = NULL;
+bool yosys_tcl_repl_active = false;
 #endif
 
 std::set<std::string> yosys_input_files, yosys_output_files;
@@ -98,7 +101,6 @@ std::vector<void*> memhasher_store;
 std::string yosys_share_dirname;
 std::string yosys_abc_executable;
 std::string yosys_shared_tmp_dirname;
-bool mem_async_read= false;
 
 void init_share_dirname();
 void init_abc_executable_name();
@@ -181,48 +183,6 @@ int ceil_log2(int x)
 			return i;
 	log_abort();
 #endif
-}
-
-std::string stringf(const char *fmt, ...)
-{
-	std::string string;
-	va_list ap;
-
-	va_start(ap, fmt);
-	string = vstringf(fmt, ap);
-	va_end(ap);
-
-	return string;
-}
-
-std::string vstringf(const char *fmt, va_list ap)
-{
-	std::string string;
-	char *str = NULL;
-
-#if defined(_WIN32 )|| defined(__CYGWIN__)
-	int sz = 64, rc;
-	while (1) {
-		va_list apc;
-		va_copy(apc, ap);
-		str = (char*)realloc(str, sz);
-		rc = vsnprintf(str, sz, fmt, apc);
-		va_end(apc);
-		if (rc >= 0 && rc < sz)
-			break;
-		sz *= 2;
-	}
-#else
-	if (vasprintf(&str, fmt, ap) < 0)
-		str = NULL;
-#endif
-
-	if (str != NULL) {
-		string = str;
-		free(str);
-	}
-
-	return string;
 }
 
 int readsome(std::istream &f, char *s, int n)
@@ -477,12 +437,31 @@ std::string make_temp_dir(std::string template_str)
 #  endif
 
 	char *p = strdup(template_str.c_str());
-	p = mkdtemp(p);
-	log_assert(p != NULL);
+	char *res = mkdtemp(p);
+	log_assert(res != NULL);
 	template_str = p;
 	free(p);
 
 	return template_str;
+#endif
+}
+
+bool check_directory_exists(const std::string& dirname)
+{
+#if defined(_WIN32)
+	struct _stat info;
+	if (_stat(dirname.c_str(), &info) != 0)
+	{
+		return false;
+	}
+	return (info.st_mode & _S_IFDIR) != 0;
+#else
+	struct stat info;
+	if (stat(dirname.c_str(), &info) != 0)
+	{
+		return false;
+	}
+	return (info.st_mode & S_IFDIR) != 0;
 #endif
 }
 
@@ -531,6 +510,48 @@ void remove_directory(std::string dirname)
 #endif
 }
 
+bool create_directory(const std::string& dirname)
+{
+#if defined(_WIN32)
+	int ret = _mkdir(dirname.c_str());
+#else
+	mode_t mode = 0755;
+	int ret = mkdir(dirname.c_str(), mode);
+#endif
+	if (ret == 0)
+		return true;
+
+	switch (errno)
+	{
+	case ENOENT:
+		// parent didn't exist, try to create it
+		{
+			std::string::size_type pos = dirname.find_last_of('/');
+			if (pos == std::string::npos)
+#if defined(_WIN32)
+				pos = dirname.find_last_of('\\');
+			if (pos == std::string::npos)
+#endif
+				return false;
+			if (!create_directory( dirname.substr(0, pos) ))
+				return false;
+		}
+		// now, try to create again
+#if defined(_WIN32)
+		return 0 == _mkdir(dirname.c_str());
+#else
+		return 0 == mkdir(dirname.c_str(), mode);
+#endif
+
+	case EEXIST:
+		// done!
+		return check_directory_exists(dirname);
+
+	default:
+		return false;
+	}
+}
+
 std::string escape_filename_spaces(const std::string& filename)
 {
 	std::string out;
@@ -543,11 +564,6 @@ std::string escape_filename_spaces(const std::string& filename)
 			out.push_back(c);
 	}
 	return out;
-}
-
-int GetSize(RTLIL::Wire *wire)
-{
-	return wire->width;
 }
 
 bool already_setup = false;
@@ -607,7 +623,9 @@ void yosys_shutdown()
 
 #ifdef YOSYS_ENABLE_TCL
 	if (yosys_tcl_interp != NULL) {
-		Tcl_DeleteInterp(yosys_tcl_interp);
+		if (!Tcl_InterpDeleted(yosys_tcl_interp)) {
+			Tcl_DeleteInterp(yosys_tcl_interp);
+		}
 		Tcl_Finalize();
 		yosys_tcl_interp = NULL;
 	}
@@ -741,6 +759,42 @@ void rewrite_filename(std::string &filename)
 }
 
 #ifdef YOSYS_ENABLE_TCL
+
+static Tcl_Obj *json_to_tcl(Tcl_Interp *interp, const json11::Json &json)
+{
+	if (json.is_null())
+		return Tcl_NewStringObj("null", 4);
+	else if (json.is_string()) {
+		auto string = json.string_value();
+		return Tcl_NewStringObj(string.data(), string.size());
+	} else if (json.is_number()) {
+		double value = json.number_value();
+		double round_val = std::nearbyint(value);
+		if (std::isfinite(round_val) && value == round_val && value >= LONG_MIN && value < -double(LONG_MIN))
+			return Tcl_NewLongObj((long)round_val);
+		else
+			return Tcl_NewDoubleObj(value);
+	} else if (json.is_bool()) {
+		return Tcl_NewBooleanObj(json.bool_value());
+	} else if (json.is_array()) {
+		auto list = json.array_items();
+		Tcl_Obj *result = Tcl_NewListObj(list.size(), nullptr);
+		for (auto &item : list)
+			Tcl_ListObjAppendElement(interp, result, json_to_tcl(interp, item));
+		return result;
+	} else if (json.is_object()) {
+		auto map = json.object_items();
+		Tcl_Obj *result = Tcl_NewListObj(map.size() * 2, nullptr);
+		for (auto &item : map) {
+			Tcl_ListObjAppendElement(interp, result, Tcl_NewStringObj(item.first.data(), item.first.size()));
+			Tcl_ListObjAppendElement(interp, result, json_to_tcl(interp, item.second));
+		}
+		return result;
+	} else {
+		log_abort();
+	}
+}
+
 static int tcl_yosys_cmd(ClientData, Tcl_Interp *interp, int argc, const char *argv[])
 {
 	std::vector<std::string> args;
@@ -765,22 +819,73 @@ static int tcl_yosys_cmd(ClientData, Tcl_Interp *interp, int argc, const char *a
 		return TCL_OK;
 	}
 
-	if (args.size() == 1) {
-		Pass::call(yosys_get_design(), args[0]);
-		return TCL_OK;
+	yosys_get_design()->scratchpad_unset("result.json");
+	yosys_get_design()->scratchpad_unset("result.string");
+
+	bool in_repl = yosys_tcl_repl_active;
+	bool restore_log_cmd_error_throw = log_cmd_error_throw;
+
+	log_cmd_error_throw = true;
+
+	try {
+		if (args.size() == 1) {
+			Pass::call(yosys_get_design(), args[0]);
+		} else {
+			Pass::call(yosys_get_design(), args);
+		}
+	} catch (log_cmd_error_exception) {
+		if (in_repl) {
+			auto design = yosys_get_design();
+			while (design->selection_stack.size() > 1)
+				design->selection_stack.pop_back();
+			log_reset_stack();
+		}
+		Tcl_SetResult(interp, (char *)"Yosys command produced an error", TCL_STATIC);
+
+		yosys_tcl_repl_active = in_repl;
+		log_cmd_error_throw = restore_log_cmd_error_throw;
+		return TCL_ERROR;
+	} catch (...) {
+		log_error("uncaught exception during Yosys command invoked from TCL\n");
 	}
 
-	Pass::call(yosys_get_design(), args);
+	yosys_tcl_repl_active = in_repl;
+	log_cmd_error_throw = restore_log_cmd_error_throw;
+
+	auto &scratchpad = yosys_get_design()->scratchpad;
+	auto result = scratchpad.find("result.json");
+	if (result != scratchpad.end()) {
+		std::string err;
+		auto json = json11::Json::parse(result->second, err);
+		if (err.empty()) {
+			Tcl_SetObjResult(interp, json_to_tcl(interp, json));
+		} else
+			log_warning("Ignoring result.json scratchpad value due to parse error: %s\n", err.c_str());
+	} else if ((result = scratchpad.find("result.string")) != scratchpad.end()) {
+		Tcl_SetObjResult(interp, Tcl_NewStringObj(result->second.data(), result->second.size()));
+	}
+
 	return TCL_OK;
+}
+
+int yosys_tcl_iterp_init(Tcl_Interp *interp)
+{
+	if (Tcl_Init(interp)!=TCL_OK)
+		log_warning("Tcl_Init() call failed - %s\n",Tcl_ErrnoMsg(Tcl_GetErrno()));
+	Tcl_CreateCommand(interp, "yosys", tcl_yosys_cmd, NULL, NULL);
+	return TCL_OK ;
+}
+
+void yosys_tcl_activate_repl()
+{
+	yosys_tcl_repl_active = true;
 }
 
 extern Tcl_Interp *yosys_get_tcl_interp()
 {
 	if (yosys_tcl_interp == NULL) {
 		yosys_tcl_interp = Tcl_CreateInterp();
-		if (Tcl_Init(yosys_tcl_interp)!=TCL_OK)
-			log_warning("Tcl_Init() call failed - %s\n",Tcl_ErrnoMsg(Tcl_GetErrno()));
-		Tcl_CreateCommand(yosys_tcl_interp, "yosys", tcl_yosys_cmd, NULL, NULL);
+		yosys_tcl_iterp_init(yosys_tcl_interp);
 	}
 	return yosys_tcl_interp;
 }
@@ -803,6 +908,10 @@ struct TclPass : public Pass {
 		log("If any arguments are specified, these arguments are provided to the script via\n");
 		log("the standard $argc and $argv variables.\n");
 		log("\n");
+		log("Note, tcl will not recieve the output of any yosys command. If the output\n");
+		log("of the tcl commands are needed, use the yosys command 'tee -s result.string'\n");
+		log("to redirect yosys's output to the 'result.string' scratchpad value.\n");
+		log("\n");
 	}
 	void execute(std::vector<std::string> args, RTLIL::Design *) override {
 		if (args.size() < 2)
@@ -813,11 +922,13 @@ struct TclPass : public Pass {
 			script_args.push_back(Tcl_NewStringObj((*it).c_str(), (*it).size()));
 
 		Tcl_Interp *interp = yosys_get_tcl_interp();
+		Tcl_Preserve(interp);
 		Tcl_ObjSetVar2(interp, Tcl_NewStringObj("argc", 4), NULL, Tcl_NewIntObj(script_args.size()), 0);
 		Tcl_ObjSetVar2(interp, Tcl_NewStringObj("argv", 4), NULL, Tcl_NewListObj(script_args.size(), script_args.data()), 0);
 		Tcl_ObjSetVar2(interp, Tcl_NewStringObj("argv0", 5), NULL, Tcl_NewStringObj(args[1].c_str(), args[1].size()), 0);
 		if (Tcl_EvalFile(interp, args[1].c_str()) != TCL_OK)
 			log_cmd_error("TCL interpreter returned an error: %s\n", Tcl_GetStringResult(interp));
+		Tcl_Release(interp);
 	}
 } TclPass;
 #endif
@@ -895,6 +1006,35 @@ std::string proc_self_dirname()
 std::string proc_self_dirname()
 {
 	return "/";
+}
+#elif defined(__OpenBSD__)
+char yosys_path[PATH_MAX];
+char *yosys_argv0;
+
+std::string proc_self_dirname(void)
+{
+	char buf[PATH_MAX + 1] = "", *path, *p;
+	// if case argv[0] contains a valid path, return it
+	if (strlen(yosys_path) > 0) {
+		p = strrchr(yosys_path, '/');
+		snprintf(buf, sizeof buf, "%*s/", (int)(yosys_path - p), yosys_path);
+		return buf;
+	}
+	// if argv[0] does not, reconstruct the path out of $PATH
+	path = strdup(getenv("PATH"));
+	if (!path)
+		log_error("getenv(\"PATH\") failed: %s\n",  strerror(errno));
+	for (p = strtok(path, ":"); p; p = strtok(NULL, ":")) {
+		snprintf(buf, sizeof buf, "%s/%s", p, yosys_argv0);
+		if (access(buf, X_OK) == 0) {
+			*(strrchr(buf, '/') + 1) = '\0';
+			free(path);
+			return buf;
+		}
+	}
+	free(path);
+	log_error("Can't determine yosys executable path\n.");
+	return NULL;
 }
 #else
 	#error "Don't know how to determine process executable base path!"
@@ -1318,8 +1458,12 @@ void shell(RTLIL::Design *design)
 		if ((command = fgets(command_buffer, 4096, stdin)) == NULL)
 			break;
 #endif
-		if (command[strspn(command, " \t\r\n")] == 0)
+		if (command[strspn(command, " \t\r\n")] == 0) {
+#if defined(YOSYS_ENABLE_READLINE) || defined(YOSYS_ENABLE_EDITLINE)
+			free(command);
+#endif
 			continue;
+		}
 #if defined(YOSYS_ENABLE_READLINE) || defined(YOSYS_ENABLE_EDITLINE)
 		add_history(command);
 #endif
@@ -1341,10 +1485,17 @@ void shell(RTLIL::Design *design)
 			log_reset_stack();
 		}
 		design->check();
+#if defined(YOSYS_ENABLE_READLINE) || defined(YOSYS_ENABLE_EDITLINE)
+		if (command)
+			free(command);
+#endif
 	}
 	if (command == NULL)
 		printf("exit\n");
-
+#if defined(YOSYS_ENABLE_READLINE) || defined(YOSYS_ENABLE_EDITLINE)
+	else
+		free(command);
+#endif
 	recursion_counter--;
 	log_cmd_error_throw = false;
 }
