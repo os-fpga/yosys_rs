@@ -39,6 +39,10 @@
 #include <string.h>
 #include <limits.h>
 #include <errno.h>
+#ifndef __STDC_FORMAT_MACROS
+#  define __STDC_FORMAT_MACROS
+#endif
+#include <inttypes.h>
 
 #if defined (__linux__) || defined(__FreeBSD__)
 #  include <sys/resource.h>
@@ -204,6 +208,18 @@ void signalHandler(int sigNum) {
 
 	exit(sigNum);
 }
+#if defined(__OpenBSD__)
+namespace Yosys {
+extern char *yosys_argv0;
+extern char yosys_path[PATH_MAX];
+};
+#endif
+#ifdef YOSYS_ENABLE_TCL
+namespace Yosys {
+	extern int yosys_tcl_iterp_init(Tcl_Interp *interp);
+	extern void yosys_tcl_activate_repl();
+};
+#endif
 
 int main(int argc, char **argv)
 {
@@ -220,6 +236,7 @@ int main(int argc, char **argv)
 	std::string scriptfile = "";
 	std::string depsfile = "";
 	std::string topmodule = "";
+	std::string perffile = "";
 	bool scriptfile_tcl = false;
 	bool print_banner = true;
 	bool print_stats = true;
@@ -363,7 +380,7 @@ int main(int argc, char **argv)
 	}
 
 	int opt;
-	while ((opt = getopt(argc, argv, "MXAQTVSgm:f:Hh:b:o:p:l:L:qv:tds:c:W:w:e:r:D:P:E:x:")) != -1)
+	while ((opt = getopt(argc, argv, "MXAQTVSgm:f:Hh:b:o:p:l:L:qv:tds:c:W:w:e:r:D:P:E:x:B:")) != -1)
 	{
 		switch (opt)
 		{
@@ -498,6 +515,9 @@ int main(int argc, char **argv)
 		case 'x':
 			log_experimentals_ignored.insert(optarg);
 			break;
+		case 'B':
+			perffile = optarg;
+			break;
 		default:
 			fprintf(stderr, "Run '%s -h' for help.\n", argv[0]);
 			exit(1);
@@ -514,6 +534,12 @@ int main(int argc, char **argv)
 
 	if (print_stats)
 		log_hasher = new SHA1;
+
+#if defined(__OpenBSD__)
+	// save the executable origin for proc_self_dirname()
+	yosys_argv0 = argv[0];
+	realpath(yosys_argv0, yosys_path);
+#endif
 
 #if defined(__linux__)
 	// set stack size to >= 128 MB
@@ -677,6 +703,29 @@ int main(int argc, char **argv)
 						std::get<1>(*it), std::get<2>(*it).c_str(), int(std::get<0>(*it) / 1000000000));
 			}
 			log("%s\n", out_count ? "" : " no commands executed");
+		}
+		if(!perffile.empty())
+		{
+			FILE *f = fopen(perffile.c_str(), "wt");
+			if (f == nullptr)
+				log_error("Can't open performance log file for writing: %s\n", strerror(errno));
+
+			fprintf(f, "{\n");
+			fprintf(f, "  \"generator\": \"%s\",\n", yosys_version_str);
+			fprintf(f, "  \"total_ns\": %" PRIu64 ",\n", total_ns);
+			fprintf(f, "  \"passes\": {");
+
+			bool first = true;
+			for (auto it = timedat.rbegin(); it != timedat.rend(); it++) {
+				if (!first)
+					fprintf(f, ",");
+				fprintf(f, "\n    \"%s\": {\n", std::get<2>(*it).c_str());
+				fprintf(f, "      \"runtime_ns\": %" PRIu64 ",\n", std::get<0>(*it));
+				fprintf(f, "      \"num_calls\": %u\n", std::get<1>(*it));
+				fprintf(f, "    }");
+				first = false;
+			}
+			fprintf(f, "\n  }\n}\n");
 		}
 	}
 

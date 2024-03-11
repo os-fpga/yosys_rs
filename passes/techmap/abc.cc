@@ -84,7 +84,9 @@
 #include "frontends/blif/blifparse.h"
 
 #ifdef YOSYS_LINK_ABC
-extern "C" int Abc_RealMain(int argc, char *argv[]);
+namespace abc {
+	int Abc_RealMain(int argc, char *argv[]);
+}
 #endif
 
 USING_YOSYS_NAMESPACE
@@ -832,15 +834,15 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 	log_header(design, "Extracting gate netlist of module `%s' to `%s/input.blif'..\n",
 			module->name.c_str(), replace_tempdir(tempdir_name, tempdir_name, show_tempdir).c_str());
 
-	std::string abc_script = stringf("read_blif %s/input.blif; ", tempdir_name.c_str());
+	std::string abc_script = stringf("read_blif \"%s/input.blif\"; ", tempdir_name.c_str());
 
 	if (!liberty_files.empty() || !genlib_files.empty()) {
 		for (std::string liberty_file : liberty_files)
-			abc_script += stringf("read_lib -w %s; ", liberty_file.c_str());
+			abc_script += stringf("read_lib -w \"%s\"; ", liberty_file.c_str());
 		for (std::string liberty_file : genlib_files)
-			abc_script += stringf("read_library %s; ", liberty_file.c_str());
+			abc_script += stringf("read_library \"%s\"; ", liberty_file.c_str());
 		if (!constr_file.empty())
-			abc_script += stringf("read_constr -v %s; ", constr_file.c_str());
+			abc_script += stringf("read_constr -v \"%s\"; ", constr_file.c_str());
 	} else
 	if (!lut_costs.empty())
 		abc_script += stringf("read_lut %s/lutdefs.txt; ", tempdir_name.c_str());
@@ -1131,9 +1133,8 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 			fclose(f);
 		}
 
-		buffer = stringf("%s -s -f %s/abc.script 2>&1", exe_file.c_str(), tempdir_name.c_str());
-
-#ifdef NO_RAPID_SILICON
+		buffer = stringf("\"%s\" -s -f %s/abc.script 2>&1", exe_file.c_str(), tempdir_name.c_str());
+#ifdef NO_RAPID_SILICON		
 		log("Running ABC command: %s\n", replace_tempdir(buffer, tempdir_name, show_tempdir).c_str());
 #endif
 
@@ -1149,7 +1150,7 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 		abc_argv[2] = strdup("-f");
 		abc_argv[3] = strdup(tmp_script_name.c_str());
 		abc_argv[4] = 0;
-		int ret = Abc_RealMain(4, abc_argv);
+		int ret = abc::Abc_RealMain(4, abc_argv);
 		free(abc_argv[0]);
 		free(abc_argv[1]);
 		free(abc_argv[2]);
@@ -1609,7 +1610,8 @@ struct AbcPass : public Pass {
 		log("           NMUX, AOI3, OAI3, AOI4, OAI4.\n");
 		log("        (The NOT gate is always added to this list automatically.)\n");
 		log("\n");
-		log("        The following aliases can be used to reference common sets of gate types:\n");
+		log("        The following aliases can be used to reference common sets of gate\n");
+		log("        types:\n");
 		log("          simple: AND OR XOR MUX\n");
 		log("          cmos2:  NAND NOR\n");
 		log("          cmos3:  NAND NOR AOI3 OAI3\n");
@@ -1653,8 +1655,8 @@ struct AbcPass : public Pass {
 		log("\n");
 		log("    -dress\n");
 		log("        run the 'dress' command after all other ABC commands. This aims to\n");
-		log("        preserve naming by an equivalence check between the original and post-ABC\n");
-		log("        netlists (experimental).\n");
+		log("        preserve naming by an equivalence check between the original and\n");
+		log("        post-ABC netlists (experimental).\n");
 		log("\n");
 		log("When no target cell library is specified the Yosys standard cell library is\n");
 		log("loaded into ABC before the ABC script is executed.\n");

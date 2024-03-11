@@ -826,7 +826,7 @@ struct HierarchyPass : public Pass {
 		size_t argidx;
 		for (argidx = 1; argidx < args.size(); argidx++)
 		{
-			if (args[argidx] == "-generate" && !flag_check && !flag_simcheck && !top_mod) {
+			if (args[argidx] == "-generate" && !flag_check && !flag_simcheck && !flag_smtcheck && !top_mod) {
 				generate_mode = true;
 				log("Entering generate mode.\n");
 				while (++argidx < args.size()) {
@@ -871,6 +871,10 @@ struct HierarchyPass : public Pass {
 			}
 			if (args[argidx] == "-simcheck") {
 				flag_simcheck = true;
+				continue;
+			}
+			if (args[argidx] == "-smtcheck") {
+				flag_smtcheck = true;
 				continue;
 			}
 			if (args[argidx] == "-purge_lib") {
@@ -1054,6 +1058,7 @@ struct HierarchyPass : public Pass {
 			if (tmp_top_mod != NULL) {
 				if (tmp_top_mod != top_mod){
 					top_mod = tmp_top_mod;
+					top_mod->attributes[ID::initial_top] = RTLIL::Const(1);
 					did_something = true;
 				}
 			}

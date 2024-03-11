@@ -440,6 +440,21 @@ namespace RTLIL
 		}
 	};
 
+	static inline std::string encode_filename(const std::string &filename)
+	{
+		std::stringstream val;
+		if (!std::any_of(filename.begin(), filename.end(), [](char c) { 
+			return static_cast<unsigned char>(c) < 33 || static_cast<unsigned char>(c) > 126; 
+		})) return filename;
+		for (unsigned char const c : filename) {
+			if (c < 33 || c > 126)
+				val << stringf("$%02x", c);
+			else 
+				val << c;
+		}
+		return val.str();
+	}
+
 	// see calc.cc for the implementation of this functions
 	RTLIL::Const const_not         (const RTLIL::Const &arg1, const RTLIL::Const &arg2, bool signed1, bool signed2, int result_len);
 	RTLIL::Const const_and         (const RTLIL::Const &arg1, const RTLIL::Const &arg2, bool signed1, bool signed2, int result_len);
@@ -1374,6 +1389,8 @@ public:
 			bool arst_value = false, bool en_polarity = true, bool arst_polarity = true, const std::string &src = "");
 	RTLIL::Cell* addDlatchsrGate  (RTLIL::IdString name, const RTLIL::SigSpec &sig_en, const RTLIL::SigSpec &sig_set, const RTLIL::SigSpec &sig_clr,
 			RTLIL::SigSpec sig_d, const RTLIL::SigSpec &sig_q, bool en_polarity = true, bool set_polarity = true, bool clr_polarity = true, const std::string &src = "");
+
+	RTLIL::Cell* addAnyinit(RTLIL::IdString name, const RTLIL::SigSpec &sig_d, const RTLIL::SigSpec &sig_q, const std::string &src = "");
 
 	// The methods without the add* prefix create a cell and an output signal. They return the newly created output signal.
 
