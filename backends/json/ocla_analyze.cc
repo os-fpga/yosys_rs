@@ -50,6 +50,7 @@ PRIVATE_NAMESPACE_BEGIN
 #define MAXIMUM_SUPPORTED_PROBE_CORE 15
 #define AXILite_SINGLE_BUS_SIGNALS 152
 #define AXI4_SINGLE_BUS_SIGNALS 250
+#define DUMP_RTLIL 0
 
 #if USE_LOCAL_GEN_STRING
 std::string gen_string(const char* format_string, ...) {
@@ -85,6 +86,13 @@ std::string gen_string(const char* format_string, ...) {
 #endif
 
 void post_msg(std::ofstream& json, int space, std::string string) {
+#if 0
+  printf("OCLA Debug: ");
+  for (int i = 0; i < space; i++) {
+    printf("  ");
+  }
+  printf("%s\n", string.c_str());
+#endif
   json << "    \"";
   while (space) {
     json << "  ";
@@ -299,7 +307,7 @@ struct MODULE_IP {
 
 /*
   OCLA IP derived MODULE_IP
-    Beside the 3 essential paramters, thiss IP need more parameter information
+    Beside the 3 essential paramters, this IP need more parameter information
 */
 struct OCLA_MODULE : MODULE_IP {
   OCLA_MODULE(std::string n) : MODULE_IP(n) {
@@ -413,6 +421,11 @@ struct OCLA_DEBUG_SUBSYSTEM_MODULE : MODULE_IP {
       params[gen_string("\\IF%02d_Probes", i + 1)] =
           PARAM_INFO(&ip_probe_info[i], PARAM_IS_UINT64);
     }
+    // EIO
+    params["\\EIO_Enable"] = PARAM_INFO(&eio_enable);
+    params["\\EIO_BaseAddress"] = PARAM_INFO(&eio_address);
+    params["\\Input_Probe_Width"] = PARAM_INFO(&eio_in_width);
+    params["\\Output_Probe_Width"] = PARAM_INFO(&eio_out_width);
   }
   /*
     This function to determine if the detected parameter meet the requirement
@@ -420,7 +433,9 @@ struct OCLA_DEBUG_SUBSYSTEM_MODULE : MODULE_IP {
   bool check_type(std::ofstream& json) {
     bool status = false;
     if (type == "OCLA") {
-      if (mode == "NATIVE") {
+      if (no_probes == 0 && cores == 0 && eio_enable) {
+        status = true;
+      } else if (mode == "NATIVE") {
         if (no_probes > 0 && cores > 0 && no_probes >= cores &&
             cores <= MAXIMUM_SUPPORTED_PROBE_CORE) {
           status = true;
@@ -450,6 +465,7 @@ struct OCLA_DEBUG_SUBSYSTEM_MODULE : MODULE_IP {
       }
       JSON_POST_MSG(2, "Cores: %d", cores);
       JSON_POST_MSG(2, "No_Probes: %d", no_probes);
+      JSON_POST_MSG(2, "EIO_Enable: %d", eio_enable);
     }
     return status;
   }
@@ -581,6 +597,55 @@ struct OCLA_DEBUG_SUBSYSTEM_MODULE : MODULE_IP {
     }
     return status;
   }
+  bool finalize(std::ofstream& json, int space) {
+    bool status = true;
+    JSON_POST_MSG(space, "Final checking EIO");
+    if (eio_enable) {
+      if (eio_in_width != 0 || eio_out_width != 0) {
+        uint32_t total_s = 0;
+        // probes_in
+        for (auto& s : eio_probes_in) {
+          total_s += s.width;
+        }
+        if (total_s != eio_in_width) {
+          status = false;
+          JSON_POST_MSG(space + 1,
+                        "Error: EIO has invalid total input signal(s) bus size "
+                        "%d (Input_Probe_Width %d)",
+                        total_s, eio_in_width);
+        }
+        total_s = 0;
+        // probes_out
+        for (auto& s : eio_probes_out) {
+          total_s += s.width;
+        }
+        if (total_s != eio_out_width) {
+          status = false;
+          JSON_POST_MSG(
+              space + 1,
+              "Error: EIO has invalid total output signal(s) bus size "
+              "%d (Output_Probe_Width %d)",
+              total_s, eio_out_width);
+        }
+      } else {
+        status = false;
+        JSON_POST_MSG(space + 1,
+                      "Error: EIO is enabled but both Input_Probe_Width and "
+                      "Output_Probe_Width are 0");
+      }
+    } else {
+      if (eio_in_width == 0 && eio_out_width == 0) {
+        JSON_POST_MSG(space + 1, "Not enabled. Skip checking");
+      } else {
+        status = false;
+        JSON_POST_MSG(space + 1,
+                      "Error: EIO is not enabled but found "
+                      "Input_Probe_Width=%d and Output_Probe_Width=%d",
+                      eio_in_width, eio_out_width);
+      }
+    }
+    return status;
+  }
   std::string mode = "";
   std::string axi_type = "";
   std::string sampling_clk = "";
@@ -594,6 +659,13 @@ struct OCLA_DEBUG_SUBSYSTEM_MODULE : MODULE_IP {
   uint32_t axi_core_address = 0;
   PROBE2CORE_PARAM_INFO probe_to_core_map[MAXIMUM_SUPPORTED_PROBE_CORE];
   uint32_t calculated_ip_core_width[MAXIMUM_SUPPORTED_PROBE_CORE] = {0};
+  // EIO Support
+  uint32_t eio_enable = 0;
+  uint32_t eio_address = 0;
+  uint32_t eio_in_width = 0;
+  uint32_t eio_out_width = 0;
+  std::vector<OCLA_SIGNAL> eio_probes_in;
+  std::vector<OCLA_SIGNAL> eio_probes_out;
 };
 
 class OCLA_Analyzer {
@@ -606,7 +678,6 @@ class OCLA_Analyzer {
   */
   static void analyze(RTLIL::Design* design, std::ofstream& json) {
     printf("************************************\n");
-    printf("************************************\n");
     json << "{\n  \"messages\" : [\n";
     JSON_POST_MSG(0, "Start of OCLA Analysis");
     if (design->top_module() == nullptr) {
@@ -616,6 +687,7 @@ class OCLA_Analyzer {
       json.close();
       log_error("Cannot find top module\n");
     }
+    bool status = false;
     uint32_t ocla_count = 0;
     std::string cmd = "";
     std::string ocla_debug_subsystem_instantiator = "";
@@ -623,17 +695,36 @@ class OCLA_Analyzer {
     std::vector<OCLA_MODULE*> ocla_modules;
     std::vector<OCLA_DEBUG_SUBSYSTEM_MODULE*> ocla_debug_subsystem_modules;
     std::vector<std::string> ocla_instantiator_names;
+    
+#if DUMP_RTLIL
+    cmd = "write_rtlil ocla.pre.rtlil";
+    JSON_POST_MSG(0, "Run command: %s", cmd.c_str());
+    run_pass(cmd.c_str(), design);
+#endif
+
     // Step 1: Get all the OCLA and OCLA Debug Subsystem IPs
     get_modules(design, ocla_modules, ocla_debug_subsystem_modules, json);
 
     // Step 2: Check the detected IP counts
-    //    a. User can instantiate as many OCLA instances
-    //    b. They are all instantiated by OCLA Debug Subsystem
-    if (ocla_modules.size() == 0 || ocla_debug_subsystem_modules.size() != 1) {
-      JSON_POST_MSG(0,
-                    "Warning/Error: OCLA module count=%ld, OCLA Debug "
-                    "Subsystem module count=%ld",
-                    ocla_modules.size(), ocla_debug_subsystem_modules.size());
+    //    a. User can instantiate as many OCLA instances (15 MAX)
+    //
+    //        OR
+    //
+    //    b. User can instantiate EIO
+    //    c. They are all instantiated by OCLA Debug Subsystem
+    // SUBSYSTEM count must be 1
+    if (ocla_debug_subsystem_modules.size() != 1) {
+      JSON_POST_MSG(0, "Warning/Error: OCLA Debug Subsystem module count=%ld",
+                    ocla_debug_subsystem_modules.size());
+      goto ANALYZE_MSG_END;
+    }
+
+    // EIO must be enabled or there must be OCLA module
+    if (!ocla_debug_subsystem_modules[0]->eio_enable &&
+        ocla_modules.size() == 0) {
+      JSON_POST_MSG(0, "Warning/Error: EIO_Enable=%d and OCLA module count=%ld",
+                    ocla_debug_subsystem_modules[0]->eio_enable,
+                    ocla_modules.size());
       goto ANALYZE_MSG_END;
     }
 
@@ -655,19 +746,21 @@ class OCLA_Analyzer {
     }
 
     // Step 5: Make sure we successfully grab at least 1 instantiator
-    if (ocla_instantiator_names.size() == 0) {
+    if (ocla_modules.size() > 0 && ocla_instantiator_names.size() == 0) {
       JSON_POST_MSG(0, "Error: Does not find any OCLA instantiator");
       goto ANALYZE_MSG_END;
     }
 
     // Step 6: Set the last OCLA IP as axi
-    if (ocla_debug_subsystem_modules[0]->mode == "AXI" ||
-        ocla_debug_subsystem_modules[0]->mode == "NATIVE_AXI") {
+    if (ocla_modules.size() > 0 &&
+        (ocla_debug_subsystem_modules[0]->mode == "AXI" ||
+         ocla_debug_subsystem_modules[0]->mode == "NATIVE_AXI")) {
       ocla_modules.back()->is_axi = true;
     }
 
     // Step 7: Match OCLA instantiator
-    if (!sanity_check(ocla_debug_subsystem_modules[0], ocla_modules,
+    if (ocla_modules.size() > 0 &&
+        !sanity_check(ocla_debug_subsystem_modules[0], ocla_modules,
                       ocla_instantiator_names, json)) {
       JSON_POST_MSG(0, "Error: Sanity check fail");
       goto ANALYZE_MSG_END;
@@ -694,26 +787,47 @@ class OCLA_Analyzer {
     cmd = "flatten";
     JSON_POST_MSG(0, "Run command: %s", cmd.c_str());
     run_pass(cmd.c_str(), design);
-#if 0
-    cmd = "write_rtlil ocla.rtlil";
+#if DUMP_RTLIL
+    cmd = "write_rtlil ocla.post.rtlil";
     JSON_POST_MSG(0, "Run command: %s", cmd.c_str());
     run_pass(cmd.c_str(), design);
 #endif
 
     // Step 9: Once the flatten the design, start to grab all the signals
     // information
-    if (!get_ocla_signals(design->top_module(),
-                          ocla_debug_subsystem_modules[0]->mode == "NATIVE"
-                              ? "NATIVE"
-                              : ocla_debug_subsystem_modules[0]->axi_type,
-                          ocla_debug_subsystem_modules[0]->no_axi_bus,
+    if (!get_ocla_signals(design->top_module(), ocla_debug_subsystem_modules[0],
                           ocla_modules, ocla_debug_subsystem_instantiator,
                           json)) {
       JSON_POST_MSG(0, "Error: Fail to get probe signals");
       goto ANALYZE_MSG_END;
     }
 
-    // Step 10: Loop through the instantiator that we gathered so far and
+    // Step 10: Perform final validation on EIO signals
+    if (ocla_debug_subsystem_modules[0]->finalize(json, 1)) {
+      if (ocla_debug_subsystem_modules[0]->eio_enable) {
+        if (ocla_debug_subsystem_modules[0]->eio_probes_in.size()) {
+          JSON_POST_MSG(2, "probes_in:");
+          for (auto& sig : ocla_debug_subsystem_modules[0]->eio_probes_in) {
+            JSON_POST_MSG(3, "--> %s", sig.fullname.c_str());
+            JSON_POST_MSG(4, ": %s (width=%d, offset=%d)", sig.name.c_str(),
+                          sig.width, sig.offset);
+          }
+        }
+        if (ocla_debug_subsystem_modules[0]->eio_probes_out.size()) {
+          JSON_POST_MSG(2, "probes_out:");
+          for (auto& sig : ocla_debug_subsystem_modules[0]->eio_probes_out) {
+            JSON_POST_MSG(3, "--> %s", sig.fullname.c_str());
+            JSON_POST_MSG(4, ": %s (width=%d, offset=%d)", sig.name.c_str(),
+                          sig.width, sig.offset);
+          }
+        }
+      }
+    } else {
+      JSON_POST_MSG(2, "Error: Disqualify EIO");
+      goto ANALYZE_MSG_END;
+    }
+
+    // Step 11: Loop through the instantiator that we gathered so far and
     // perform final validation
     for (auto& o : ocla_modules) {
       JSON_POST_MSG(1, "Module: %s", o->name.c_str());
@@ -729,52 +843,80 @@ class OCLA_Analyzer {
         ocla_count++;
       } else {
         JSON_POST_MSG(3, "Error: Disqualify this module");
-        ocla_count = 0;
-        break;
+        goto ANALYZE_MSG_END;
       }
     }
+    status = true;
+
   ANALYZE_MSG_END:
     json << "    \"End of OCLA Analysis\"\n  ]";
 
-    // Step 11: There is no error detected in all OCLA instance, then we dump
+    // Step 12: There is no error detected in all OCLA instance, then we dump
     // those information is JSON file
-    if (ocla_count) {
+    if (status) {
+      json << ",\n  \"eio\" : {\n";
+      if (ocla_debug_subsystem_modules[0]->eio_enable) {
+        json << gen_string("    \"addr\" : %d,",
+                           ocla_debug_subsystem_modules[0]->eio_address)
+                    .c_str();
+        json << gen_string("\n    \"Input_Probe_Width\" : %d,",
+                           ocla_debug_subsystem_modules[0]->eio_in_width)
+                    .c_str();
+        json << gen_string("\n    \"Output_Probe_Width\" : %d",
+                           ocla_debug_subsystem_modules[0]->eio_out_width)
+                    .c_str();
+        json_write_signals("probes_in",
+                           ocla_debug_subsystem_modules[0]->eio_probes_in,
+                           "    ", json);
+        json_write_signals("probes_out",
+                           ocla_debug_subsystem_modules[0]->eio_probes_out,
+                           "    ", json);
+        json << "\n";
+      }
+      json << "  }";
+    }
+    if (status) {
       json << ",\n  \"ocla\" : [\n";
-      uint32_t index = 0;
-      for (auto& o : ocla_modules) {
-        json << "    {\n", json_write_param(o, json, 3);
-        json << gen_string(",\n      \"addr\" : %d", o->base_address).c_str();
-        json << gen_string(",\n      \"probe_info\" : [\n").c_str();
-        size_t order_index = 0;
-        for (auto& p : o->probe_order) {
-          json << "        {\n";
-          json << gen_string("          \"index\" : %d,\n", p).c_str();
-          json << gen_string("          \"offset\" : %d,\n",
-                             ocla_debug_subsystem_modules[0]
-                                 ->probe_to_core_map[p]
-                                 .offset)
-                      .c_str();
-          json << gen_string("          \"width\" : %d\n",
-                             ocla_debug_subsystem_modules[0]->ip_probe_width[p])
-                      .c_str();
-          json << "        }";
-          order_index++;
-          if (order_index < o->probe_order.size()) {
-            json << ",\n";
-          } else {
-            json << "\n";
+      if (ocla_count > 0) {
+        uint32_t index = 0;
+        for (auto& o : ocla_modules) {
+          json << "    {\n", json_write_param(o, json, 3);
+          json << gen_string(",\n      \"addr\" : %d", o->base_address).c_str();
+          json << gen_string(",\n      \"probe_info\" : [\n").c_str();
+          size_t order_index = 0;
+          for (auto& p : o->probe_order) {
+            json << "        {\n";
+            json << gen_string("          \"index\" : %d,\n", p).c_str();
+            json << gen_string("          \"offset\" : %d,\n",
+                               ocla_debug_subsystem_modules[0]
+                                   ->probe_to_core_map[p]
+                                   .offset)
+                        .c_str();
+            json << gen_string(
+                        "          \"width\" : %d\n",
+                        ocla_debug_subsystem_modules[0]->ip_probe_width[p])
+                        .c_str();
+            json << "        }";
+            order_index++;
+            if (order_index < o->probe_order.size()) {
+              json << ",\n";
+            } else {
+              json << "\n";
+            }
           }
-        }
-        json << gen_string("      ]").c_str();
-        json_write_signals("probes", o->probes, json);
-        index++;
-        if (index < ocla_count) {
-          json << "    },\n";
-        } else {
-          json << "    }\n";
+          json << gen_string("      ]").c_str();
+          json_write_signals("probes", o->probes, "      ", json);
+          index++;
+          if (index < ocla_count) {
+            json << "\n    },\n";
+          } else {
+            json << "\n    }\n";
+          }
         }
       }
       json << "  ]";
+    }
+    if (status) {
       json << ",\n  \"ocla_debug_subsystem\" : {\n";
       json_write_param(ocla_debug_subsystem_modules[0], json, 2);
       json << "\n  }";
@@ -1318,17 +1460,21 @@ class OCLA_Analyzer {
       b. This is done after we blackbox the instantiator and flatten the design
   */
   static bool get_ocla_signals(RTLIL::Module* top_module,
-                               const std::string& axi_type, uint32_t no_axi_bus,
+                               OCLA_DEBUG_SUBSYSTEM_MODULE* subsystem_module,
                                std::vector<OCLA_MODULE*>& modules,
                                std::string instantiator_module,
                                std::ofstream& json) {
     bool status = true;
+    const std::string axi_type = subsystem_module->mode == "NATIVE"
+                                     ? "NATIVE"
+                                     : subsystem_module->axi_type;
     JSON_POST_MSG(0, "Retrieve OCLA signals (type=%s) from instantiator: %s",
                   axi_type.c_str(), instantiator_module.c_str());
-    log_assert(modules.size());
     for (auto m : modules) {
       log_assert(m->probes.size() == 0);
     }
+    log_assert(subsystem_module->eio_probes_in.size() == 0);
+    log_assert(subsystem_module->eio_probes_out.size() == 0);
     for (auto cell : top_module->cells()) {
       if (std::string(cell->type.c_str()) == instantiator_module) {
         JSON_POST_MSG(1, "Instantiated as %s", cell->name.c_str());
@@ -1367,6 +1513,34 @@ class OCLA_Analyzer {
             }
           }
         }
+        if (status && subsystem_module->eio_enable) {
+          JSON_POST_MSG(1, "EIO connection");
+          for (auto& connection : cell->connections()) {
+            std::ostringstream wire;
+            std::string connection_name = std::string(connection.first.c_str());
+            if (connection_name == "\\probes_in") {
+              JSON_POST_MSG(2, "Found potential EIO \\probes_in connection");
+              size_t starting_count = subsystem_module->eio_probes_in.size();
+              dump_sigspec(wire, subsystem_module->eio_probes_in,
+                           connection.second);
+              JSON_POST_MSG(3, "Connected to %s", wire.str().c_str());
+              if (subsystem_module->eio_probes_in.size() <= starting_count) {
+                JSON_POST_MSG(3, "Fail to parse EIO \\probes_in connection");
+                status = false;
+              }
+            } else if (connection_name == "\\probes_out") {
+              JSON_POST_MSG(2, "Found potential EIO \\probes_out connection");
+              size_t starting_count = subsystem_module->eio_probes_out.size();
+              dump_sigspec(wire, subsystem_module->eio_probes_out,
+                           connection.second);
+              JSON_POST_MSG(3, "Connected to %s", wire.str().c_str());
+              if (subsystem_module->eio_probes_out.size() <= starting_count) {
+                JSON_POST_MSG(3, "Fail to parse EIO \\probes_out connection");
+                status = false;
+              }
+            }
+          }
+        }
       }
     }
     if (status) {
@@ -1380,132 +1554,119 @@ class OCLA_Analyzer {
             status = false;
           }
           if (status) {
+            bool no_extra_index = subsystem_module->no_axi_bus == 1;
             if (axi_type == "AXILite") {
-              for (uint32_t i = 0; i < no_axi_bus; i++) {
+              for (uint32_t i = 0; i < subsystem_module->no_axi_bus; i++) {
                 m->probes.push_back(
-                    OCLA_SIGNAL("AWADDR", 32, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("AWADDR", 32, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("AWPROT", 3, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("AWPROT", 3, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("AWVALID", 1, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("AWVALID", 1, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("AWREADY", 1, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("AWREADY", 1, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("WDATA", 32, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("WDATA", 32, i, no_extra_index));
+                m->probes.push_back(OCLA_SIGNAL("WSTRB", 4, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("WSTRB", 4, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("WVALID", 1, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("WVALID", 1, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("WREADY", 1, i, no_extra_index));
+                m->probes.push_back(OCLA_SIGNAL("BRESP", 2, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("WREADY", 1, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("BVALID", 1, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("BRESP", 2, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("BREADY", 1, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("BVALID", 1, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("ARADDR", 32, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("BREADY", 1, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("ARPROT", 3, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("ARADDR", 32, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("ARVALID", 1, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("ARPROT", 3, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("ARREADY", 1, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("ARVALID", 1, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("RDATA", 32, i, no_extra_index));
+                m->probes.push_back(OCLA_SIGNAL("RRESP", 2, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("ARREADY", 1, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("RVALID", 1, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("RDATA", 32, i, no_axi_bus == 1));
-                m->probes.push_back(
-                    OCLA_SIGNAL("RRESP", 2, i, no_axi_bus == 1));
-                m->probes.push_back(
-                    OCLA_SIGNAL("RVALID", 1, i, no_axi_bus == 1));
-                m->probes.push_back(
-                    OCLA_SIGNAL("RREADY", 1, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("RREADY", 1, i, no_extra_index));
               }
             } else {
-              for (uint32_t i = 0; i < no_axi_bus; i++) {
+              for (uint32_t i = 0; i < subsystem_module->no_axi_bus; i++) {
                 m->probes.push_back(
-                    OCLA_SIGNAL("AWADDR", 32, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("AWADDR", 32, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("AWPROT", 3, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("AWPROT", 3, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("AWVALID", 1, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("AWVALID", 1, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("AWREADY", 1, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("AWREADY", 1, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("AWBURST", 2, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("AWBURST", 2, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("AWSIZE", 3, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("AWSIZE", 3, i, no_extra_index));
+                m->probes.push_back(OCLA_SIGNAL("AWLEN", 8, i, no_extra_index));
+                m->probes.push_back(OCLA_SIGNAL("AWID", 8, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("AWLEN", 8, i, no_axi_bus == 1));
-                m->probes.push_back(OCLA_SIGNAL("AWID", 8, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("AWCACHE", 4, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("AWCACHE", 4, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("AWREGION", 4, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("AWREGION", 4, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("AWUSER", 1, i, no_extra_index));
+                m->probes.push_back(OCLA_SIGNAL("AWQOS", 4, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("AWUSER", 1, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("AWLOCK", 1, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("AWQOS", 4, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("WDATA", 32, i, no_extra_index));
+                m->probes.push_back(OCLA_SIGNAL("WSTRB", 4, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("AWLOCK", 1, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("WVALID", 1, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("WDATA", 32, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("WREADY", 1, i, no_extra_index));
+                m->probes.push_back(OCLA_SIGNAL("WID", 8, i, no_extra_index));
+                m->probes.push_back(OCLA_SIGNAL("WLAST", 1, i, no_extra_index));
+                m->probes.push_back(OCLA_SIGNAL("BRESP", 2, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("WSTRB", 4, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("BVALID", 1, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("WVALID", 1, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("BREADY", 1, i, no_extra_index));
+                m->probes.push_back(OCLA_SIGNAL("BID", 8, i, no_extra_index));
+                m->probes.push_back(OCLA_SIGNAL("BUSER", 1, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("WREADY", 1, i, no_axi_bus == 1));
-                m->probes.push_back(OCLA_SIGNAL("WID", 8, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("ARADDR", 32, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("WLAST", 1, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("ARPROT", 3, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("BRESP", 2, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("ARVALID", 1, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("BVALID", 1, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("ARREADY", 1, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("BREADY", 1, i, no_axi_bus == 1));
-                m->probes.push_back(OCLA_SIGNAL("BID", 8, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("ARBUSRT", 2, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("BUSER", 1, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("ARSIZE", 3, i, no_extra_index));
+                m->probes.push_back(OCLA_SIGNAL("ARLEN", 8, i, no_extra_index));
+                m->probes.push_back(OCLA_SIGNAL("ARID", 8, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("ARADDR", 32, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("ARCACHE", 4, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("ARPROT", 3, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("ARREGION", 4, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("ARVALID", 1, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("ARUSER", 1, i, no_extra_index));
+                m->probes.push_back(OCLA_SIGNAL("ARQOS", 4, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("ARREADY", 1, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("ARLOCK", 1, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("ARBUSRT", 2, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("RDATA", 32, i, no_extra_index));
+                m->probes.push_back(OCLA_SIGNAL("RRESP", 2, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("ARSIZE", 3, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("RREADY", 1, i, no_extra_index));
                 m->probes.push_back(
-                    OCLA_SIGNAL("ARLEN", 8, i, no_axi_bus == 1));
-                m->probes.push_back(OCLA_SIGNAL("ARID", 8, i, no_axi_bus == 1));
-                m->probes.push_back(
-                    OCLA_SIGNAL("ARCACHE", 4, i, no_axi_bus == 1));
-                m->probes.push_back(
-                    OCLA_SIGNAL("ARREGION", 4, i, no_axi_bus == 1));
-                m->probes.push_back(
-                    OCLA_SIGNAL("ARUSER", 1, i, no_axi_bus == 1));
-                m->probes.push_back(
-                    OCLA_SIGNAL("ARQOS", 4, i, no_axi_bus == 1));
-                m->probes.push_back(
-                    OCLA_SIGNAL("ARLOCK", 1, i, no_axi_bus == 1));
-                m->probes.push_back(
-                    OCLA_SIGNAL("RDATA", 32, i, no_axi_bus == 1));
-                m->probes.push_back(
-                    OCLA_SIGNAL("RRESP", 2, i, no_axi_bus == 1));
-                m->probes.push_back(
-                    OCLA_SIGNAL("RREADY", 1, i, no_axi_bus == 1));
-                m->probes.push_back(
-                    OCLA_SIGNAL("RVALID", 1, i, no_axi_bus == 1));
-                m->probes.push_back(OCLA_SIGNAL("RID", 8, i, no_axi_bus == 1));
-                m->probes.push_back(
-                    OCLA_SIGNAL("RUSER", 1, i, no_axi_bus == 1));
-                m->probes.push_back(
-                    OCLA_SIGNAL("RLAST", 1, i, no_axi_bus == 1));
+                    OCLA_SIGNAL("RVALID", 1, i, no_extra_index));
+                m->probes.push_back(OCLA_SIGNAL("RID", 8, i, no_extra_index));
+                m->probes.push_back(OCLA_SIGNAL("RUSER", 1, i, no_extra_index));
+                m->probes.push_back(OCLA_SIGNAL("RLAST", 1, i, no_extra_index));
               }
             }
           }
@@ -1516,6 +1677,14 @@ class OCLA_Analyzer {
             status = false;
           }
         }
+      }
+    }
+    if (status && subsystem_module->eio_enable) {
+      if (subsystem_module->eio_probes_in.size() == 0 &&
+          subsystem_module->eio_probes_out.size() == 0) {
+        JSON_POST_MSG(
+            2, "Fail to get any EIO \\probes_in and \\probes_out connection");
+        status = false;
       }
     }
     return status;
@@ -1557,8 +1726,10 @@ class OCLA_Analyzer {
   */
   static void json_write_signals(std::string name,
                                  std::vector<OCLA_SIGNAL>& signals,
+                                 const std::string& space,
                                  std::ofstream& json) {
-    json << gen_string(",\n      \"%s\" : [\n", name.c_str()).c_str();
+    json
+        << gen_string(",\n%s\"%s\" : [\n", space.c_str(), name.c_str()).c_str();
     size_t index = 0;
     for (auto& s : signals) {
 #if 0
@@ -1570,15 +1741,16 @@ class OCLA_Analyzer {
       if (name.size() > 0 && name[0] == '\\') {
         name = name.substr(1);
       }
-      json << gen_string("        \"%s\"", name.c_str()).c_str();
+      json << gen_string("%s  \"%s\"", space.c_str(), name.c_str()).c_str();
 #else
       if (!s.show_index) {
-        json << gen_string("        \"%s\"", s.name.c_str()).c_str();
+        json << gen_string("%s  \"%s\"", space.c_str(), s.name.c_str()).c_str();
       } else if (s.width == 1) {
-        json << gen_string("        \"%s[%d]\"", s.name.c_str(), s.offset)
+        json << gen_string("%s  \"%s[%d]\"", space.c_str(), s.name.c_str(),
+                           s.offset)
                     .c_str();
       } else {
-        json << gen_string("        \"%s[%d:%d]\"", s.name.c_str(),
+        json << gen_string("%s  \"%s[%d:%d]\"", space.c_str(), s.name.c_str(),
                            s.offset + s.width - 1, s.offset)
                     .c_str();
       }
@@ -1590,7 +1762,7 @@ class OCLA_Analyzer {
         json << ",\n";
       }
     }
-    json << "      ]\n";
+    json << space.c_str() << "]";
   }
 };
 
