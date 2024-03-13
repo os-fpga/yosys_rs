@@ -55,6 +55,15 @@ USING_YOSYS_NAMESPACE
 #include "VhdlUnits.h"
 #endif
 
+#ifdef VERIFIC_EDIF_SUPPORT
+#include "edif_file.h"
+#endif
+
+#ifdef VERIFIC_LIBERTY_SUPPORT
+#include "synlib_file.h"
+#include "SynlibGroup.h"
+#endif
+
 #include "VerificStream.h"
 #include "FileSystem.h"
 
@@ -237,6 +246,8 @@ public:
     }
 };
 
+YosysStreamCallBackHandler verific_read_cb;
+
 // ==================================================================
 
 VerificImporter::VerificImporter(bool mode_gates, bool mode_keep, bool mode_nosva, bool mode_names, bool mode_verific, bool mode_autocover, bool mode_fullinit) :
@@ -276,6 +287,36 @@ RTLIL::IdString VerificImporter::new_verific_id(Verific::DesignObj *obj)
 	return s;
 }
 
+static bool isNumber(const string& str)
+{
+	for (auto &c : str) {
+		if (std::isdigit(c) == 0) return false;
+	}
+	return true;
+}
+
+// When used as attributes or parameter values Verific constants come already processed.
+// - Real string values are already under quotes
+// - Numeric values with specified width are always converted to binary
+// - Rest of user defined values are handled as 32bit integers
+// - There could be some internal values that are strings without quotes
+//   so we check if value is all digits or not
+//
+static const RTLIL::Const verific_const(const char *value)
+{
+	std::string val = std::string(value);
+	if (val.size()>1 && val[0]=='\"' && val.back()=='\"')
+		return RTLIL::Const(val.substr(1,val.size()-2));
+	else
+		if (val.find("'b") != std::string::npos)
+			return RTLIL::Const::from_string(val.substr(val.find("'b") + 2));
+		else
+			if (isNumber(val))
+				return RTLIL::Const(std::stoi(val),32);
+			else
+				return RTLIL::Const(val);
+}
+
 void VerificImporter::import_attributes(dict<RTLIL::IdString, RTLIL::Const> &attributes, DesignObj *obj, Netlist *nl)
 {
 	MapIter mi;
@@ -288,10 +329,7 @@ void VerificImporter::import_attributes(dict<RTLIL::IdString, RTLIL::Const> &att
 	FOREACH_ATTRIBUTE(obj, mi, attr) {
 		if (attr->Key()[0] == ' ' || attr->Value() == nullptr)
 			continue;
-		std::string val = std::string(attr->Value());
-		if (val.size()>1 && val[0]=='\"' && val.back()=='\"')
-			val = val.substr(1,val.size()-2);
-		attributes[RTLIL::escape_id(attr->Key())] = RTLIL::Const(val);
+		attributes[RTLIL::escape_id(attr->Key())] = verific_const(attr->Value());
 	}
 
 	if (nl) {
@@ -1341,7 +1379,7 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 			memory->name = RTLIL::escape_id(net->Name());
 			log_assert(module->count_id(memory->name) == 0);
 			module->memories[memory->name] = memory;
-            import_attributes(memory->attributes, net, nl);
+			import_attributes(memory->attributes, net, nl);
 
 			int number_of_bits = net->Size();
 			int bits_in_word = number_of_bits;
@@ -2437,7 +2475,7 @@ void verific_import(Design *design, const std::map<std::string,std::string> &par
 		verific_params.Insert(i.first.c_str(), i.second.c_str());
 
 #ifdef YOSYSHQ_VERIFIC_EXTENSIONS
-		VerificExtensions::ElaborateAndRewrite("work", &verific_params);
+	VerificExtensions::ElaborateAndRewrite("work", &verific_params);
 #endif
 
 	if (top.empty()) {
@@ -2511,6 +2549,12 @@ void verific_import(Design *design, const std::map<std::string,std::string> &par
 #ifdef VERIFIC_VHDL_SUPPORT
 	vhdl_file::Reset();
 #endif
+#ifdef VERIFIC_EDIF_SUPPORT
+	edif_file::Reset();
+#endif
+#ifdef VERIFIC_LIBERTY_SUPPORT
+	synlib_file::Reset();
+#endif
 	Libset::Reset();
 	Message::Reset();
 	RuntimeFlags::DeleteAllFlags();
@@ -2569,6 +2613,25 @@ struct VerificPass : public Pass {
 		log("    verific {-vhdl87|-vhdl93|-vhdl2k|-vhdl2008|-vhdl} <vhdl-file>..\n");
 		log("\n");
 		log("Load the specified VHDL files into Verific.\n");
+		log("\n");
+		log("\n");
+#endif
+#ifdef VERIFIC_EDIF_SUPPORT
+		log("    verific {-edif} <edif-file>..\n");
+		log("\n");
+		log("Load the specified EDIF files into Verific.\n");
+		log("\n");
+		log("\n");
+#endif
+#ifdef VERIFIC_LIBERTY_SUPPORT
+		log("    verific {-liberty} <liberty-file>..\n");
+		log("\n");
+		log("Load the specified Liberty files into Verific.\n");
+		log("Default library when -work is not present is one specified in liberty file.\n");
+		log("To use from SystemVerilog or VHDL use -L to specify liberty library.");
+		log("\n");
+		log("    -lib\n");
+		log("        only create empty blackbox modules\n");
 		log("\n");
 		log("\n");
 #endif
@@ -2678,6 +2741,10 @@ struct VerificPass : public Pass {
 		log("  -fullinit\n");
 		log("    Keep all register initializations, even those for non-FF registers.\n");
 		log("\n");
+		log("  -cells\n");
+		log("    Import all cell definitions from Verific loaded libraries even if they are\n");
+		log("    unused in design. Useful with \"-edif\" and \"-liberty\" option.\n");
+		log("\n");
 		log("  -chparam name value \n");
 		log("    Elaborate the specified top modules (all modules when -all given) using\n");
 		log("    this parameter value. Modules on which this parameter does not exist will\n");
@@ -2744,6 +2811,45 @@ struct VerificPass : public Pass {
 		log("\n");
 	}
 #ifdef YOSYS_ENABLE_VERIFIC
+	std::string frontent_rewrite(std::vector<std::string> &args, int &argidx, std::vector<std::string> &tmp_files)
+	{
+		std::string filename = args[argidx++];
+		//Accommodate heredocs with EOT marker spaced out from "<<", e.g. "<< EOT" vs. "<<EOT"
+		if (filename == "<<" && (argidx < GetSize(args))) {
+			filename += args[argidx++];
+		}
+		if (filename.compare(0, 2, "<<") == 0) {
+			if (filename.size() <= 2)
+				log_error("Missing EOT marker in here document!\n");
+			std::string eot_marker = filename.substr(2);
+			if (Frontend::current_script_file == nullptr)
+				filename = "<stdin>";
+			std::string last_here_document;
+			while (1) {
+				std::string buffer;
+				char block[4096];
+				while (1) {
+					if (fgets(block, 4096, Frontend::current_script_file == nullptr? stdin : Frontend::current_script_file) == nullptr)
+						log_error("Unexpected end of file in here document '%s'!\n", filename.c_str());
+					buffer += block;
+					if (buffer.size() > 0 && (buffer[buffer.size() - 1] == '\n' || buffer[buffer.size() - 1] == '\r'))
+						break;
+				}
+				size_t indent = buffer.find_first_not_of(" \t\r\n");
+				if (indent != std::string::npos && buffer.compare(indent, eot_marker.size(), eot_marker) == 0)
+					break;
+				last_here_document += buffer;
+			}
+			filename = make_temp_file();
+			tmp_files.push_back(filename);
+			std::ofstream file(filename);
+			file << last_here_document;
+		} else {
+			rewrite_filename(filename);
+		}
+		return filename;
+	}
+
 	void execute(std::vector<std::string> args, RTLIL::Design *design) override
 	{
 		ieee_1735 protect;
@@ -2819,6 +2925,7 @@ struct VerificPass : public Pass {
 		const char *release_str = Message::ReleaseString();
 		time_t release_time = Message::ReleaseDate();
 		char *release_tmstr = ctime(&release_time);
+		std::vector<std::string> tmp_files;
 
 		if (release_str == nullptr)
 			release_str = "(no release string)";
@@ -2830,8 +2937,8 @@ struct VerificPass : public Pass {
 
 		int argidx = 1;
 		std::string work = "work";
-		YosysStreamCallBackHandler cb;
-		veri_file::RegisterCallBackVerificStream(&cb);
+		bool is_work_set = false;
+		veri_file::RegisterCallBackVerificStream(&verific_read_cb);
 
 		if (GetSize(args) > argidx && (args[argidx] == "-set-error" || args[argidx] == "-set-warning" ||
 				args[argidx] == "-set-info" || args[argidx] == "-set-ignore"))
@@ -2897,10 +3004,25 @@ struct VerificPass : public Pass {
 		}
 
 		veri_file::RemoveAllLOptions();
+		veri_file::AddLOption("work");
+		for (int i = argidx; i < GetSize(args); i++)
+		{
+			if (args[i] == "-work" && i+1 < GetSize(args)) {
+				++i;
+				continue;
+			}
+			if (args[i] == "-L" && i+1 < GetSize(args)) {
+				if (args[++i] == "work")
+					veri_file::RemoveAllLOptions();
+				continue;
+			}
+			break;
+		}
 		for (; argidx < GetSize(args); argidx++)
 		{
 			if (args[argidx] == "-work" && argidx+1 < GetSize(args)) {
 				work = args[++argidx];
+				is_work_set = true;
 				continue;
 			}
 			if (args[argidx] == "-L" && argidx+1 < GetSize(args)) {
@@ -3017,8 +3139,7 @@ struct VerificPass : public Pass {
 				veri_file::AddLibExt(ext.c_str());
 
 			while (argidx < GetSize(args)) {
-				std::string filename(args[argidx++]);
-				rewrite_filename(filename);
+				std::string filename = frontent_rewrite(args, argidx, tmp_files);
 				file_names.Insert(strdup(filename.c_str()));
 			}
 			if (!veri_file::AnalyzeMultipleFiles(&file_names, verilog_mode, work.c_str(), veri_file::MFCU)) {
@@ -3033,9 +3154,9 @@ struct VerificPass : public Pass {
 #ifdef VERIFIC_VHDL_SUPPORT
 		if (GetSize(args) > argidx && args[argidx] == "-vhdl87") {
 			vhdl_file::SetDefaultLibraryPath((proc_share_dirname() + "verific/vhdl_vdbs_1987").c_str());
-			for (argidx++; argidx < GetSize(args); argidx++) {
-				std::string filename(args[argidx]);
-				rewrite_filename(filename);
+			argidx++;
+			while (argidx < GetSize(args)) {
+				std::string filename = frontent_rewrite(args, argidx, tmp_files);
 				if (!vhdl_file::Analyze(filename.c_str(), work.c_str(), vhdl_file::VHDL_87))
 					log_cmd_error("Reading `%s' in VHDL_87 mode failed.\n", filename.c_str());
 			}
@@ -3045,9 +3166,9 @@ struct VerificPass : public Pass {
 
 		if (GetSize(args) > argidx && args[argidx] == "-vhdl93") {
 			vhdl_file::SetDefaultLibraryPath((proc_share_dirname() + "verific/vhdl_vdbs_1993").c_str());
-			for (argidx++; argidx < GetSize(args); argidx++) {
-				std::string filename(args[argidx]);
-				rewrite_filename(filename);
+			argidx++;
+			while (argidx < GetSize(args)) {
+				std::string filename = frontent_rewrite(args, argidx, tmp_files);
 				if (!vhdl_file::Analyze(filename.c_str(), work.c_str(), vhdl_file::VHDL_93))
 					log_cmd_error("Reading `%s' in VHDL_93 mode failed.\n", filename.c_str());
 			}
@@ -3057,9 +3178,9 @@ struct VerificPass : public Pass {
 
 		if (GetSize(args) > argidx && args[argidx] == "-vhdl2k") {
 			vhdl_file::SetDefaultLibraryPath((proc_share_dirname() + "verific/vhdl_vdbs_1993").c_str());
-			for (argidx++; argidx < GetSize(args); argidx++) {
-				std::string filename(args[argidx]);
-				rewrite_filename(filename);
+			argidx++;
+			while (argidx < GetSize(args)) {
+				std::string filename = frontent_rewrite(args, argidx, tmp_files);
 				if (!vhdl_file::Analyze(filename.c_str(), work.c_str(), vhdl_file::VHDL_2K))
 					log_cmd_error("Reading `%s' in VHDL_2K mode failed.\n", filename.c_str());
 			}
@@ -3069,9 +3190,9 @@ struct VerificPass : public Pass {
 
 		if (GetSize(args) > argidx && (args[argidx] == "-vhdl2008" || args[argidx] == "-vhdl")) {
 			vhdl_file::SetDefaultLibraryPath((proc_share_dirname() + "verific/vhdl_vdbs_2008").c_str());
-			for (argidx++; argidx < GetSize(args); argidx++) {
-				std::string filename(args[argidx]);
-				rewrite_filename(filename);
+			argidx++;
+			while (argidx < GetSize(args)) {
+				std::string filename = frontent_rewrite(args, argidx, tmp_files);
 				if (!vhdl_file::Analyze(filename.c_str(), work.c_str(), vhdl_file::VHDL_2008))
 					log_cmd_error("Reading `%s' in VHDL_2008 mode failed.\n", filename.c_str());
 			}
@@ -3079,7 +3200,54 @@ struct VerificPass : public Pass {
 			goto check_error;
 		}
 #endif
+#ifdef VERIFIC_EDIF_SUPPORT
+		if (GetSize(args) > argidx && args[argidx] == "-edif") {
+			edif_file edif;
+			argidx++;
+			while (argidx < GetSize(args)) {
+				std::string filename = frontent_rewrite(args, argidx, tmp_files);
+				if (!edif.Read(filename.c_str()))
+					log_cmd_error("Reading `%s' in EDIF mode failed.\n", filename.c_str());
+			}
+			goto check_error;
+		}
+#endif
+#ifdef VERIFIC_LIBERTY_SUPPORT
+		if (GetSize(args) > argidx && args[argidx] == "-liberty") {
+			bool flag_lib = false;
+			for (argidx++; argidx < GetSize(args); argidx++) {
+				if (args[argidx] == "-lib") {
+					flag_lib = true;
+					continue;
+				}
+				if (args[argidx].compare(0, 1, "-") == 0) {
+					cmd_error(args, argidx, "unknown option");
+					goto check_error;
+				}
+				break;
+			}
 
+			while (argidx < GetSize(args)) {
+				std::string filename = frontent_rewrite(args, argidx, tmp_files);
+				if (!synlib_file::Read(filename.c_str(), is_work_set ? work.c_str() : nullptr))
+					log_cmd_error("Reading `%s' in LIBERTY mode failed.\n", filename.c_str());
+				SynlibLibrary *lib = synlib_file::GetLastLibraryAnalyzed();
+				if (lib && flag_lib) {
+					MapIter mi ;
+					Verific::Cell *c ;
+					FOREACH_CELL_OF_LIBRARY(lib->GetLibrary(),mi,c) {
+						MapIter ni ;
+						Netlist *nl;
+						FOREACH_NETLIST_OF_CELL(c, ni, nl) {
+							if (nl)
+								nl->MakeBlackBox();
+						}
+					}
+				}
+			}
+			goto check_error;
+		}
+#endif
 		if (argidx < GetSize(args) && args[argidx] == "-pp")
 		{
 			const char* filename = nullptr;
@@ -3134,7 +3302,7 @@ struct VerificPass : public Pass {
 			bool mode_all = false, mode_gates = false, mode_keep = false;
 			bool mode_nosva = false, mode_names = false, mode_verific = false;
 			bool mode_autocover = false, mode_fullinit = false;
-			bool flatten = false, extnets = false;
+			bool flatten = false, extnets = false, mode_cells = false;
 			string dumpfile;
 			string ppfile;
 			Map parameters(STRING_HASH);
@@ -3178,6 +3346,10 @@ struct VerificPass : public Pass {
 				}
 				if (args[argidx] == "-fullinit") {
 					mode_fullinit = true;
+					continue;
+				}
+				if (args[argidx] == "-cells") {
+					mode_cells = true;
 					continue;
 				}
 				if (args[argidx] == "-chparam"  && argidx+2 < GetSize(args)) {
@@ -3297,6 +3469,28 @@ struct VerificPass : public Pass {
 				}
 				delete netlists;
 			}
+			if (mode_cells) {
+				log("Importing all cells.\n");
+				Libset *gls = Libset::Global() ;
+				MapIter it ;
+				Library *l ;
+				FOREACH_LIBRARY_OF_LIBSET(gls,it,l) {
+					MapIter mi ;
+					Verific::Cell *c ;
+					FOREACH_CELL_OF_LIBRARY(l,mi,c) {
+						if (!mode_verific && (l == Library::Primitives() || l == Library::Operators())) continue;
+						MapIter ni ;
+						if (c->NumOfNetlists() == 1) {
+							c->GetFirstNetlist()->SetName("");
+						}
+						Netlist *nl;
+						FOREACH_NETLIST_OF_CELL(c, ni, nl) {
+							if (nl)
+								nl_todo.emplace(nl->CellBaseName(), nl);
+						}
+					}
+				}
+			}
 
 			if (!verific_error_msg.empty())
 				goto check_error;
@@ -3339,6 +3533,12 @@ struct VerificPass : public Pass {
 			veri_file::Reset();
 #ifdef VERIFIC_VHDL_SUPPORT
 			vhdl_file::Reset();
+#endif
+#ifdef VERIFIC_EDIF_SUPPORT
+			edif_file::Reset();
+#endif
+#ifdef VERIFIC_LIBERTY_SUPPORT
+			synlib_file::Reset();
 #endif
 			Libset::Reset();
 			Message::Reset();
@@ -3413,6 +3613,13 @@ struct VerificPass : public Pass {
 		cmd_error(args, argidx, "Missing or unsupported mode parameter.\n");
 
 	check_error:
+		if (tmp_files.size()) {
+			log("Removing temp files.\n");
+			for(auto &fn : tmp_files) {
+				remove(fn.c_str());
+			}
+		}
+
 		if (!verific_error_msg.empty())
 			log_error("%s\n", verific_error_msg.c_str());
 
@@ -3452,6 +3659,21 @@ struct ReadPass : public Pass {
 		log("\n");
 		log("\n");
 #endif
+#ifdef VERIFIC_EDIF_SUPPORT
+		log("    read {-edif} <edif-file>..\n");
+		log("\n");
+		log("Load the specified EDIF files. (Requires Verific.)\n");
+		log("\n");
+		log("\n");
+#endif
+		log("    read {-liberty} <liberty-file>..\n");
+		log("\n");
+		log("Load the specified Liberty files.\n");
+		log("\n");
+		log("    -lib\n");
+		log("        only create empty blackbox modules\n");
+		log("\n");
+		log("\n");
 		log("    read {-f|-F} <command-file>\n");
 		log("\n");
 		log("Load and execute the specified command file. (Requires Verific.)\n");
@@ -3535,7 +3757,7 @@ struct ReadPass : public Pass {
 		}
 
 #ifdef VERIFIC_VHDL_SUPPORT
-		if (args[1] == "-vhdl87" || args[1] == "-vhdl93" || args[1] == "-vhdl2k" || args[1] == "-vhdl2008" || args[1] == "-vhdl2019" || args[1] == "-vhdl") {
+		if (args[1] == "-vhdl87" || args[1] == "-vhdl93" || args[1] == "-vhdl2k" || args[1] == "-vhdl2008" || args[1] == "-vhdl") {
 			if (use_verific) {
 				args[0] = "verific";
 				Pass::call(design, args);
@@ -3545,6 +3767,26 @@ struct ReadPass : public Pass {
 			return;
 		}
 #endif
+#ifdef VERIFIC_EDIF_SUPPORT
+		if (args[1] == "-edif") {
+			if (use_verific) {
+				args[0] = "verific";
+				Pass::call(design, args);
+			} else {
+				cmd_error(args, 1, "This version of Yosys is built without Verific support.\n");
+			}
+			return;
+		}
+#endif
+		if (args[1] == "-liberty") {
+			if (use_verific) {
+				args[0] = "verific";
+			} else {
+				args[0] = "read_liberty";
+			}
+			Pass::call(design, args);
+			return;
+		}
 		if (args[1] == "-f" || args[1] == "-F") {
 			if (use_verific) {
 				args[0] = "verific";

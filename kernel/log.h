@@ -393,6 +393,11 @@ void log_dump_val_worker(RTLIL::IdString v);
 void log_dump_val_worker(RTLIL::SigSpec v);
 void log_dump_val_worker(RTLIL::State v);
 
+template<typename K, typename T, typename OPS> static inline void log_dump_val_worker(dict<K, T, OPS> &v);
+template<typename K, typename OPS> static inline void log_dump_val_worker(pool<K, OPS> &v);
+template<typename K> static inline void log_dump_val_worker(std::vector<K> &v);
+template<typename T> static inline void log_dump_val_worker(T *ptr);
+
 template<typename K, typename T, typename OPS>
 static inline void log_dump_val_worker(dict<K, T, OPS> &v) {
 	log("{");
@@ -409,6 +414,18 @@ static inline void log_dump_val_worker(dict<K, T, OPS> &v) {
 
 template<typename K, typename OPS>
 static inline void log_dump_val_worker(pool<K, OPS> &v) {
+	log("{");
+	bool first = true;
+	for (auto &it : v) {
+		log(first ? " " : ", ");
+		log_dump_val_worker(it);
+		first = false;
+	}
+	log(" }");
+}
+
+template<typename K>
+static inline void log_dump_val_worker(std::vector<K> &v) {
 	log("{");
 	bool first = true;
 	for (auto &it : v) {

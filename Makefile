@@ -18,11 +18,12 @@ ENABLE_READLINE := 1
 ENABLE_EDITLINE := 0
 ENABLE_GHDL := 0
 ENABLE_VERIFIC := 0
+ENABLE_VERIFIC_EDIF := 0
+ENABLE_VERIFIC_LIBERTY := 0
 DISABLE_VERIFIC_EXTENSIONS := 0
 DISABLE_VERIFIC_VHDL := 0
 ENABLE_COVER := 1
 ENABLE_LIBYOSYS := 0
-ENABLE_PROTOBUF := 0
 ENABLE_ZLIB := 1
 
 PRODUCTION_BUILD := 0
@@ -60,6 +61,9 @@ PROGRAM_PREFIX :=
 OS := $(shell uname -s)
 PREFIX ?= /usr/local
 INSTALL_SUDO :=
+ifneq ($(filter MINGW%,$(OS)),)
+OS := MINGW
+endif
 
 ifneq ($(wildcard Makefile.conf),)
 include Makefile.conf
@@ -98,6 +102,13 @@ CXXFLAGS := $(CXXFLAGS) -DYOSYS_VERIFIC
 endif
 LDLIBS := $(LDLIBS) -lstdc++ -lm
 PLUGIN_LDFLAGS :=
+PLUGIN_LDLIBS :=
+EXE_LDFLAGS :=
+ifeq ($(OS), MINGW)
+EXE_LDFLAGS := -Wl,--export-all-symbols -Wl,--out-implib,libyosys_exe.a
+PLUGIN_LDFLAGS += -L"$(LIBDIR)"
+PLUGIN_LDLIBS := -lyosys_exe
+endif
 
 PKG_CONFIG ?= pkg-config
 SED ?= sed
@@ -138,7 +149,7 @@ LDLIBS += -lrt
 endif
 endif
 
-YOSYS_VER := 0.21
+YOSYS_VER := 0.23
 
 # Note: We arrange for .gitcommit to contain the (short) commit hash in
 # tarballs generated with git-archive(1) using .gitattributes. The git repo
@@ -443,8 +454,11 @@ endif
 
 ifeq ($(ENABLE_PLUGINS),1)
 CXXFLAGS += $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) $(PKG_CONFIG) --silence-errors --cflags libffi) -DYOSYS_ENABLE_PLUGINS
+ifeq ($(OS), MINGW)
+CXXFLAGS += -Ilibs/dlfcn-win32
+endif
 LDLIBS += $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) $(PKG_CONFIG) --silence-errors --libs libffi || echo -lffi)
-ifneq ($(OS), FreeBSD)
+ifneq ($(OS), $(filter $(OS),FreeBSD OpenBSD NetBSD MINGW))
 LDLIBS += -ldl
 endif
 endif
@@ -537,6 +551,14 @@ ifneq ($(wildcard $(VERIFIC_DIR)/vhdl),)
 VERIFIC_COMPONENTS += vhdl
 endif
 endif
+ifeq ($(ENABLE_VERIFIC_EDIF),1)
+VERIFIC_COMPONENTS += edif
+CXXFLAGS += -DVERIFIC_EDIF_SUPPORT
+endif
+ifeq ($(ENABLE_VERIFIC_LIBERTY),1)
+VERIFIC_COMPONENTS += synlib
+CXXFLAGS += -DVERIFIC_LIBERTY_SUPPORT
+endif
 ifneq ($(DISABLE_VERIFIC_EXTENSIONS),1)
 VERIFIC_COMPONENTS += extensions
 CXXFLAGS += -DYOSYSHQ_VERIFIC_EXTENSIONS
@@ -549,9 +571,6 @@ LDLIBS += $(patsubst %,$(VERIFIC_DIR)/%/*-linux.a,$(VERIFIC_COMPONENTS)) -lz
 endif
 endif
 
-ifeq ($(ENABLE_PROTOBUF),1)
-LDLIBS += $(shell pkg-config --cflags --libs protobuf)
-endif
 
 ifeq ($(ENABLE_COVER),1)
 CXXFLAGS += -DYOSYS_ENABLE_COVER
@@ -655,6 +674,11 @@ OBJS += kernel/cellaigs.o kernel/celledges.o kernel/satgen.o kernel/qcsat.o kern
 ifeq ($(ENABLE_ZLIB),1)
 OBJS += kernel/fstdata.o
 endif
+ifeq ($(ENABLE_PLUGINS),1)
+ifeq ($(OS), MINGW)
+OBJS += libs/dlfcn-win32/dlfcn.o
+endif
+endif
 
 kernel/log.o: CXXFLAGS += -DYOSYS_SRC='"$(YOSYS_SRC)"'
 kernel/yosys.o: CXXFLAGS += -DYOSYS_DATDIR='"$(DATDIR)"' -DYOSYS_PROGRAM_PREFIX='"$(PROGRAM_PREFIX)"'
@@ -733,7 +757,7 @@ yosys.js: $(filter-out yosysjs-$(YOSYS_VER).zip,$(EXTRA_TARGETS))
 endif
 
 $(PROGRAM_PREFIX)yosys$(EXE): $(OBJS)
-	$(P) $(LD) -o $(PROGRAM_PREFIX)yosys$(EXE) $(LDFLAGS) $(OBJS) $(LDLIBS)
+	$(P) $(LD) -o $(PROGRAM_PREFIX)yosys$(EXE) $(EXE_LDFLAGS) $(LDFLAGS) $(OBJS) $(LDLIBS)
 
 libyosys.so: $(filter-out kernel/driver.o,$(OBJS))
 ifeq ($(OS), Darwin)
@@ -779,8 +803,8 @@ LDLIBS_NOVERIFIC = $(LDLIBS)
 endif
 
 $(PROGRAM_PREFIX)yosys-config: misc/yosys-config.in
-	$(P) $(SED) -e 's#@CXXFLAGS@#$(subst -I. -I"$(YOSYS_SRC)",-I"$(DATDIR)/include",$(strip $(CXXFLAGS_NOVERIFIC)))#;' \
-			-e 's#@CXX@#$(strip $(CXX))#;' -e 's#@LDFLAGS@#$(strip $(LDFLAGS) $(PLUGIN_LDFLAGS))#;' -e 's#@LDLIBS@#$(strip $(LDLIBS_NOVERIFIC))#;' \
+	$(P) $(SED) -e 's#@CXXFLAGS@#$(subst -Ilibs/dlfcn-win32,,$(subst -I. -I"$(YOSYS_SRC)",-I"$(DATDIR)/include",$(strip $(CXXFLAGS_NOVERIFIC))))#;' \
+			-e 's#@CXX@#$(strip $(CXX))#;' -e 's#@LDFLAGS@#$(strip $(LDFLAGS) $(PLUGIN_LDFLAGS))#;' -e 's#@LDLIBS@#$(strip $(LDLIBS_NOVERIFIC) $(PLUGIN_LDLIBS))#;' \
 			-e 's#@BINDIR@#$(strip $(BINDIR))#;' -e 's#@DATDIR@#$(strip $(DATDIR))#;' < $< > $(PROGRAM_PREFIX)yosys-config
 	$(Q) chmod +x $(PROGRAM_PREFIX)yosys-config
 
@@ -930,6 +954,12 @@ ifeq ($(ENABLE_PYOSYS),1)
 	$(INSTALL_SUDO) mkdir -p $(DESTDIR)$(PYTHON_DESTDIR)/$(subst -,_,$(PROGRAM_PREFIX))pyosys
 	$(INSTALL_SUDO) cp libyosys.so $(DESTDIR)$(PYTHON_DESTDIR)/$(subst -,_,$(PROGRAM_PREFIX))pyosys/libyosys.so
 	$(INSTALL_SUDO) cp misc/__init__.py $(DESTDIR)$(PYTHON_DESTDIR)/$(subst -,_,$(PROGRAM_PREFIX))pyosys/
+endif
+endif
+ifeq ($(ENABLE_PLUGINS),1)
+ifeq ($(OS), MINGW)
+	$(INSTALL_SUDO) mkdir -p $(DESTDIR)$(LIBDIR)
+	$(INSTALL_SUDO) cp libyosys_exe.a $(DESTDIR)$(LIBDIR)/
 endif
 endif
 
