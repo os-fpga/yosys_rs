@@ -149,7 +149,7 @@ LDLIBS += -lrt
 endif
 endif
 
-YOSYS_VER := 0.23
+YOSYS_VER := 0.24
 
 # Note: We arrange for .gitcommit to contain the (short) commit hash in
 # tarballs generated with git-archive(1) using .gitattributes. The git repo
@@ -975,6 +975,24 @@ ifeq ($(ENABLE_PYOSYS),1)
 endif
 endif
 
+# also others, but so long as it doesn't fail this is enough to know we tried
+docs/source/cmd/abc.rst: $(TARGETS) $(EXTRA_TARGETS)
+	mkdir -p docs/source/cmd
+	./$(PROGRAM_PREFIX)yosys -p 'help -write-rst-command-reference-manual'
+
+PHONY: docs/gen_images docs/guidelines
+docs/gen_images:
+	$(Q) $(MAKE) -C docs/images all
+
+DOCS_GUIDELINE_FILES := GettingStarted CodingStyle
+docs/guidelines:
+	$(Q) mkdir -p docs/source/temp
+	$(Q) cp -f $(addprefix guidelines/,$(DOCS_GUIDELINE_FILES)) docs/source/temp
+
+DOC_TARGET ?= html
+docs: docs/source/cmd/abc.rst docs/gen_images docs/guidelines
+	$(Q) $(MAKE) -C docs $(DOC_TARGET)
+
 update-manual: $(TARGETS) $(EXTRA_TARGETS)
 	cd manual && ../$(PROGRAM_PREFIX)yosys -p 'help -write-tex-command-reference-manual'
 
@@ -999,6 +1017,9 @@ clean:
 	rm -rf vloghtb/Makefile vloghtb/refdat vloghtb/rtl vloghtb/scripts vloghtb/spec vloghtb/check_yosys vloghtb/vloghammer_tb.tar.bz2 vloghtb/temp vloghtb/log_test_*
 	rm -f tests/svinterfaces/*.log_stdout tests/svinterfaces/*.log_stderr tests/svinterfaces/dut_result.txt tests/svinterfaces/reference_result.txt tests/svinterfaces/a.out tests/svinterfaces/*_syn.v tests/svinterfaces/*.diff
 	rm -f  tests/tools/cmp_tbdata
+	$(MAKE) -C docs clean
+	$(MAKE) -C docs/images clean
+	rm -rf docs/source/cmd docs/util/__pycache__
 
 clean-abc:
 	$(MAKE) -C abc DEP= clean
@@ -1125,5 +1146,5 @@ echo-abc-rev:
 -include kernel/*.d
 -include techlibs/*/*.d
 
-.PHONY: all top-all abc test install install-abc manual clean mrproper qtcreator coverage vcxsrc mxebin
+.PHONY: all top-all abc test install install-abc docs manual clean mrproper qtcreator coverage vcxsrc mxebin
 .PHONY: config-clean config-clang config-gcc config-gcc-static config-gcc-4.8 config-afl-gcc config-gprof config-sudo

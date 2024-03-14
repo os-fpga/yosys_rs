@@ -156,10 +156,9 @@ reading and elaborating the design using the Verilog frontend:
 	yosys> read -sv tests/simple/fiedler-cooley.v
 	yosys> hierarchy -top up3down5
 
-writing the design to the console in the RTLIL format used by Yosys
-internally:
+writing the design to the console in Yosys's internal format:
 
-	yosys> write_rtlil
+	yosys> write_ilang
 
 convert processes (``always`` blocks) to netlist elements and perform
 some simple optimizations:
@@ -587,28 +586,53 @@ from SystemVerilog:
 - enums are supported (including inside packages)
 	- but are currently not strongly typed
 
-- packed structs and unions are supported
-	- arrays of packed structs/unions are currently not supported
-	- structure literals are currently not supported
-
-- multidimensional arrays are supported
-	- array assignment of unpacked arrays is currently not supported
-	- array literals are currently not supported
+- packed structs and unions are supported.
 
 - SystemVerilog interfaces (SVIs) are supported. Modports for specifying whether
   ports are inputs or outputs are supported.
-
-- Assignments within expressions are supported.
 
 
 Building the documentation
 ==========================
 
 Note that there is no need to build the manual if you just want to read it.
-Simply visit https://yosys.readthedocs.io/en/latest/ instead.
+Simply download the PDF from https://yosyshq.net/yosys/documentation.html
+instead.
 
-In addition to those packages listed above for building Yosys from source, the
-following are used for building the website: 
+On Ubuntu, texlive needs these packages to be able to build the manual:
+
+	sudo apt-get install texlive-binaries
+	sudo apt-get install texlive-science      # install algorithm2e.sty
+	sudo apt-get install texlive-bibtex-extra # gets multibib.sty
+	sudo apt-get install texlive-fonts-extra  # gets skull.sty and dsfont.sty
+	sudo apt-get install texlive-publishers   # IEEEtran.cls
+
+Also the non-free font luximono should be installed, there is unfortunately
+no Ubuntu package for this so it should be installed separately using
+`getnonfreefonts`:
+
+	wget https://tug.org/fonts/getnonfreefonts/install-getnonfreefonts
+	sudo texlua install-getnonfreefonts # will install to /usr/local by default, can be changed by editing BINDIR at MANDIR at the top of the script
+	getnonfreefonts luximono # installs to /home/user/texmf
+
+Then execute, from the root of the repository:
+
+	make manual
+
+Notes:
+
+- To run `make manual` you need to have installed Yosys with `make install`,
+  otherwise it will fail on finding `kernel/yosys.h` while building
+  `PRESENTATION_Prog`.
+
+Building the website
+====================
+
+If you're seeing this, it means you are on an as yet unmerged branch (I hope), 
+and the website version of the documentation is not yet publicly available.
+
+In addition to those listed above for building Yosys from source, the following
+packages are used for building the website: 
 
 	$ sudo apt-get install pdf2svg faketime
 
