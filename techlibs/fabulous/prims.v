@@ -24,6 +24,20 @@ module LUT4(output O, input I0, I1, I2, I3);
   assign O = I0 ? s1[1] : s1[0];
 endmodule
 
+module LUT4_HA(output O, Co, input I0, I1, I2, I3, Ci);
+  parameter [15:0] INIT = 0;
+  parameter I0MUX = 1'b1;
+
+  wire [ 7: 0] s3 = I3 ? INIT[15: 8] : INIT[ 7: 0];
+  wire [ 3: 0] s2 = I2 ?   s3[ 7: 4] :   s3[ 3: 0];
+  wire [ 1: 0] s1 = I1 ?   s2[ 3: 2] :   s2[ 1: 0];
+
+  wire I0_sel = I0MUX ? Ci : I0;
+  assign O = I0_sel ? s1[1] : s1[0];
+
+  assign Co = (Ci & I1) | (Ci & I2) | (I1 & I2);
+endmodule
+
 module LUTFF(input CLK, D, output reg O);
   initial O = 1'b0;
   always @ (posedge CLK) begin
@@ -93,13 +107,13 @@ module Global_Clock (output CLK);
 endmodule
 
 (* blackbox, keep *)
-module InPass4_frame_config (output O0, O1, O2, O3);
+module InPass4_frame_config (input CLK, output O0, O1, O2, O3);
 
 endmodule
 
 
 (* blackbox, keep *)
-module OutPass4_frame_config (input I0, I1, I2, I3);
+module OutPass4_frame_config (input CLK, I0, I1, I2, I3);
 
 endmodule
 

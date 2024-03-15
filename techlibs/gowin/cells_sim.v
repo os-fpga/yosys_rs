@@ -582,6 +582,14 @@ module IOBUF (O, IO, I, OEN);
   assign I = IO;
 endmodule
 
+module ELVDS_OBUF (I, O, OB);
+  input I;
+  output O;
+  output OB;
+  assign O = I;
+  assign OB = ~I;
+endmodule
+
 module TLVDS_OBUF (I, O, OB);
   input I;
   output O;
@@ -1631,4 +1639,21 @@ module OSCH(OSCOUT);
 output OSCOUT;
 
 parameter FREQ_DIV = 96;
+endmodule
+
+(* blackbox *)
+module OSCW(OSCOUT);
+output OSCOUT;
+
+parameter FREQ_DIV = 80;
+endmodule
+
+(* blackbox *)
+module OSCO(OSCOUT, OSCEN);
+input OSCEN;
+
+output OSCOUT;
+
+parameter FREQ_DIV = 100;
+parameter REGULATOR_EN = 1'b0;
 endmodule
