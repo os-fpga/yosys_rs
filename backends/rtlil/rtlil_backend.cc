@@ -51,7 +51,7 @@ void RTLIL_BACKEND::dump_const(std::ostream &f, const RTLIL::Const &data, int wi
 			}
 		}
 		f << stringf("%d'", width);
-		if (data.is_fully_undef()) {
+		if (data.is_fully_undef_x_only()) {
 			f << "x";
 		} else {
 			for (int i = offset+width-1; i >= offset; i--) {
@@ -545,8 +545,9 @@ struct DumpPass : public Pass {
 
 		std::ostream *f;
 		std::stringstream buf;
+		bool empty = filename.empty();
 
-		if (!filename.empty()) {
+		if (!empty) {
 			rewrite_filename(filename);
 			std::ofstream *ff = new std::ofstream;
 			ff->open(filename.c_str(), append ? std::ofstream::app : std::ofstream::trunc);
@@ -561,7 +562,7 @@ struct DumpPass : public Pass {
 
 		RTLIL_BACKEND::dump_design(*f, design, true, flag_m, flag_n);
 
-		if (!filename.empty()) {
+		if (!empty) {
 			delete f;
 		} else {
 			log("%s", buf.str().c_str());

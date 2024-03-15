@@ -1269,11 +1269,8 @@ static void rename_in_package_stmts(AstNode *pkg)
 }
 
 // create AstModule instances for all modules in the AST tree and add them to 'design'
-void AST::process(RTLIL::Design *design, AstNode *ast, bool dump_ast1, bool dump_ast2, 
-                  bool no_dump_ptr, bool dump_vlog1, bool dump_vlog2, bool dump_rtlil,
-                  bool nolatches, bool nomeminit, bool nomem2reg, bool mem2reg, bool noblackbox, 
-                  bool lib, bool nowb, bool noopt, bool icells, bool pwires, bool nooverwrite, 
-                  bool overwrite, bool defer, bool autowire)
+void AST::process(RTLIL::Design *design, AstNode *ast, bool dump_ast1, bool dump_ast2, bool no_dump_ptr, bool dump_vlog1, bool dump_vlog2, bool dump_rtlil,
+		bool nolatches, bool nomeminit, bool nomem2reg, bool mem2reg, bool noblackbox, bool lib, bool nowb, bool noopt, bool icells, bool pwires, bool nooverwrite, bool overwrite, bool defer, bool autowire)
 {
 	current_ast = ast;
 	current_ast_mod = nullptr;
@@ -1677,7 +1674,7 @@ RTLIL::IdString AstModule::derive(RTLIL::Design *design, const dict<RTLIL::IdStr
 	AstNode *new_ast = NULL;
 	std::string modname = derive_common(design, parameters, &new_ast, quiet);
 
-	if (!design->has(modname)) {
+	if (!design->has(modname) && new_ast) {
 		new_ast->str = modname;
 		process_module(design, new_ast, false, NULL, quiet);
 		design->module(modname)->check();
@@ -1727,6 +1724,7 @@ std::string AST::derived_module_name(std::string stripped_name, const std::vecto
 std::string AstModule::derive_common(RTLIL::Design *design, const dict<RTLIL::IdString, RTLIL::Const> &parameters, AstNode **new_ast_out, bool quiet)
 {
 	std::string stripped_name = name.str();
+	(*new_ast_out) = nullptr;
 
 	if (stripped_name.compare(0, 9, "$abstract") == 0)
 		stripped_name = stripped_name.substr(9);

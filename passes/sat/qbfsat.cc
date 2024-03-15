@@ -66,9 +66,9 @@ pool<std::string> validate_design_and_get_inputs(RTLIL::Module *module, bool ass
 }
 
 void specialize_from_file(RTLIL::Module *module, const std::string &file) {
-	YS_REGEX_TYPE hole_bit_assn_regex = YS_REGEX_COMPILE_WITH_SUBS("^(.+) ([0-9]+) ([^ ]+) \\[([0-9]+)] = ([01])$");
-	YS_REGEX_TYPE hole_assn_regex = YS_REGEX_COMPILE_WITH_SUBS("^(.+) ([0-9]+) ([^ ]+) = ([01])$"); //if no index specified
-	YS_REGEX_MATCH_TYPE bit_m, m;
+	std::regex hole_bit_assn_regex = YS_REGEX_COMPILE_WITH_SUBS("^(.+) ([0-9]+) ([^ ]+) \\[([0-9]+)] = ([01])$");
+	std::regex hole_assn_regex = YS_REGEX_COMPILE_WITH_SUBS("^(.+) ([0-9]+) ([^ ]+) = ([01])$"); //if no index specified
+	std::smatch bit_m, m;
 	dict<pool<std::string>, RTLIL::Cell*> anyconst_loc_to_cell;
 	dict<RTLIL::SigBit, RTLIL::State> hole_assignments;
 
@@ -83,9 +83,9 @@ void specialize_from_file(RTLIL::Module *module, const std::string &file) {
 	std::string buf;
 	while (std::getline(fin, buf)) {
 		bool bit_assn = true;
-		if (!YS_REGEX_NS::regex_search(buf, bit_m, hole_bit_assn_regex)) {
+		if (!std::regex_search(buf, bit_m, hole_bit_assn_regex)) {
 			bit_assn = false;
-			if (!YS_REGEX_NS::regex_search(buf, m, hole_assn_regex))
+			if (!std::regex_search(buf, m, hole_assn_regex))
 				log_cmd_error("solution file is not formatted correctly: \"%s\"\n", buf.c_str());
 		}
 
@@ -416,6 +416,8 @@ QbfSolveOptions parse_args(const std::vector<std::string> &args) {
 					opt.solver = opt.Solver::Yices;
 				else if (args[opt.argidx+1] == "cvc4")
 					opt.solver = opt.Solver::CVC4;
+				else if (args[opt.argidx+1] == "cvc5")
+					opt.solver = opt.Solver::CVC5;
 				else
 					log_cmd_error("Unknown solver \"%s\".\n", args[opt.argidx+1].c_str());
 				opt.argidx++;
@@ -542,8 +544,8 @@ struct QbfSatPass : public Pass {
 		log("        hope that the solver supports optimizing quantified bitvector problems.\n");
 		log("\n");
 		log("    -solver <solver>\n");
-		log("        Use a particular solver. Choose one of: \"z3\", \"yices\", and \"cvc4\".\n");
-		log("        (default: yices)\n");
+		log("        Use a particular solver. Choose one of: \"z3\", \"yices\", \"cvc4\"\n");
+		log("        and \"cvc5\". (default: yices)\n");
 		log("\n");
 		log("    -solver-option <name> <value>\n");
 		log("        Set the specified solver option in the SMT-LIBv2 problem file.\n");

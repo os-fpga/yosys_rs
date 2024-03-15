@@ -108,7 +108,9 @@ Pass::Pass(std::string name, std::string short_help) : pass_name(name), short_he
 
 void Pass::run_register()
 {
-	log_assert(pass_register.count(pass_name) == 0);
+	if (pass_register.count(pass_name))
+		log_error("Unable to register pass '%s', pass already exists!\n", pass_name.c_str());
+
 	pass_register[pass_name] = this;
 }
 
@@ -445,10 +447,13 @@ Frontend::Frontend(std::string name, std::string short_help) :
 
 void Frontend::run_register()
 {
-	log_assert(pass_register.count(pass_name) == 0);
+	if (pass_register.count(pass_name))
+		log_error("Unable to register pass '%s', pass already exists!\n", pass_name.c_str());
 	pass_register[pass_name] = this;
 
-	log_assert(frontend_register.count(frontend_name) == 0);
+	if (frontend_register.count(frontend_name))
+		log_error("Unable to register frontend '%s', frontend already exists!\n", frontend_name.c_str());
+
 	frontend_register[frontend_name] = this;
 }
 
@@ -526,10 +531,11 @@ void Frontend::extra_args(std::istream *&f, std::string &filename, std::vector<s
 			std::ifstream *ff = new std::ifstream;
 			ff->open(filename.c_str(), bin_input ? std::ifstream::binary : std::ifstream::in);
 			yosys_input_files.insert(filename);
-			if (ff->fail())
+			if (ff->fail()) {
 				delete ff;
-			else
-				f = ff;
+				ff = nullptr;
+			}
+			f = ff;
 			if (f != NULL) {
 				// Check for gzip magic
 				unsigned char magic[3];
@@ -626,10 +632,12 @@ Backend::Backend(std::string name, std::string short_help) :
 
 void Backend::run_register()
 {
-	log_assert(pass_register.count(pass_name) == 0);
+	if (pass_register.count(pass_name))
+		log_error("Unable to register pass '%s', pass already exists!\n", pass_name.c_str());
 	pass_register[pass_name] = this;
 
-	log_assert(backend_register.count(backend_name) == 0);
+	if (backend_register.count(backend_name))
+		log_error("Unable to register backend '%s', backend already exists!\n", backend_name.c_str());
 	backend_register[backend_name] = this;
 }
 

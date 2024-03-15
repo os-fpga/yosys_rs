@@ -346,6 +346,12 @@ void emit_elaborated_extmodules(RTLIL::Design *design, std::ostream &f)
 			{
 				// Find the module corresponding to this instance.
 				auto modInstance = design->module(cell->type);
+				// Ensure that we actually have a module instance
+				if (modInstance == nullptr) {
+					log_error("Unknown cell type %s\n", cell->type.c_str());
+					return;
+				}
+
 				bool modIsBlackbox = modInstance->get_blackbox_attribute();
 
 				if (modIsBlackbox)
@@ -1220,6 +1226,7 @@ struct FirrtlBackend : public Backend {
 		Pass::call(design, "pmuxtree");
 		Pass::call(design, "bmuxmap");
 		Pass::call(design, "demuxmap");
+		Pass::call(design, "bwmuxmap");
 
 		namecache.clear();
 		autoid_counter = 0;
@@ -1241,6 +1248,9 @@ struct FirrtlBackend : public Backend {
 
 		if (top == nullptr)
 			top = last;
+
+		if (!top)
+			log_cmd_error("There is no top module in this design!\n");
 
 		std::string circuitFileinfo = getFileinfo(top);
 		*f << stringf("circuit %s: %s\n", make_id(top->name), circuitFileinfo.c_str());

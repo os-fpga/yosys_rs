@@ -2074,7 +2074,7 @@ bool AstNode::simplifyRec(bool const_fold, bool at_zero, bool in_lvalue, int sta
 		if (name_has_dot(str, sname)) {
 			if (current_scope.count(str) > 0) {
 				auto item_node = current_scope[str];
-				if (item_node->type == AST_STRUCT_ITEM || item_node->type == AST_STRUCT) {
+				if (item_node->type == AST_STRUCT_ITEM || item_node->type == AST_STRUCT || item_node->type == AST_UNION) {
 					// structure member, rewrite this node to reference the packed struct wire
 					auto range = make_struct_member_range(this, item_node);
 					newNode = new AstNode(AST_IDENTIFIER, range);
@@ -4722,8 +4722,7 @@ void AstNode::mem2reg_as_needed_pass1(dict<AstNode*, pool<std::string>> &mem2reg
 			children_flags |= AstNode::MEM2REG_FL_ASYNC;
 		proc_flags_p = new dict<AstNode*, uint32_t>;
 	}
-
-	if (type == AST_INITIAL) {
+	else if (type == AST_INITIAL) {
 		children_flags |= AstNode::MEM2REG_FL_INIT;
 		proc_flags_p = new dict<AstNode*, uint32_t>;
 	}

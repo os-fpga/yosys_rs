@@ -416,6 +416,8 @@ struct JnyBackend : public Backend {
         log("\n");
         log("    jny [options] [selection]\n");
         log("\n");
+        log("Write JSON netlist metadata for the current design\n");
+        log("\n");
         log("    -no-connections\n");
         log("        Don't include connection information in the netlist output.\n");
         log("\n");
@@ -555,8 +557,9 @@ struct JnyPass : public Pass {
 
         std::ostream *f;
         std::stringstream buf;
+        bool empty = filename.empty();
 
-        if (!filename.empty()) {
+        if (!empty) {
             rewrite_filename(filename);
             std::ofstream *ff = new std::ofstream;
             ff->open(filename.c_str(), std::ofstream::trunc);
@@ -574,7 +577,7 @@ struct JnyPass : public Pass {
         JnyWriter jny_writer(*f, false, connections, attributes, properties);
         jny_writer.write_metadata(design, 0, invk.str());
 
-        if (!filename.empty()) {
+        if (!empty) {
             delete f;
         } else {
             log("%s", buf.str().c_str());
