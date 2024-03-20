@@ -148,7 +148,7 @@ LDLIBS += -lrt
 endif
 endif
 
-YOSYS_VER := 0.30
+YOSYS_VER := 0.31
 
 # Note: We arrange for .gitcommit to contain the (short) commit hash in
 # tarballs generated with git-archive(1) using .gitattributes. The git repo
@@ -558,9 +558,9 @@ CXXFLAGS += -DYOSYSHQ_VERIFIC_EXTENSIONS
 endif
 CXXFLAGS += $(patsubst %,-I$(VERIFIC_DIR)/%,$(VERIFIC_COMPONENTS)) -DYOSYS_ENABLE_VERIFIC
 ifeq ($(OS), Darwin)
-LDLIBS += $(patsubst %,$(VERIFIC_DIR)/%/*-mac.a,$(VERIFIC_COMPONENTS)) -lz
+LDLIBS_VERIFIC += $(foreach comp,$(patsubst %,$(VERIFIC_DIR)/%/*-mac.a,$(VERIFIC_COMPONENTS)),-Wl,-force_load $(comp)) -lz
 else
-LDLIBS += $(patsubst %,$(VERIFIC_DIR)/%/*-linux.a,$(VERIFIC_COMPONENTS)) -lz
+LDLIBS_VERIFIC += -Wl,--whole-archive $(patsubst %,$(VERIFIC_DIR)/%/*-linux.a,$(VERIFIC_COMPONENTS)) -Wl,--no-whole-archive -lz
 endif
 endif
 
@@ -750,13 +750,13 @@ yosys.js: $(filter-out yosysjs-$(YOSYS_VER).zip,$(EXTRA_TARGETS))
 endif
 
 $(PROGRAM_PREFIX)yosys$(EXE): $(OBJS)
-	$(P) $(LD) -o $(PROGRAM_PREFIX)yosys$(EXE) $(EXE_LDFLAGS) $(LDFLAGS) $(OBJS) $(LDLIBS)
+	$(P) $(LD) -o $(PROGRAM_PREFIX)yosys$(EXE) $(EXE_LDFLAGS) $(LDFLAGS) $(OBJS) $(LDLIBS) $(LDLIBS_VERIFIC)
 
 libyosys.so: $(filter-out kernel/driver.o,$(OBJS))
 ifeq ($(OS), Darwin)
-	$(P) $(LD) -o libyosys.so -shared -Wl,-install_name,$(LIBDIR)/libyosys.so $(LDFLAGS) $^ $(LDLIBS)
+	$(P) $(LD) -o libyosys.so -shared -Wl,-install_name,$(LIBDIR)/libyosys.so $(LDFLAGS) $^ $(LDLIBS) $(LDLIBS_VERIFIC)
 else
-	$(P) $(LD) -o libyosys.so -shared -Wl,-soname,$(LIBDIR)/libyosys.so $(LDFLAGS) $^ $(LDLIBS)
+	$(P) $(LD) -o libyosys.so -shared -Wl,-soname,$(LIBDIR)/libyosys.so $(LDFLAGS) $^ $(LDLIBS) $(LDLIBS_VERIFIC)
 endif
 
 %.o: %.cc
