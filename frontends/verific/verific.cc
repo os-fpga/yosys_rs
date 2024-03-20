@@ -2198,6 +2198,28 @@ VerificClocking::VerificClocking(VerificImporter *importer, Net *net, bool sva_a
 
 	Instance *inst = net->Driver();
 
+	// Detect condition expression in sva_at_only mode
+	if (sva_at_only)
+	do {
+		Instance *inst_mux = net->Driver();
+		if (inst_mux->Type() != PRIM_MUX)
+			break;
+
+		bool pwr1 = inst_mux->GetInput1()->IsPwr();
+		bool pwr2 = inst_mux->GetInput2()->IsPwr();
+
+		if (!pwr1 && !pwr2)
+			break;
+
+		Net *sva_net = pwr1 ? inst_mux->GetInput2() : inst_mux->GetInput1();
+		if (!verific_is_sva_net(importer, sva_net))
+			break;
+
+		inst = sva_net->Driver();
+		cond_net = inst_mux->GetControl();
+		cond_pol = pwr1;
+	} while (0);
+
 	if (inst != nullptr && inst->Type() == PRIM_SVA_AT)
 	{
 		net = inst->GetInput1();
@@ -2633,6 +2655,7 @@ std::string verific_import(Design *design, const std::map<std::string,std::strin
 
 	Netlist *nl;
 	int i;
+	std::string cell_name = top;
 
 	FOREACH_ARRAY_ITEM(netlists, i, nl) {
 		if (!nl) continue;
@@ -2640,7 +2663,9 @@ std::string verific_import(Design *design, const std::map<std::string,std::strin
 			continue;
 		nl->AddAtt(new Att(" \\top", NULL));
 		nl_todo.emplace(nl->CellBaseName(), nl);
+		cell_name = nl->Owner()->Name();
 	}
+	if (top.empty()) cell_name = top;
 
 	delete netlists;
 
@@ -2660,7 +2685,7 @@ std::string verific_import(Design *design, const std::map<std::string,std::strin
 		if (nl_done.count(it->first) == 0) {
 			VerificImporter importer(false, false, false, false, false, false, false);
 			nl_done[it->first] = it->second;
-			importer.import_netlist(design, nl, nl_todo, nl->Owner()->Name() == top);
+			importer.import_netlist(design, nl, nl_todo, nl->Owner()->Name() == cell_name);
 		}
 		nl_todo.erase(it);
 	}
