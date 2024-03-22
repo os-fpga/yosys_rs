@@ -1285,13 +1285,13 @@ static std::string sha1_if_contain_spaces(std::string str)
 
 void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::map<std::string,Netlist*> &nl_todo, bool norename)
 {
-	std::string netlist_name = nl->GetAtt(" \\top") ? nl->CellBaseName() : nl->Owner()->Name();
+	std::string netlist_name = nl->GetAtt(" \\top") || is_blackbox(nl) ? nl->CellBaseName() : nl->Owner()->Name();
 	std::string module_name = netlist_name;
 
 	if (nl->IsOperator() || nl->IsPrimitive()) {
 		module_name = "$verific$" + module_name;
 	} else {
-		if (!norename && *nl->Name()) {
+		if (!norename && *nl->Name() && !is_blackbox(nl)) {
 			module_name += "(";
 			module_name += nl->Name();
 			module_name += ")";
@@ -2068,14 +2068,14 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 		}
 
 	import_verific_cells:
-		std::string inst_type = inst->View()->Owner()->Name();
+		std::string inst_type = is_blackbox(inst->View()) ? inst->View()->CellBaseName() : inst->View()->Owner()->Name();
 
 		nl_todo[inst_type] = inst->View();
 
 		if (inst->View()->IsOperator() || inst->View()->IsPrimitive()) {
 			inst_type = "$verific$" + inst_type;
 		} else {
-			if (*inst->View()->Name()) {
+			if (*inst->View()->Name() && !is_blackbox(inst->View())) {
 				inst_type += "(";
 				inst_type += inst->View()->Name();
 				inst_type += ")";
@@ -2104,6 +2104,14 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 
 		if (verific_verbose)
 			log("    ports in verific db:\n");
+
+		const char *param_name ;
+		const char *param_value ;
+		if (is_blackbox(inst->View())) {
+			FOREACH_PARAMETER_OF_INST(inst, mi2, param_name, param_value) {
+				cell->setParam(RTLIL::escape_id(param_name), verific_const(param_value));
+			}
+		}
 
 		FOREACH_PORTREF_OF_INST(inst, mi2, pr) {
 			if (verific_verbose)
@@ -2689,7 +2697,7 @@ std::string verific_import(Design *design, const std::map<std::string,std::strin
 		log_error("%s\n", verific_error_msg.c_str());
 
 	for (auto nl : nl_todo)
-	    nl.second->ChangePortBusStructures(1 /* hierarchical */);
+		nl.second->ChangePortBusStructures(1 /* hierarchical */);
 
 	VerificExtNets worker;
 	for (auto nl : nl_todo)
@@ -3018,6 +3026,87 @@ struct VerificPass : public Pass {
 		return filename;
 	}
 
+#ifdef VERIFIC_VHDL_SUPPORT
+	msg_type_t prev_1240 ;
+	msg_type_t prev_1241 ;
+
+	void add_units_to_map(Map &map, std::string work, bool flag_lib)
+	{
+		MapIter mi ;
+		VhdlPrimaryUnit *unit ;
+		if (!flag_lib) return;
+		VhdlLibrary *vhdl_lib = vhdl_file::GetLibrary(work.c_str(), 1);
+		if (vhdl_lib) {					
+			FOREACH_VHDL_PRIMARY_UNIT(vhdl_lib, mi, unit) {
+				if (!unit) continue;
+				map.Insert(unit,unit);
+			}
+		}
+
+ 		prev_1240 = Message::GetMessageType("VHDL-1240") ;
+		prev_1241 = Message::GetMessageType("VHDL-1241") ;
+		Message::SetMessageType("VHDL-1240", VERIFIC_INFO);
+		Message::SetMessageType("VHDL-1241", VERIFIC_INFO);
+	}
+
+	void set_units_to_blackbox(Map &map, std::string work, bool flag_lib)
+	{
+		MapIter mi ;
+		VhdlPrimaryUnit *unit ;
+		if (!flag_lib) return;
+		VhdlLibrary *vhdl_lib = vhdl_file::GetLibrary(work.c_str(), 1);
+		FOREACH_VHDL_PRIMARY_UNIT(vhdl_lib, mi, unit) {
+			if (!unit) continue;
+			if (!map.GetValue(unit)) {
+				unit->SetCompileAsBlackbox();
+			}
+		}
+		Message::ClearMessageType("VHDL-1240") ; 
+		Message::ClearMessageType("VHDL-1241") ; 
+		if (Message::GetMessageType("VHDL-1240")!=prev_1240)
+			Message::SetMessageType("VHDL-1240", prev_1240);
+		if (Message::GetMessageType("VHDL-1241")!=prev_1241)
+			Message::SetMessageType("VHDL-1241", prev_1241);
+
+	}
+#endif
+
+	msg_type_t prev_1063;
+
+	void add_modules_to_map(Map &map, std::string work, bool flag_lib)
+	{
+		MapIter mi ;
+		VeriModule *veri_module ;
+		if (!flag_lib) return;
+		VeriLibrary *veri_lib = veri_file::GetLibrary(work.c_str(), 1);
+		if (veri_lib) {					
+			FOREACH_VERILOG_MODULE_IN_LIBRARY(veri_lib, mi, veri_module) {
+				if (!veri_module) continue;
+				map.Insert(veri_module,veri_module);
+			}
+		}
+
+ 		prev_1063 = Message::GetMessageType("VERI-1063") ;
+		Message::SetMessageType("VERI-1063", VERIFIC_INFO);
+	}
+
+	void set_modules_to_blackbox(Map &map, std::string work, bool flag_lib)
+	{
+		MapIter mi ;
+		VeriModule *veri_module ;
+		if (!flag_lib) return;
+		VeriLibrary *veri_lib = veri_file::GetLibrary(work.c_str(), 1);
+		FOREACH_VERILOG_MODULE_IN_LIBRARY(veri_lib, mi, veri_module) {
+			if (!veri_module) continue;
+			if (!map.GetValue(veri_module)) {
+				veri_module->SetCompileAsBlackbox();
+			}
+		}
+		Message::ClearMessageType("VERI-1063") ; 
+		if (Message::GetMessageType("VERI-1063")!=prev_1063)
+			Message::SetMessageType("VERI-1063", prev_1063);
+	}
+
 	void execute(std::vector<std::string> args, RTLIL::Design *design) override
 	{
 		ieee_1735 protect;
@@ -3317,15 +3406,27 @@ struct VerificPass : public Pass {
 			for (auto &ext : verific_libexts)
 				veri_file::AddLibExt(ext.c_str());
 
+			bool flag_lib = false;
 			while (argidx < GetSize(args)) {
+				if (args[argidx] == "-lib") {
+					flag_lib = true;
+					argidx++;
+					continue;
+				}
+				if (args[argidx].compare(0, 1, "-") == 0) {
+					cmd_error(args, argidx, "unknown option");
+					goto check_error;
+				}
 				std::string filename = frontent_rewrite(args, argidx, tmp_files);
 				file_names.Insert(strdup(filename.c_str()));
 			}
+			Map map(POINTER_HASH);
+			add_modules_to_map(map, work, flag_lib);
 			if (!veri_file::AnalyzeMultipleFiles(&file_names, verilog_mode, work.c_str(), veri_file::MFCU)) {
 					verific_error_msg.clear();
 					log_cmd_error("Reading Verilog/SystemVerilog sources failed.\n");
 			}
-
+			set_modules_to_blackbox(map, work, flag_lib);
 			verific_import_pending = true;
 			goto check_error;
 		}
@@ -3333,11 +3434,22 @@ struct VerificPass : public Pass {
 #ifdef VERIFIC_VHDL_SUPPORT
 		if (GetSize(args) > argidx && args[argidx] == "-vhdl87") {
 			vhdl_file::SetDefaultLibraryPath((proc_share_dirname() + "verific/vhdl_vdbs_1987").c_str());
-			argidx++;
-			while (argidx < GetSize(args)) {
+			bool flag_lib = false;
+			for (argidx++; argidx < GetSize(args); argidx++) {
+				if (args[argidx] == "-lib") {
+					flag_lib = true;
+					continue;
+				}
+				if (args[argidx].compare(0, 1, "-") == 0) {
+					cmd_error(args, argidx, "unknown option");
+					goto check_error;
+				}
+				Map map(POINTER_HASH);
+				add_units_to_map(map, work, flag_lib);
 				std::string filename = frontent_rewrite(args, argidx, tmp_files);
 				if (!vhdl_file::Analyze(filename.c_str(), work.c_str(), vhdl_file::VHDL_87))
 					log_cmd_error("Reading `%s' in VHDL_87 mode failed.\n", filename.c_str());
+				set_units_to_blackbox(map, work, flag_lib);
 			}
 			verific_import_pending = true;
 			goto check_error;
@@ -3345,11 +3457,22 @@ struct VerificPass : public Pass {
 
 		if (GetSize(args) > argidx && args[argidx] == "-vhdl93") {
 			vhdl_file::SetDefaultLibraryPath((proc_share_dirname() + "verific/vhdl_vdbs_1993").c_str());
-			argidx++;
-			while (argidx < GetSize(args)) {
+			bool flag_lib = false;
+			for (argidx++; argidx < GetSize(args); argidx++) {
+				if (args[argidx] == "-lib") {
+					flag_lib = true;
+					continue;
+				}
+				if (args[argidx].compare(0, 1, "-") == 0) {
+					cmd_error(args, argidx, "unknown option");
+					goto check_error;
+				}
+				Map map(POINTER_HASH);
+				add_units_to_map(map, work, flag_lib);
 				std::string filename = frontent_rewrite(args, argidx, tmp_files);
 				if (!vhdl_file::Analyze(filename.c_str(), work.c_str(), vhdl_file::VHDL_93))
 					log_cmd_error("Reading `%s' in VHDL_93 mode failed.\n", filename.c_str());
+				set_units_to_blackbox(map, work, flag_lib);
 			}
 			verific_import_pending = true;
 			goto check_error;
@@ -3357,11 +3480,22 @@ struct VerificPass : public Pass {
 
 		if (GetSize(args) > argidx && args[argidx] == "-vhdl2k") {
 			vhdl_file::SetDefaultLibraryPath((proc_share_dirname() + "verific/vhdl_vdbs_1993").c_str());
-			argidx++;
-			while (argidx < GetSize(args)) {
+			bool flag_lib = false;
+			for (argidx++; argidx < GetSize(args); argidx++) {
+				if (args[argidx] == "-lib") {
+					flag_lib = true;
+					continue;
+				}
+				if (args[argidx].compare(0, 1, "-") == 0) {
+					cmd_error(args, argidx, "unknown option");
+					goto check_error;
+				}
+				Map map(POINTER_HASH);
+				add_units_to_map(map, work, flag_lib);
 				std::string filename = frontent_rewrite(args, argidx, tmp_files);
 				if (!vhdl_file::Analyze(filename.c_str(), work.c_str(), vhdl_file::VHDL_2K))
 					log_cmd_error("Reading `%s' in VHDL_2K mode failed.\n", filename.c_str());
+				set_units_to_blackbox(map, work, flag_lib);
 			}
 			verific_import_pending = true;
 			goto check_error;
@@ -3369,11 +3503,22 @@ struct VerificPass : public Pass {
 
 		if (GetSize(args) > argidx && (args[argidx] == "-vhdl2008" || args[argidx] == "-vhdl")) {
 			vhdl_file::SetDefaultLibraryPath((proc_share_dirname() + "verific/vhdl_vdbs_2008").c_str());
-			argidx++;
-			while (argidx < GetSize(args)) {
+			bool flag_lib = false;
+			for (argidx++; argidx < GetSize(args); argidx++) {
+				if (args[argidx] == "-lib") {
+					flag_lib = true;
+					continue;
+				}
+				if (args[argidx].compare(0, 1, "-") == 0) {
+					cmd_error(args, argidx, "unknown option");
+					goto check_error;
+				}
+				Map map(POINTER_HASH);
+				add_units_to_map(map, work, flag_lib);
 				std::string filename = frontent_rewrite(args, argidx, tmp_files);
 				if (!vhdl_file::Analyze(filename.c_str(), work.c_str(), vhdl_file::VHDL_2008))
 					log_cmd_error("Reading `%s' in VHDL_2008 mode failed.\n", filename.c_str());
+				set_units_to_blackbox(map, work, flag_lib);
 			}
 			verific_import_pending = true;
 			goto check_error;
@@ -3535,7 +3680,7 @@ struct VerificPass : public Pass {
 					const std::string &key = args[++argidx];
 					const std::string &value = args[++argidx];
 					unsigned new_insertion = parameters.Insert(key.c_str(), value.c_str(),
-									           1 /* force_overwrite */);
+											   1 /* force_overwrite */);
 					if (!new_insertion)
 						log_warning_noprefix("-chparam %s already specified: overwriting.\n", key.c_str());
 					continue;
@@ -3814,6 +3959,13 @@ struct VerificPass : public Pass {
 				}
 			}
 		}
+#ifdef YOSYSHQ_VERIFIC_EXTENSIONS
+		if (VerificExtensions::Execute(args, argidx, work, 
+			[this](const std::vector<std::string> &args, size_t argidx, std::string msg)
+				{ cmd_error(args, argidx, msg); } )) {
+			goto check_error;
+		}
+#endif	
 
 		cmd_error(args, argidx, "Missing or unsupported mode parameter.\n");
 
