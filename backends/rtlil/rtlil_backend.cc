@@ -87,7 +87,7 @@ void RTLIL_BACKEND::dump_const(std::ostream &f, const RTLIL::Const &data, int wi
 	}
 }
 
-void RTLIL_BACKEND::dump_sigchunk(std::ostream &f, const RTLIL::SigChunk &chunk, bool autoint)
+void RTLIL_BACKEND::dump_sigchunk(std::ostream &f, const RTLIL::SigChunk &chunk, bool autoint, bool no_space)
 {
 	if (chunk.wire == NULL) {
 		dump_const(f, chunk.data, chunk.width, chunk.offset, autoint);
@@ -95,20 +95,20 @@ void RTLIL_BACKEND::dump_sigchunk(std::ostream &f, const RTLIL::SigChunk &chunk,
 		if (chunk.width == chunk.wire->width && chunk.offset == 0)
 			f << stringf("%s", chunk.wire->name.c_str());
 		else if (chunk.width == 1)
-			f << stringf("%s [%d]", chunk.wire->name.c_str(), chunk.offset);
+			f << stringf("%s%s[%d]", chunk.wire->name.c_str(), no_space ? "" : " ", chunk.offset);
 		else
-			f << stringf("%s [%d:%d]", chunk.wire->name.c_str(), chunk.offset+chunk.width-1, chunk.offset);
+			f << stringf("%s%s[%d:%d]", chunk.wire->name.c_str(), no_space ? "" : " ", chunk.offset+chunk.width-1, chunk.offset);
 	}
 }
 
-void RTLIL_BACKEND::dump_sigspec(std::ostream &f, const RTLIL::SigSpec &sig, bool autoint)
+void RTLIL_BACKEND::dump_sigspec(std::ostream &f, const RTLIL::SigSpec &sig, bool autoint, bool no_space)
 {
 	if (sig.is_chunk()) {
-		dump_sigchunk(f, sig.as_chunk(), autoint);
+		dump_sigchunk(f, sig.as_chunk(), autoint, no_space);
 	} else {
 		f << stringf("{ ");
 		for (auto it = sig.chunks().rbegin(); it != sig.chunks().rend(); ++it) {
-			dump_sigchunk(f, *it, false);
+			dump_sigchunk(f, *it, false, no_space);
 			f << stringf(" ");
 		}
 		f << stringf("}");
