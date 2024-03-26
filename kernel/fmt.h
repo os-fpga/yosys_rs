@@ -50,13 +50,12 @@ struct VerilogFmtArg {
 
 // RTLIL format part, such as the substitutions in:
 //   "foo {4:> 4du} bar {2:<01hs}"
-// Must be kept in sync with `struct fmt_part` in backends/cxxrtl/runtime/cxxrtl/cxxrtl.h!
 struct FmtPart {
 	enum {
 		STRING  	= 0,
 		INTEGER 	= 1,
 		CHARACTER = 2,
-		VLOG_TIME = 3,
+		TIME    	= 3,
 	} type;
 
 	// STRING type
@@ -65,20 +64,20 @@ struct FmtPart {
 	// INTEGER/CHARACTER types
 	RTLIL::SigSpec sig;
 
-	// INTEGER/CHARACTER/VLOG_TIME types
+	// INTEGER/CHARACTER/TIME types
 	enum {
 		RIGHT	= 0,
 		LEFT	= 1,
 	} justify = RIGHT;
 	char padding = '\0';
 	size_t width = 0;
-
+	
 	// INTEGER type
 	unsigned base = 10;
 	bool signed_ = false;
 	bool plus = false;
 
-	// VLOG_TIME type
+	// TIME type
 	bool realtime = false;
 };
 
@@ -94,7 +93,7 @@ public:
 	void parse_verilog(const std::vector<VerilogFmtArg> &args, bool sformat_like, int default_base, RTLIL::IdString task_name, RTLIL::IdString module_name);
 	std::vector<VerilogFmtArg> emit_verilog() const;
 
-	void emit_cxxrtl(std::ostream &os, std::string indent, std::function<void(const RTLIL::SigSpec &)> emit_sig, const std::string &context) const;
+	void emit_cxxrtl(std::ostream &f, std::function<void(const RTLIL::SigSpec &)> emit_sig) const;
 
 	std::string render() const;
 

@@ -110,9 +110,9 @@ void Fmt::parse_rtlil(const RTLIL::Cell *cell) {
 				} else if (fmt[i] == 'c') {
 					part.type = FmtPart::CHARACTER;
 				} else if (fmt[i] == 't') {
-					part.type = FmtPart::VLOG_TIME;
+					part.type = FmtPart::TIME;
 				} else if (fmt[i] == 'r') {
-					part.type = FmtPart::VLOG_TIME;
+					part.type = FmtPart::TIME;
 					part.realtime = true;
 				} else {
 					log_assert(false && "Unexpected character in format substitution");
@@ -172,7 +172,7 @@ void Fmt::emit_rtlil(RTLIL::Cell *cell) const {
 				}
 				break;
 
-			case FmtPart::VLOG_TIME:
+			case FmtPart::TIME:
 				log_assert(part.sig.size() == 0);
 				YS_FALLTHROUGH
 			case FmtPart::CHARACTER:
@@ -205,7 +205,7 @@ void Fmt::emit_rtlil(RTLIL::Cell *cell) const {
 					fmt += part.signed_ ? 's' : 'u';
 				} else if (part.type == FmtPart::CHARACTER) {
 					fmt += 'c';
-				} else if (part.type == FmtPart::VLOG_TIME) {
+				} else if (part.type == FmtPart::TIME) {
 					if (part.realtime)
 						fmt += 'r';
 					else
@@ -326,16 +326,6 @@ void Fmt::parse_verilog(const std::vector<VerilogFmtArg> &args, bool sformat_lik
 				break;
 			}
 
-			case VerilogFmtArg::TIME: {
-				FmtPart part = {};
-				part.type = FmtPart::VLOG_TIME;
-				part.realtime = arg->realtime;
-				part.padding = ' ';
-				part.width = 20;
-				parts.push_back(part);
-				break;
-			}
-
 			case VerilogFmtArg::STRING: {
 				if (arg == args.begin() || !sformat_like) {
 					const auto fmtarg = arg;
@@ -419,7 +409,7 @@ void Fmt::parse_verilog(const std::vector<VerilogFmtArg> &args, bool sformat_lik
 									part.padding = ' ';
 								} else if (fmt[i] == 't' || fmt[i] == 'T') {
 									if (arg->type == VerilogFmtArg::TIME) {
-										part.type = FmtPart::VLOG_TIME;
+										part.type = FmtPart::TIME;
 										part.realtime = arg->realtime;
 										if (!has_width && !has_leading_zero)
 											part.width = 20;
@@ -541,7 +531,7 @@ std::vector<VerilogFmtArg> Fmt::emit_verilog() const
 				break;
 			}
 
-			case FmtPart::VLOG_TIME: {
+			case FmtPart::TIME: {
 				VerilogFmtArg arg;
 				arg.type = VerilogFmtArg::TIME;
 				if (part.realtime)
@@ -569,60 +559,82 @@ std::vector<VerilogFmtArg> Fmt::emit_verilog() const
 	return args;
 }
 
-std::string escape_cxx_string(const std::string &input)
+void Fmt::emit_cxxrtl(std::ostream &f, std::function<void(const RTLIL::SigSpec &)> emit_sig) const
 {
-	std::string output = "\"";
-	for (auto c : input) {
-		if (::isprint(c)) {
-			if (c == '\\')
-				output.push_back('\\');
-			output.push_back(c);
-		} else {
-			char l = c & 0xf, h = (c >> 4) & 0xf;
-			output.append("\\x");
-			output.push_back((h < 10 ? '0' + h : 'a' + h - 10));
-			output.push_back((l < 10 ? '0' + l : 'a' + l - 10));
-		}
-	}
-	output.push_back('"');
-	if (output.find('\0') != std::string::npos) {
-		output.insert(0, "std::string {");
-		output.append(stringf(", %zu}", input.size()));
-	}
-	return output;
-}
-
-void Fmt::emit_cxxrtl(std::ostream &os, std::string indent, std::function<void(const RTLIL::SigSpec &)> emit_sig, const std::string &context) const
-{
-	os << indent << "std::string buf;\n";
 	for (auto &part : parts) {
-		os << indent << "buf += fmt_part { ";
-		os << "fmt_part::";
 		switch (part.type) {
-			case FmtPart::STRING:    os << "STRING";    break;
-			case FmtPart::INTEGER:   os << "INTEGER";   break;
-			case FmtPart::CHARACTER: os << "CHARACTER"; break;
-			case FmtPart::VLOG_TIME: os << "VLOG_TIME"; break;
+			case FmtPart::STRING:
+				f << " << \"";
+				for (char c : part.str) {
+					switch (c) {
+						case '\\':
+							YS_FALLTHROUGH
+						case '"':
+							f << '\\' << c;
+							break;
+						case '\a':
+							f << "\\a";
+							break;
+						case '\b':
+							f << "\\b";
+							break;
+						case '\f':
+							f << "\\f";
+							break;
+						case '\n':
+							f << "\\n";
+							break;
+						case '\r':
+							f << "\\r";
+							break;
+						case '\t':
+							f << "\\t";
+							break;
+						case '\v':
+							f << "\\v";
+							break;
+						default:
+							f << c;
+							break;
+					}
+				}
+				f << '"';
+				break;
+
+			case FmtPart::INTEGER:
+			case FmtPart::CHARACTER: {
+				f << " << value_formatted<" << part.sig.size() << ">(";
+				emit_sig(part.sig);
+				f << ", " << (part.type == FmtPart::CHARACTER);
+				f << ", " << (part.justify == FmtPart::LEFT);
+				f << ", (char)" << (int)part.padding;
+				f << ", " << part.width;
+				f << ", " << part.base;
+				f << ", " << part.signed_;
+				f << ", " << part.plus;
+				f << ')';
+				break;
+			}
+
+			case FmtPart::TIME: {
+				// CXXRTL only records steps taken, so there's no difference between
+				// the values taken by $time and $realtime.
+				f << " << value_formatted<64>(";
+				f << "value<64>{steps}";
+				f << ", " << (part.type == FmtPart::CHARACTER);
+				f << ", " << (part.justify == FmtPart::LEFT);
+				f << ", (char)" << (int)part.padding;
+				f << ", " << part.width;
+				f << ", " << part.base;
+				f << ", " << part.signed_;
+				f << ", " << part.plus;
+				f << ')';
+				break;
+			}
+
+			default: log_abort();
 		}
-		os << ", ";
-		os << escape_cxx_string(part.str) << ", ";
-		os << "fmt_part::";
-		switch (part.justify) {
-			case FmtPart::LEFT:  os << "LEFT";  break;
-			case FmtPart::RIGHT: os << "RIGHT"; break;
-		}
-		os << ", ";
-		os << "(char)" << (int)part.padding << ", ";
-		os << part.width << ", ";
-		os << part.base << ", ";
-		os << part.signed_ << ", ";
-		os << part.plus << ", ";
-		os << part.realtime;
-		os << " }.render(";
-		emit_sig(part.sig);
-		os << ", " << context << ");\n";
 	}
-	os << indent << "return buf;\n";
 }
 
 std::string Fmt::render() const
@@ -636,8 +648,8 @@ std::string Fmt::render() const
 				break;
 
 			case FmtPart::INTEGER:
-			case FmtPart::CHARACTER:
-			case FmtPart::VLOG_TIME: {
+			case FmtPart::TIME:
+			case FmtPart::CHARACTER: {
 				std::string buf;
 				if (part.type == FmtPart::INTEGER) {
 					RTLIL::Const value = part.sig.as_const();
@@ -720,7 +732,7 @@ std::string Fmt::render() const
 					} else log_abort();
 				} else if (part.type == FmtPart::CHARACTER) {
 					buf = part.sig.as_const().decode_string();
-				} else if (part.type == FmtPart::VLOG_TIME) {
+				} else if (part.type == FmtPart::TIME) {
 					// We only render() during initial, so time is always zero.
 					buf = "0";
 				}
@@ -728,7 +740,7 @@ std::string Fmt::render() const
 				log_assert(part.width == 0 || part.padding != '\0');
 				if (part.justify == FmtPart::RIGHT && buf.size() < part.width) {
 					size_t pad_width = part.width - buf.size();
-					if (part.padding == '0' && (!buf.empty() && (buf.front() == '+' || buf.front() == '-'))) {
+					if (part.padding == '0' && (buf.front() == '+' || buf.front() == '-')) {
 						str += buf.front();
 						buf.erase(0, 1);
 					}
