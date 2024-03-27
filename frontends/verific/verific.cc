@@ -75,7 +75,7 @@ USING_YOSYS_NAMESPACE
 #  error "Only YosysHQ flavored Verific is supported. Please contact office@yosyshq.com for commercial support for Yosys+Verific."
 #endif
 
-#if YOSYSHQ_VERIFIC_API_VERSION < 20210801
+#if YOSYSHQ_VERIFIC_API_VERSION < 20230901
 #  error "Please update your version of YosysHQ flavored Verific."
 #endif
 
@@ -338,13 +338,21 @@ static const RTLIL::Const verific_const(const char *value, bool allow_string = t
 	return c;
 }
 
+static const std::string verific_unescape(const char *value)
+{
+	std::string val = std::string(value);
+	if (val.size()>1 && val[0]=='\"' && val.back()=='\"')
+		return val.substr(1,val.size()-2);
+	return value;
+}
+
 void VerificImporter::import_attributes(dict<RTLIL::IdString, RTLIL::Const> &attributes, DesignObj *obj, Netlist *nl)
 {
 	MapIter mi;
 	Att *attr;
 
 	if (obj->Linefile())
-		attributes[ID::src] = stringf("%s:%d", LineFile::GetFileName(obj->Linefile()), LineFile::GetLineNo(obj->Linefile()));
+		attributes[ID::src] = stringf("%s:%d.%d-%d.%d", LineFile::GetFileName(obj->Linefile()), obj->Linefile()->GetLeftLine(), obj->Linefile()->GetLeftCol(), obj->Linefile()->GetRightLine(), obj->Linefile()->GetRightCol());
 
 	// FIXME: Parse numeric attributes
 	FOREACH_ATTRIBUTE(obj, mi, attr) {
@@ -1191,6 +1199,43 @@ bool VerificImporter::import_netlist_instance_cells(Instance *inst, RTLIL::IdStr
 		return true;
 	}
 
+	if (inst->Type() == OPER_YOSYSHQ_SET_TAG)
+	{
+		RTLIL::SigSpec sig_expr = operatorInport(inst, "expr");
+		RTLIL::SigSpec sig_set_mask = operatorInport(inst, "set_mask");
+		RTLIL::SigSpec sig_clr_mask = operatorInport(inst, "clr_mask");
+		RTLIL::SigSpec sig_o = operatorOutput(inst);
+		std::string tag = inst->GetAtt("tag") ? verific_unescape(inst->GetAttValue("tag")) : "";
+		module->connect(sig_o, module->SetTag(new_verific_id(inst), tag, sig_expr, sig_set_mask, sig_clr_mask));
+		return true;
+	}
+	if (inst->Type() == OPER_YOSYSHQ_GET_TAG)
+	{
+		std::string tag = inst->GetAtt("tag") ? verific_unescape(inst->GetAttValue("tag")) : "";
+		module->connect(operatorOutput(inst),module->GetTag(new_verific_id(inst), tag, operatorInput(inst)));
+		return true;
+	}
+	if (inst->Type() == OPER_YOSYSHQ_OVERWRITE_TAG)
+	{
+		RTLIL::SigSpec sig_signal = operatorInport(inst, "signal");
+		RTLIL::SigSpec sig_set_mask = operatorInport(inst, "set_mask");
+		RTLIL::SigSpec sig_clr_mask = operatorInport(inst, "clr_mask");
+		std::string tag = inst->GetAtt("tag") ? verific_unescape(inst->GetAttValue("tag")) : "";
+		module->addOverwriteTag(new_verific_id(inst), tag, sig_signal, sig_set_mask, sig_clr_mask);
+		return true;
+	}
+	if (inst->Type() == OPER_YOSYSHQ_ORIGINAL_TAG)
+	{
+		std::string tag = inst->GetAtt("tag") ? verific_unescape(inst->GetAttValue("tag")) : "";
+		module->connect(operatorOutput(inst),module->OriginalTag(new_verific_id(inst), tag, operatorInput(inst)));
+		return true;
+	}
+	if (inst->Type() == OPER_YOSYSHQ_FUTURE_FF)
+	{
+		module->connect(operatorOutput(inst),module->FutureFF(new_verific_id(inst), operatorInput(inst)));
+		return true;
+	}
+
 	#undef IN
 	#undef IN1
 	#undef IN2
@@ -1385,9 +1430,16 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 		log("Importing module %s.\n", RTLIL::id2cstr(module->name));
 	}
 	import_attributes(module->attributes, nl, nl);
+	const char *param_name ;
+	const char *param_value ;
+	MapIter mi;
+	FOREACH_PARAMETER_OF_NETLIST(nl, mi, param_name, param_value) {
+		module->avail_parameters(RTLIL::escape_id(param_name));
+		module->parameter_default_values[RTLIL::escape_id(param_name)] = verific_const(param_value);
+	}
 
 	SetIter si;
-	MapIter mi, mi2;
+	MapIter mi2;
 	Port *port;
 	PortBus *portbus;
 	Net *net;
@@ -3138,6 +3190,9 @@ struct VerificPass : public Pass {
 			RuntimeFlags::SetVar("db_infer_wide_operators", 1);
 			RuntimeFlags::SetVar("db_infer_set_reset_registers", 0);
 
+			// Properly respect order of read and write for rams
+			RuntimeFlags::SetVar("db_change_inplace_ram_blocking_write_before_read", 1);
+
 			RuntimeFlags::SetVar("veri_extract_dualport_rams", 0);
 			RuntimeFlags::SetVar("veri_extract_multiport_rams", 1);
 			RuntimeFlags::SetVar("veri_allow_any_ram_in_loop", 1);
@@ -3195,6 +3250,7 @@ struct VerificPass : public Pass {
 		int argidx = 1;
 		std::string work = "work";
 		bool is_work_set = false;
+		(void)is_work_set;
 		veri_file::RegisterCallBackVerificStream(&verific_read_cb);
 
 		if (GetSize(args) > argidx && (args[argidx] == "-set-error" || args[argidx] == "-set-warning" ||
@@ -3272,7 +3328,20 @@ struct VerificPass : public Pass {
 		}
 
 		veri_file::RemoveAllLOptions();
-		veri_file::AddLOption("work");
+		for (int i = argidx; i < GetSize(args); i++)
+		{
+			if (args[i] == "-work" && i+1 < GetSize(args)) {
+				work = args[++i];
+				is_work_set = true;
+				continue;
+			}
+			if (args[i] == "-L" && i+1 < GetSize(args)) {
+				++i;
+				continue;
+			}
+			break;
+		}
+		veri_file::AddLOption(work.c_str());
 		for (int i = argidx; i < GetSize(args); i++)
 		{
 			if (args[i] == "-work" && i+1 < GetSize(args)) {
@@ -3280,7 +3349,7 @@ struct VerificPass : public Pass {
 				continue;
 			}
 			if (args[i] == "-L" && i+1 < GetSize(args)) {
-				if (args[++i] == "work")
+				if (args[++i] == work)
 					veri_file::RemoveAllLOptions();
 				continue;
 			}
@@ -3773,7 +3842,7 @@ struct VerificPass : public Pass {
 								if (module_name && module_name->IsHierName()) {
 									VeriName *prefix = module_name->GetPrefix() ;
 									const char *lib_name = (prefix) ? prefix->GetName() : 0 ;
-									if (!Strings::compare("work", lib_name)) lib = veri_file::GetLibrary(lib_name, 1) ;
+									if (work != lib_name) lib = veri_file::GetLibrary(lib_name, 1) ;
 								}
 								if (lib && module_name)
 									top_mod_names.insert(lib->GetModule(module_name->GetName(), 1)->GetName());
@@ -3795,13 +3864,19 @@ struct VerificPass : public Pass {
 					log_error("Can't find module/unit '%s'.\n", name);
 				}
 
-				if (veri_lib) {
-					// Also elaborate all root modules since they may contain bind statements
-					MapIter mi;
-					VeriModule *veri_module;
-					FOREACH_VERILOG_MODULE_IN_LIBRARY(veri_lib, mi, veri_module) {
-						if (!veri_module->IsRootModule()) continue;
-						veri_modules.InsertLast(veri_module);
+
+				const char *lib_name = nullptr;
+				SetIter si;
+				FOREACH_SET_ITEM(veri_file::GetAllLOptions(), si, &lib_name) {
+					VeriLibrary* veri_lib = veri_file::GetLibrary(lib_name, 0);
+					if (veri_lib) {
+						// Also elaborate all root modules since they may contain bind statements
+						MapIter mi;
+						VeriModule *veri_module;
+						FOREACH_VERILOG_MODULE_IN_LIBRARY(veri_lib, mi, veri_module) {
+							if (!veri_module->IsRootModule()) continue;
+							veri_modules.InsertLast(veri_module);
+						}
 					}
 				}
 
