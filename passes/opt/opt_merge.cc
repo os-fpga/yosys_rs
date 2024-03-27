@@ -41,7 +41,7 @@ struct OptMergeWorker
 
 	CellTypes ct;
 	int total_count;
-	SHA1 checksum;
+
 
 	static void sort_pmux_conn(dict<RTLIL::IdString, RTLIL::SigSpec> &conn)
 	{
