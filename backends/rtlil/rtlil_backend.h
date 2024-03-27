@@ -32,8 +32,8 @@ YOSYS_NAMESPACE_BEGIN
 
 namespace RTLIL_BACKEND {
 	void dump_const(std::ostream &f, const RTLIL::Const &data, int width = -1, int offset = 0, bool autoint = true);
-	void dump_sigchunk(std::ostream &f, const RTLIL::SigChunk &chunk, bool autoint = true);
-	void dump_sigspec(std::ostream &f, const RTLIL::SigSpec &sig, bool autoint = true);
+	void dump_sigchunk(std::ostream &f, const RTLIL::SigChunk &chunk, bool autoint = true, bool no_space = false);
+	void dump_sigspec(std::ostream &f, const RTLIL::SigSpec &sig, bool autoint = true, bool no_space = false);
 	void dump_wire(std::ostream &f, std::string indent, const RTLIL::Wire *wire);
 	void dump_memory(std::ostream &f, std::string indent, const RTLIL::Memory *memory);
 	void dump_cell(std::ostream &f, std::string indent, const RTLIL::Cell *cell);
