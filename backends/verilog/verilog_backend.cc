@@ -2030,6 +2030,11 @@ void dump_proc_switch(std::stringstream &f, std::string indent, RTLIL::SwitchRul
 		dump_case_body(f, indent + "    ", *it);
 	}
 
+	if (sw->cases.empty()) {
+		// Verilog does not allow empty cases.
+		f << stringf("%s  default: ;\n", indent.c_str());
+	}
+
 	f << stringf("%s" "endcase\n", indent.c_str());
 }
 
