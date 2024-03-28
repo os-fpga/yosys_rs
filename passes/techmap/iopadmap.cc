@@ -266,18 +266,12 @@ struct IopadmapPass : public Pass {
 		}
 
 		// Now do the actual buffer insertion.
-		pool<SigBit> driven_bits_list;
+
 		for (auto module : design->selected_modules())
 		{
 			dict<Wire *, dict<int, pair<Cell *, IdString>>> rewrite_bits;
 			dict<SigSig, pool<int>> remove_conns;
 
-			for (auto cell : module->cells()){
-				for (auto port : cell->connections())
-					for (auto bit : port.second){
-						driven_bits_list.insert(bit);
-					}
-			}
 			if (!toutpad_celltype.empty() || !tinoutpad_celltype.empty())
 			{
 				dict<SigBit, Cell *> tbuf_bits;
@@ -416,15 +410,10 @@ struct IopadmapPass : public Pass {
 				std::string celltype, portname_int, portname_pad;
 				pool<int> skip_bit_indices;
 
-				for (int i = 0; i < GetSize(wire); i++){
-					/*EDA-2629: Skip buffer insertion for a wire-bit which does not drive any cell*/
-					SigBit wire_bit_check(wire, i);
-					if(!driven_bits_list.count(wire_bit_check))
-						skip_bit_indices.insert(i);
-					/*---------------------------------------------------------------------------*/	
+				for (int i = 0; i < GetSize(wire); i++)
 					if (buf_ports.count(make_pair(module->name, make_pair(wire->name, i))))
 						skip_bit_indices.insert(i);
-				}
+
 				if (GetSize(wire) == GetSize(skip_bit_indices))
 					continue;
 
