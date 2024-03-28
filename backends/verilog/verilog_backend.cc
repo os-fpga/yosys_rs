@@ -1031,7 +1031,7 @@ void dump_cell_expr_binop(std::stringstream &f, std::string indent, RTLIL::Cell 
 
 void dump_cell_expr_print(std::stringstream &f, std::string indent, const RTLIL::Cell *cell)
 {
-	Fmt fmt = {};
+	Fmt fmt;
 	fmt.parse_rtlil(cell);
 	std::vector<VerilogFmtArg> args = fmt.emit_verilog();
 
@@ -1064,6 +1064,23 @@ void dump_cell_expr_print(std::stringstream &f, std::string indent, const RTLIL:
 	f << stringf(");\n");
 }
 
+void dump_cell_expr_check(std::stringstream &f, std::string indent, const RTLIL::Cell *cell)
+{
+	std::string flavor = cell->getParam(ID(FLAVOR)).decode_string();
+	if (flavor == "assert")
+		f << stringf("%s" "assert (", indent.c_str());
+	else if (flavor == "assume")
+		f << stringf("%s" "assume (", indent.c_str());
+	else if (flavor == "live")
+		f << stringf("%s" "assert (eventually ", indent.c_str());
+	else if (flavor == "fair")
+		f << stringf("%s" "assume (eventually ", indent.c_str());
+	else if (flavor == "cover")
+		f << stringf("%s" "cover (", indent.c_str());
+	dump_sigspec(f, cell->getPort(ID::A));
+	f << stringf(");\n");
+}
+
 bool dump_cell_expr(std::stringstream &f, std::string indent, RTLIL::Cell *cell)
 {
 	if (cell->type == ID($_NOT_)) {
@@ -1072,6 +1089,15 @@ bool dump_cell_expr(std::stringstream &f, std::string indent, RTLIL::Cell *cell)
 		f << stringf(" = ");
 		f << stringf("~");
 		dump_attributes(f, "", cell->attributes, " ");
+		dump_cell_expr_port(f, cell, "A", false);
+		f << stringf(";\n");
+		return true;
+	}
+	
+	if (cell->type == ID($_BUF_)) {
+		f << stringf("%s" "assign ", indent.c_str());
+		dump_sigspec(f, cell->getPort(ID::Y));
+		f << stringf(" = ");
 		dump_cell_expr_port(f, cell, "A", false);
 		f << stringf(";\n");
 		return true;
@@ -1828,6 +1854,39 @@ bool dump_cell_expr(std::stringstream &f, std::string indent, RTLIL::Cell *cell)
 		return true;
 	}
 
+	if (cell->type == ID($check))
+	{
+		// Sync $check cells are accumulated and handled in dump_module.
+		if (cell->getParam(ID::TRG_ENABLE).as_bool())
+			return true;
+
+		f << stringf("%s" "always @*\n", indent.c_str());
+
+		f << stringf("%s" "  if (", indent.c_str());
+		dump_sigspec(f, cell->getPort(ID::EN));
+		f << stringf(") begin\n");
+
+		std::string flavor = cell->getParam(ID::FLAVOR).decode_string();
+		if (flavor == "assert" || flavor == "assume") {
+			Fmt fmt;
+			fmt.parse_rtlil(cell);
+			if (!fmt.parts.empty()) {
+				f << stringf("%s" "    if (!", indent.c_str());
+				dump_sigspec(f, cell->getPort(ID::A));
+				f << stringf(")\n");
+				dump_cell_expr_print(f, indent + "      ", cell);
+			}
+		} else {
+			f << stringf("%s" "  /* message omitted */\n", indent.c_str());
+		}
+
+		dump_cell_expr_check(f, indent + "    ", cell);
+
+		f << stringf("%s" "  end\n", indent.c_str());
+
+		return true;
+	}
+
 	// FIXME: $fsm
 
 	return false;
@@ -1917,7 +1976,7 @@ void dump_cell(std::stringstream &f, std::string indent, RTLIL::Cell *cell)
 	}
 }
 
-void dump_sync_print(std::stringstream &f, std::string indent, const RTLIL::SigSpec &trg, const RTLIL::Const &polarity, std::vector<const RTLIL::Cell*> &cells)
+void dump_sync_effect(std::stringstream &f, std::string indent, const RTLIL::SigSpec &trg, const RTLIL::Const &polarity, std::vector<const RTLIL::Cell*> &cells)
 {
 	if (trg.size() == 0) {
 		f << stringf("%s" "initial begin\n", indent.c_str());
@@ -1941,9 +2000,29 @@ void dump_sync_print(std::stringstream &f, std::string indent, const RTLIL::SigS
 	for (auto cell : cells) {
 		f << stringf("%s" "  if (", indent.c_str());
 		dump_sigspec(f, cell->getPort(ID::EN));
-		f << stringf(")\n");
+		f << stringf(") begin\n");
 
-		dump_cell_expr_print(f, indent + "    ", cell);
+		if (cell->type == ID($print)) {
+			dump_cell_expr_print(f, indent + "    ", cell);
+		} else if (cell->type == ID($check)) {
+			std::string flavor = cell->getParam(ID::FLAVOR).decode_string();
+			if (flavor == "assert" || flavor == "assume") {
+				Fmt fmt;
+				fmt.parse_rtlil(cell);
+				if (!fmt.parts.empty()) {
+					f << stringf("%s" "    if (!", indent.c_str());
+					dump_sigspec(f, cell->getPort(ID::A));
+					f << stringf(")\n");
+					dump_cell_expr_print(f, indent + "      ", cell);
+				}
+			} else {
+				f << stringf("%s" "  /* message omitted */\n", indent.c_str());
+			}
+
+			dump_cell_expr_check(f, indent + "    ", cell);
+		}
+
+		f << stringf("%s" "  end\n", indent.c_str());
 	}
 
 	f << stringf("%s" "end\n", indent.c_str());
@@ -1972,13 +2051,8 @@ void dump_conn(std::stringstream &f, std::string indent, const RTLIL::SigSpec &l
 
 void dump_proc_switch(std::stringstream &f, std::string indent, RTLIL::SwitchRule *sw);
 
-void dump_case_body(std::stringstream &f, std::string indent, RTLIL::CaseRule *cs, bool omit_trailing_begin = false)
+void dump_case_actions(std::stringstream &f, std::string indent, RTLIL::CaseRule *cs)
 {
-	int number_of_stmts = cs->switches.size() + cs->actions.size();
-
-	if (!omit_trailing_begin && number_of_stmts >= 2)
-		f << stringf("%s" "begin\n", indent.c_str());
-
 	for (auto it = cs->actions.begin(); it != cs->actions.end(); ++it) {
 		if (it->first.size() == 0)
 			continue;
@@ -1988,15 +2062,6 @@ void dump_case_body(std::stringstream &f, std::string indent, RTLIL::CaseRule *c
 		dump_sigspec(f, it->second);
 		f << stringf(";\n");
 	}
-
-	for (auto it = cs->switches.begin(); it != cs->switches.end(); ++it)
-		dump_proc_switch(f, indent + "  ", *it);
-
-	if (!omit_trailing_begin && number_of_stmts == 0)
-		f << stringf("%s  /* empty */;\n", indent.c_str());
-
-	if (omit_trailing_begin || number_of_stmts >= 2)
-		f << stringf("%s" "end\n", indent.c_str());
 }
 
 bool dump_proc_switch_ifelse(std::stringstream &f, std::string indent, RTLIL::SwitchRule *sw)
@@ -2019,34 +2084,50 @@ bool dump_proc_switch_ifelse(std::stringstream &f, std::string indent, RTLIL::Sw
 		}
 	}
 
+	dump_attributes(f, indent, sw->attributes);
 	f << indent;
 	auto sig_it = sw->signal.begin();
 	for (auto it = sw->cases.begin(); it != sw->cases.end(); ++it, ++sig_it) {
-		bool had_newline = true;
 		if (it != sw->cases.begin()) {
-			if ((*it)->compare.empty()) {
-				f << indent << "else\n";
-				had_newline = true;
-			} else {
-				f << indent << "else ";
-				had_newline = false;
-			}
+			if ((*it)->compare.empty())
+				f << " else begin\n";
+			else
+				f << " else ";
 		}
 		if (!(*it)->compare.empty()) {
-			if (!(*it)->attributes.empty()) {
-				if (!had_newline)
-					f << "\n" << indent;
-				dump_attributes(f, "", (*it)->attributes, "\n" + indent);
-			}
 			f << stringf("if (");
 			dump_sigspec(f, *sig_it);
-			f << stringf(")\n");
+			f << stringf(") begin\n");
 		}
-		dump_case_body(f, indent, *it);
+
+		dump_case_actions(f, indent, (*it));
+		for (auto it2 = (*it)->switches.begin(); it2 != (*it)->switches.end(); ++it2)
+			dump_proc_switch(f, indent + "  ", *it2);
+
+		f << indent << "end";
 		if ((*it)->compare.empty())
 			break;
 	}
+	f << "\n";
 	return true;
+}
+
+void dump_case_body(std::stringstream &f, std::string indent, RTLIL::CaseRule *cs, bool omit_trailing_begin = false)
+{
+	int number_of_stmts = cs->switches.size() + cs->actions.size();
+
+	if (!omit_trailing_begin && number_of_stmts >= 2)
+		f << stringf("%s" "begin\n", indent.c_str());
+
+	dump_case_actions(f, indent, cs);
+	for (auto it = cs->switches.begin(); it != cs->switches.end(); ++it)
+		dump_proc_switch(f, indent + "  ", *it);
+
+	if (!omit_trailing_begin && number_of_stmts == 0)
+		f << stringf("%s  /* empty */;\n", indent.c_str());
+
+	if (omit_trailing_begin || number_of_stmts >= 2)
+		f << stringf("%s" "end\n", indent.c_str());
 }
 
 void dump_proc_switch(std::stringstream &f, std::string indent, RTLIL::SwitchRule *sw)
@@ -2261,7 +2342,7 @@ void formating_encrypt_file (std::stringstream &f, int state)
 
 void dump_module(std::stringstream &f, std::string indent, RTLIL::Module *module)
 {
-	std::map<std::pair<RTLIL::SigSpec, RTLIL::Const>, std::vector<const RTLIL::Cell*>> sync_print_cells;	
+	std::map<std::pair<RTLIL::SigSpec, RTLIL::Const>, std::vector<const RTLIL::Cell*>> sync_effect_cells;	
 	
 	reg_wires.clear();
 	reset_auto_counter(module);
@@ -2293,8 +2374,8 @@ void dump_module(std::stringstream &f, std::string indent, RTLIL::Module *module
 		std::set<std::pair<RTLIL::Wire*,int>> reg_bits;
 		for (auto cell : module->cells())
 		{
-			if (cell->type == ID($print) && cell->getParam(ID::TRG_ENABLE).as_bool()) {
-				sync_print_cells[make_pair(cell->getPort(ID::TRG), cell->getParam(ID::TRG_POLARITY))].push_back(cell);
+			if (cell->type.in(ID($print), ID($check)) && cell->getParam(ID::TRG_ENABLE).as_bool()) {
+				sync_effect_cells[make_pair(cell->getPort(ID::TRG), cell->getParam(ID::TRG_POLARITY))].push_back(cell);
 				continue;
 			}
 
@@ -2365,8 +2446,8 @@ void dump_module(std::stringstream &f, std::string indent, RTLIL::Module *module
 	for (auto cell : module->cells())
 		dump_cell(f, indent + "  ", cell);
 
-	for (auto &it : sync_print_cells)
-		dump_sync_print(f, indent + "  ", it.first.first, it.first.second, it.second);
+	for (auto &it : sync_effect_cells)
+		dump_sync_effect(f, indent + "  ", it.first.first, it.first.second, it.second);
 
 	for (auto it = module->processes.begin(); it != module->processes.end(); ++it)
 		dump_process(f, indent + "  ", it->second);

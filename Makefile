@@ -148,7 +148,7 @@ LDLIBS += -lrt
 endif
 endif
 
-YOSYS_VER := 0.37
+YOSYS_VER := 0.38
 
 # Note: We arrange for .gitcommit to contain the (short) commit hash in
 # tarballs generated with git-archive(1) using .gitattributes. The git repo
@@ -688,11 +688,7 @@ OBJS += libs/bigint/BigUnsigned.o libs/bigint/BigUnsignedInABase.o
 
 OBJS += libs/sha1/sha1.o
 
-ifneq ($(SMALL),1)
-
 OBJS += libs/json11/json11.o
-
-OBJS += libs/subcircuit/subcircuit.o
 
 OBJS += libs/ezsat/ezsat.o
 OBJS += libs/ezsat/ezminisat.o
@@ -708,6 +704,10 @@ OBJS += libs/fst/fastlz.o
 OBJS += libs/fst/lz4.o
 endif
 
+ifneq ($(SMALL),1)
+
+OBJS += libs/subcircuit/subcircuit.o
+
 include $(YOSYS_SRC)/frontends/*/Makefile.inc
 include $(YOSYS_SRC)/passes/*/Makefile.inc
 include $(YOSYS_SRC)/backends/*/Makefile.inc
@@ -716,6 +716,9 @@ include $(YOSYS_SRC)/techlibs/*/Makefile.inc
 else
 
 include $(YOSYS_SRC)/frontends/verilog/Makefile.inc
+ifeq ($(ENABLE_VERIFIC),1)
+include $(YOSYS_SRC)/frontends/verific/Makefile.inc
+endif
 include $(YOSYS_SRC)/frontends/rtlil/Makefile.inc
 include $(YOSYS_SRC)/frontends/ast/Makefile.inc
 include $(YOSYS_SRC)/frontends/blif/Makefile.inc
