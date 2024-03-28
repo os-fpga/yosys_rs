@@ -148,7 +148,7 @@ LDLIBS += -lrt
 endif
 endif
 
-YOSYS_VER := 0.36
+YOSYS_VER := 0.37
 
 # Note: We arrange for .gitcommit to contain the (short) commit hash in
 # tarballs generated with git-archive(1) using .gitattributes. The git repo
@@ -900,6 +900,7 @@ endif
 	+cd tests/verilog && bash run-test.sh
 	+cd tests/xprop && bash run-test.sh $(SEEDOPT)
 	+cd tests/fmt && bash run-test.sh
+	+cd tests/cxxrtl && bash run-test.sh
 	@echo ""
 	@echo "  Passed \"make test\"."
 	@echo ""

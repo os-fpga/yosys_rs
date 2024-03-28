@@ -28,6 +28,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <cassert>
 #include <limits>
 #include <type_traits>
@@ -145,7 +146,7 @@ struct value : public expr_base<value<Bits>> {
 	// These functions ensure that a conversion is never out of range, and should be always used, if at all
 	// possible, instead of direct manipulation of the `data` member. For very large types, .slice() and
 	// .concat() can be used to split them into more manageable parts.
-	template<class IntegerT>
+	template<class IntegerT, typename std::enable_if<!std::is_signed<IntegerT>::value, int>::type = 0>
 	CXXRTL_ALWAYS_INLINE
 	IntegerT get() const {
 		static_assert(std::numeric_limits<IntegerT>::is_integer && !std::numeric_limits<IntegerT>::is_signed,
@@ -158,15 +159,32 @@ struct value : public expr_base<value<Bits>> {
 		return result;
 	}
 
-	template<class IntegerT>
+	template<class IntegerT, typename std::enable_if<std::is_signed<IntegerT>::value, int>::type = 0>
 	CXXRTL_ALWAYS_INLINE
-	void set(IntegerT other) {
+	IntegerT get() const {
+		auto unsigned_result = get<typename std::make_unsigned<IntegerT>::type>();
+		IntegerT result;
+		memcpy(&result, &unsigned_result, sizeof(IntegerT));
+		return result;
+	}
+
+	template<class IntegerT, typename std::enable_if<!std::is_signed<IntegerT>::value, int>::type = 0>
+	CXXRTL_ALWAYS_INLINE
+	void set(IntegerT value) {
 		static_assert(std::numeric_limits<IntegerT>::is_integer && !std::numeric_limits<IntegerT>::is_signed,
 		              "set<T>() requires T to be an unsigned integral type");
 		static_assert(std::numeric_limits<IntegerT>::digits >= Bits,
 		              "set<T>() requires the value to be at least as wide as T is");
 		for (size_t n = 0; n < chunks; n++)
-			data[n] = (other >> (n * chunk::bits)) & chunk::mask;
+			data[n] = (value >> (n * chunk::bits)) & chunk::mask;
+	}
+
+	template<class IntegerT, typename std::enable_if<std::is_signed<IntegerT>::value, int>::type = 0>
+	CXXRTL_ALWAYS_INLINE
+	void set(IntegerT value) {
+		typename std::make_unsigned<IntegerT>::type unsigned_value;
+		memcpy(&unsigned_value, &value, sizeof(IntegerT));
+		set(unsigned_value);
 	}
 
 	// Operations with compile-time parameters.
@@ -419,6 +437,7 @@ struct value : public expr_base<value<Bits>> {
 			carry = (shift_bits == 0) ? 0
 				: data[n] >> (chunk::bits - shift_bits);
 		}
+		result.data[result.chunks - 1] &= result.msb_mask;
 		return result;
 	}
 
@@ -429,12 +448,12 @@ struct value : public expr_base<value<Bits>> {
 		// Detect shifts definitely large than Bits early.
 		for (size_t n = 1; n < amount.chunks; n++)
 			if (amount.data[n] != 0)
-				return {};
+				return (Signed && is_neg()) ? value<Bits>().bit_not() : value<Bits>();
 		// Past this point we can use the least significant chunk as the shift size.
 		size_t shift_chunks = amount.data[0] / chunk::bits;
 		size_t shift_bits   = amount.data[0] % chunk::bits;
 		if (shift_chunks >= chunks)
-			return {};
+			return (Signed && is_neg()) ? value<Bits>().bit_not() : value<Bits>();
 		value<Bits> result;
 		chunk::type carry = 0;
 		for (size_t n = 0; n < chunks - shift_chunks; n++) {
@@ -443,12 +462,13 @@ struct value : public expr_base<value<Bits>> {
 				: data[chunks - 1 - n] << (chunk::bits - shift_bits);
 		}
 		if (Signed && is_neg()) {
-			size_t top_chunk_idx  = (Bits - shift_bits) / chunk::bits;
-			size_t top_chunk_bits = (Bits - shift_bits) % chunk::bits;
+			size_t top_chunk_idx  = amount.data[0] > Bits ? 0 : (Bits - amount.data[0]) / chunk::bits;
+			size_t top_chunk_bits = amount.data[0] > Bits ? 0 : (Bits - amount.data[0]) % chunk::bits;
 			for (size_t n = top_chunk_idx + 1; n < chunks; n++)
 				result.data[n] = chunk::mask;
-			if (shift_bits != 0)
+			if (amount.data[0] != 0)
 				result.data[top_chunk_idx] |= chunk::mask << top_chunk_bits;
+			result.data[result.chunks - 1] &= result.msb_mask;
 		}
 		return result;
 	}
@@ -473,6 +493,7 @@ struct value : public expr_base<value<Bits>> {
 			carry = (shift_bits == 0) ? 0
 				: data[result.chunks + shift_chunks - 1 - n] << (chunk::bits - shift_bits);
 		}
+		result.data[result.chunks - 1] &= result.msb_mask;
 		return result;
 	}
 
@@ -508,23 +529,17 @@ struct value : public expr_base<value<Bits>> {
 		size_t count = 0;
 		for (size_t n = 0; n < chunks; n++) {
 			chunk::type x = data[chunks - 1 - n];
-			if (x == 0) {
-				count += (n == 0 ? Bits % chunk::bits : chunk::bits);
-			} else {
-				// This loop implements the find first set idiom as recognized by LLVM.
-				for (; x != 0; count++)
+			// First add to `count` as if the chunk is zero
+			constexpr size_t msb_chunk_bits = Bits % chunk::bits != 0 ? Bits % chunk::bits : chunk::bits;
+			count += (n == 0 ? msb_chunk_bits : chunk::bits);
+			// If the chunk isn't zero, correct the `count` value and return
+			if (x != 0) {
+				for (; x != 0; count--)
 					x >>= 1;
+				break;
 			}
 		}
 		return count;
-	}
-
-	size_t chunks_used() const {
-		for (size_t n = chunks; n > 0; n--) {
-			if (data[n - 1] != 0)
-				return n;
-		}
-		return 0;
 	}
 
 	template<bool Invert, bool CarryIn>
@@ -585,82 +600,36 @@ struct value : public expr_base<value<Bits>> {
 		return result;
 	}
 
-	// parallel to BigUnsigned::divideWithRemainder; quotient is stored in q,
-	// *this is left with the remainder.  See that function for commentary describing
-	// how/why this works.
-	void divideWithRemainder(const value<Bits> &b, value<Bits> &q) {
-		assert(this != &q);
-
-		if (this == &b || &q == &b) {
-			value<Bits> tmpB(b);
-			divideWithRemainder(tmpB, q);
-			return;
-		}
-
-		q = value<Bits> {0u};
-
-		size_t blen = b.chunks_used();
-		if (blen == 0) {
-			return;
-		}
-
-		size_t len = chunks_used();
-		if (len < blen) {
-			return;
-		}
-
-		size_t i, j, k;
-		size_t i2;
-		chunk_t temp;
-		bool borrowIn, borrowOut;
-
-		size_t origLen = len;
-		len++;
-		chunk::type blk[len];
-		std::copy(data, data + origLen, blk);
-		blk[origLen] = 0;
-		chunk::type subtractBuf[len];
-		std::fill(subtractBuf, subtractBuf + len, 0);
-
-		size_t qlen = origLen - blen + 1;
-
-		i = qlen;
-		while (i > 0) {
-			i--;
-			i2 = chunk::bits;
-			while (i2 > 0) {
-				i2--;
-				for (j = 0, k = i, borrowIn = false; j <= blen; j++, k++) {
-					temp = blk[k] - getShiftedBlock(b, j, i2);
-					borrowOut = (temp > blk[k]);
-					if (borrowIn) {
-						borrowOut |= (temp == 0);
-						temp--;
-					}
-					subtractBuf[k] = temp;
-					borrowIn = borrowOut;
-				}
-				for (; k < origLen && borrowIn; k++) {
-					borrowIn = (blk[k] == 0);
-					subtractBuf[k] = blk[k] - 1;
-				}
-				if (!borrowIn) {
-					q.data[i] |= (chunk::type(1) << i2);
-					while (k > i) {
-						k--;
-						blk[k] = subtractBuf[k];
-					}
-				}
+	std::pair<value<Bits>, value<Bits>> udivmod(value<Bits> divisor) const {
+		value<Bits> quotient;
+		value<Bits> dividend = *this;
+		if (dividend.ucmp(divisor))
+			return {/*quotient=*/value<Bits>{0u}, /*remainder=*/dividend};
+		int64_t divisor_shift = divisor.ctlz() - dividend.ctlz();
+		assert(divisor_shift >= 0);
+		divisor = divisor.shl(value<Bits>{(chunk::type) divisor_shift});
+		for (size_t step = 0; step <= divisor_shift; step++) {
+			quotient = quotient.shl(value<Bits>{1u});
+			if (!dividend.ucmp(divisor)) {
+				dividend = dividend.sub(divisor);
+				quotient.set_bit(0, true);
 			}
+			divisor = divisor.shr(value<Bits>{1u});
 		}
-
-		std::copy(blk, blk + origLen, data);
+		return {quotient, /*remainder=*/dividend};
 	}
 
-	static chunk::type getShiftedBlock(const value<Bits> &num, size_t x, size_t y) {
-		chunk::type part1 = (x == 0 || y == 0) ? 0 : (num.data[x - 1] >> (chunk::bits - y));
-		chunk::type part2 = (x == num.chunks) ? 0 : (num.data[x] << y);
-		return part1 | part2;
+	std::pair<value<Bits>, value<Bits>> sdivmod(const value<Bits> &other) const {
+		value<Bits + 1> quotient;
+		value<Bits + 1> remainder;
+		value<Bits + 1> dividend = sext<Bits + 1>();
+		value<Bits + 1> divisor = other.template sext<Bits + 1>();
+		if (dividend.is_neg()) dividend = dividend.neg();
+		if (divisor.is_neg()) divisor = divisor.neg();
+		std::tie(quotient, remainder) = dividend.udivmod(divisor);
+		if (dividend.is_neg() != divisor.is_neg()) quotient = quotient.neg();
+		if (dividend.is_neg()) remainder = remainder.neg();
+		return {quotient.template trunc<Bits>(), remainder.template trunc<Bits>()};
 	}
 };
 
@@ -849,9 +818,12 @@ std::ostream &operator<<(std::ostream &os, const value_formatted<Bits> &vf)
 			if (val.is_zero())
 				buf += '0';
 			while (!val.is_zero()) {
-				value<Bits> quotient;
-				val.divideWithRemainder(value<Bits>{10u}, quotient);
-				buf += '0' + val.template trunc<(Bits > 4 ? 4 : Bits)>().val().template get<uint8_t>();
+				value<Bits> quotient, remainder;
+				if (Bits >= 4)
+					std::tie(quotient, remainder) = val.udivmod(value<Bits>{10u});
+				else
+					std::tie(quotient, remainder) = std::make_pair(value<Bits>{0u}, val);
+				buf += '0' + remainder.template trunc<(Bits > 4 ? 4 : Bits)>().val().template get<uint8_t>();
 				val = quotient;
 			}
 			if (negative || vf.plus)
@@ -887,6 +859,27 @@ std::ostream &operator<<(std::ostream &os, const value_formatted<Bits> &vf)
 	return os;
 }
 
+// An object that can be passed to a `commit()` method in order to produce a replay log of every state change in
+// the simulation.
+struct observer {
+	// Called when the `commit()` method for a wire is about to update the `chunks` chunks at `base` with `chunks` chunks
+	// at `value` that have a different bit pattern. It is guaranteed that `chunks` is equal to the wire chunk count and
+	// `base` points to the first chunk.
+	virtual void on_commit(size_t chunks, const chunk_t *base, const chunk_t *value) = 0;
+
+	// Called when the `commit()` method for a memory is about to update the `chunks` chunks at `&base[chunks * index]`
+	// with `chunks` chunks at `value` that have a different bit pattern. It is guaranteed that `chunks` is equal to
+	// the memory element chunk count and `base` points to the first chunk of the first element of the memory.
+	virtual void on_commit(size_t chunks, const chunk_t *base, const chunk_t *value, size_t index) = 0;
+};
+
+// The `null_observer` class has the same interface as `observer`, but has no invocation overhead, since its methods
+// are final and have no implementation. This allows the observer feature to be zero-cost when not in use.
+struct null_observer final: observer {
+	void on_commit(size_t chunks, const chunk_t *base, const chunk_t *value) override {}
+	void on_commit(size_t chunks, const chunk_t *base, const chunk_t *value, size_t index) override {}
+};
+
 template<size_t Bits>
 struct wire {
 	static constexpr size_t bits = Bits;
@@ -921,8 +914,14 @@ struct wire {
 		next.template set<IntegerT>(other);
 	}
 
-	bool commit() {
+	// This method intentionally takes a mandatory argument (to make it more difficult to misuse in
+	// black box implementations, leading to missed observer events). It is generic over its argument
+	// to make sure the `on_commit` call is devirtualized. This is somewhat awkward but lets us keep
+	// a single implementation for both this method and the one in `memory`.
+	template<class ObserverT>
+	bool commit(ObserverT &observer) {
 		if (curr != next) {
+			observer.on_commit(curr.chunks, curr.data, next.data);
 			curr = next;
 			return true;
 		}
@@ -996,12 +995,17 @@ struct memory {
 			write { index, val, mask, priority });
 	}
 
-	bool commit() {
+	// See the note for `wire::commit()`.
+	template<class ObserverT>
+	bool commit(ObserverT &observer) {
 		bool changed = false;
 		for (const write &entry : write_queue) {
 			value<Width> elem = data[entry.index];
 			elem = elem.update(entry.val, entry.mask);
-			changed |= (data[entry.index] != elem);
+			if (data[entry.index] != elem) {
+				observer.on_commit(value<Width>::chunks, data[0].data, elem.data, entry.index);
+				changed |= true;
+			}
 			data[entry.index] = elem;
 		}
 		write_queue.clear();
@@ -1735,35 +1739,23 @@ CXXRTL_ALWAYS_INLINE
 std::pair<value<BitsY>, value<BitsY>> divmod_uu(const value<BitsA> &a, const value<BitsB> &b) {
 	constexpr size_t Bits = max(BitsY, max(BitsA, BitsB));
 	value<Bits> quotient;
+	value<Bits> remainder;
 	value<Bits> dividend = a.template zext<Bits>();
 	value<Bits> divisor = b.template zext<Bits>();
-	if (dividend.ucmp(divisor))
-		return {/*quotient=*/value<BitsY> { 0u }, /*remainder=*/dividend.template trunc<BitsY>()};
-	uint32_t divisor_shift = dividend.ctlz() - divisor.ctlz();
-	divisor = divisor.shl(value<32> { divisor_shift });
-	for (size_t step = 0; step <= divisor_shift; step++) {
-		quotient = quotient.shl(value<1> { 1u });
-		if (!dividend.ucmp(divisor)) {
-			dividend = dividend.sub(divisor);
-			quotient.set_bit(0, true);
-		}
-		divisor = divisor.shr(value<1> { 1u });
-	}
-	return {quotient.template trunc<BitsY>(), /*remainder=*/dividend.template trunc<BitsY>()};
+	std::tie(quotient, remainder) = dividend.udivmod(divisor);
+	return {quotient.template trunc<BitsY>(), remainder.template trunc<BitsY>()};
 }
 
 template<size_t BitsY, size_t BitsA, size_t BitsB>
 CXXRTL_ALWAYS_INLINE
 std::pair<value<BitsY>, value<BitsY>> divmod_ss(const value<BitsA> &a, const value<BitsB> &b) {
-	value<BitsA + 1> ua = a.template sext<BitsA + 1>();
-	value<BitsB + 1> ub = b.template sext<BitsB + 1>();
-	if (ua.is_neg()) ua = ua.neg();
-	if (ub.is_neg()) ub = ub.neg();
-	value<BitsY> y, r;
-	std::tie(y, r) = divmod_uu<BitsY>(ua, ub);
-	if (a.is_neg() != b.is_neg()) y = y.neg();
-	if (a.is_neg()) r = r.neg();
-	return {y, r};
+	constexpr size_t Bits = max(BitsY, max(BitsA, BitsB));
+	value<Bits> quotient;
+	value<Bits> remainder;
+	value<Bits> dividend = a.template sext<Bits>();
+	value<Bits> divisor = b.template sext<Bits>();
+	std::tie(quotient, remainder) = dividend.sdivmod(divisor);
+	return {quotient.template trunc<BitsY>(), remainder.template trunc<BitsY>()};
 }
 
 template<size_t BitsY, size_t BitsA, size_t BitsB>
