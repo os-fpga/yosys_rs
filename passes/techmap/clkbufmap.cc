@@ -210,11 +210,14 @@ struct ClkbufmapPass : public Pass {
 			};
 
 			// Collect all driven bits.
-			for (auto cell : module->cells())
+			for (auto cell : module->cells()){
+				if (cell->type == RTLIL::escape_id("PLL")) //EDA-2653:No CLK_BUFs on output clocks of PLL
+					continue;
 			for (auto port : cell->connections())
 				if (cell->output(port.first))
 					for (int i = 0; i < port.second.size(); i++)
 						driven_wire_bits.insert(port.second[i]);
+			}
 
 			// Insert buffers.
 			std::vector<pair<Wire *, Wire *>> input_queue;
