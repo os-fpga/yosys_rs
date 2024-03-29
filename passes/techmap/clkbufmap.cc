@@ -244,6 +244,7 @@ struct ClkbufmapPass : public Pass {
 					SigBit wire_bit(wire, i);
 					SigBit mapped_wire_bit = sigmap(wire_bit);
 					if (buf_wire_bits.count(mapped_wire_bit)) {
+
 						// Already buffered downstream.  If this is an output, mark it.
 						if (wire->port_output)
 							buf_ports.insert(make_pair(module->name, make_pair(wire->name, i)));
@@ -256,7 +257,7 @@ struct ClkbufmapPass : public Pass {
 						Wire *iwire = nullptr;
 						RTLIL::Cell *cell = nullptr;
 						bool is_input = wire->port_input && !inpad_celltype.empty() && module->get_bool_attribute(ID::top);
-						if (!buf_celltype.empty() && (!is_input || buffer_inputs)) {
+						if (!buf_celltype.empty() && (!is_input || buffer_inputs) && !wire->port_output) {
 							log("Inserting %s on %s.%s[%d].\n", buf_celltype.c_str(), log_id(module), log_id(wire), i);
 							cell = module->addCell(NEW_ID, RTLIL::escape_id(buf_celltype));
 							iwire = module->addWire(NEW_ID);
