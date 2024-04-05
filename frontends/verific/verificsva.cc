@@ -1598,12 +1598,17 @@ struct VerificSvaImporter
 
 		if (inst == nullptr)
 		{
-			log_assert(trig == State::S1);
-
-			if (accept_p != nullptr)
-				*accept_p = importer->net_map_at(net);
-			if (reject_p != nullptr)
-				*reject_p = module->Not(NEW_ID, importer->net_map_at(net));
+			if (trig != State::S1) {
+				if (accept_p != nullptr)
+					*accept_p = module->And(NEW_ID, trig, importer->net_map_at(net));
+				if (reject_p != nullptr)
+					*reject_p = module->And(NEW_ID, trig, module->Not(NEW_ID, importer->net_map_at(net)));
+			} else {
+				if (accept_p != nullptr)
+					*accept_p = importer->net_map_at(net);
+				if (reject_p != nullptr)
+					*reject_p = module->Not(NEW_ID, importer->net_map_at(net));
+			}
 		}
 		else
 		if (inst->Type() == PRIM_SVA_OVERLAPPED_IMPLICATION ||
@@ -1777,7 +1782,7 @@ struct VerificSvaImporter
 					if (mode_assert) c = module->addLive(root_name, sig_a_q, sig_en_q);
 					if (mode_assume) c = module->addFair(root_name, sig_a_q, sig_en_q);
 
-					importer->import_attributes(c->attributes, root);
+					if (c) importer->import_attributes(c->attributes, root);
 
 					return;
 				}
@@ -1822,7 +1827,7 @@ struct VerificSvaImporter
 				if (mode_assume) c = module->addAssume(root_name, sig_a_q, sig_en_q);
 				if (mode_cover) c = module->addCover(root_name, sig_a_q, sig_en_q);
 
-				importer->import_attributes(c->attributes, root);
+				if (c) importer->import_attributes(c->attributes, root);
 			}
 		}
 		catch (ParserErrorException)

@@ -354,7 +354,7 @@ struct OptDffWorker
 					// Try a more complex conversion to plain async reset.
 					State val_neutral = ff.pol_set ? State::S0 : State::S1;
 					Const val_arst;
-					SigSpec sig_arst;
+					SigBit sig_arst;
 					if (ff.sig_clr[0] == val_neutral)
 						sig_arst = ff.sig_set[0];
 					else
@@ -492,11 +492,16 @@ struct OptDffWorker
 						ff.has_srst = false;
 						ff.sig_d = ff.val_srst;
 						changed = true;
-					} else {
+					} else if (!opt.keepdc || ff.val_init.is_fully_def()) {
 						log("Handling never-active EN on %s (%s) from module %s (removing D path).\n",
 								log_id(cell), log_id(cell->type), log_id(module));
 						// The D input path is effectively useless, so remove it (this will be a D latch, SR latch, or a const driver).
 						ff.has_ce = ff.has_clk = ff.has_srst = false;
+						changed = true;
+					} else {
+						// We need to keep the undefined initival around as such
+						ff.sig_d = ff.sig_q;
+						ff.has_ce = ff.has_srst = false;
 						changed = true;
 					}
 				} else if (ff.sig_ce == (ff.pol_ce ? State::S1 : State::S0)) {
@@ -509,13 +514,20 @@ struct OptDffWorker
 				}
 			}
 
-			if (ff.has_clk) {
-				if (ff.sig_clk.is_fully_const()) {
+			if (ff.has_clk && ff.sig_clk.is_fully_const()) {
+				if (!opt.keepdc || ff.val_init.is_fully_def()) {
 					// Const clock — the D input path is effectively useless, so remove it (this will be a D latch, SR latch, or a const driver).
 					log("Handling const CLK on %s (%s) from module %s (removing D path).\n",
 							log_id(cell), log_id(cell->type), log_id(module));
 					ff.has_ce = ff.has_clk = ff.has_srst = false;
 					changed = true;
+				} else {
+					// Const clock, but we need to keep the undefined initval around as such
+					if (ff.has_ce || ff.has_srst || ff.sig_d != ff.sig_q) {
+						ff.sig_d = ff.sig_q;
+						ff.has_ce = ff.has_srst = false;
+						changed = true;
+					}
 				}
 			}
 
@@ -551,7 +563,7 @@ struct OptDffWorker
 					ff.has_srst = false;
 					ff.sig_d = ff.val_srst;
 					changed = true;
-				} else {
+				} else if (!opt.keepdc || ff.val_init.is_fully_def()) {
 					// The D input path is effectively useless, so remove it (this will be a const-input D latch, SR latch, or a const driver).
 					log("Handling D = Q on %s (%s) from module %s (removing D path).\n",
 							log_id(cell), log_id(cell->type), log_id(module));
@@ -568,7 +580,7 @@ struct OptDffWorker
 			}
 
 			// The cell has been simplified as much as possible already.  Now try to spice it up with enables / sync resets.
-			if (ff.has_clk) {
+			if (ff.has_clk && ff.sig_d != ff.sig_q) {
 				if (!ff.has_arst && !ff.has_sr && (!ff.has_srst || !ff.has_ce || ff.ce_over_srst) && !opt.nosdff) {
 					// Try to merge sync resets.
 					std::map<ctrls_t, std::vector<int>> groups;
@@ -892,14 +904,17 @@ struct OptDffPass : public Pass {
 		log("    opt_dff [-nodffe] [-nosdff] [-keepdc] [-sat] [selection]\n");
 		log("\n");
 		log("This pass converts flip-flops to a more suitable type by merging clock enables\n");
-		log("and synchronous reset multiplexers, removing unused control inputs, or potentially\n");
-		log("removes the flip-flop altogether, converting it to a constant driver.\n");
+		log("and synchronous reset multiplexers, removing unused control inputs, or\n");
+		log("potentially removes the flip-flop altogether, converting it to a constant\n");
+		log("driver.\n");
 		log("\n");
 		log("    -nodffe\n");
-		log("        disables dff -> dffe conversion, and other transforms recognizing clock enable\n");
+		log("        disables dff -> dffe conversion, and other transforms recognizing clock\n");
+		log("        enable\n");
 		log("\n");
 		log("    -nosdff\n");
-		log("        disables dff -> sdff conversion, and other transforms recognizing sync resets\n");
+		log("        disables dff -> sdff conversion, and other transforms recognizing sync\n");
+		log("        resets\n");
 		log("\n");
 		log("    -simple-dffe\n");
 		log("        only enables clock enable recognition transform for obvious cases\n");

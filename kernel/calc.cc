@@ -609,6 +609,36 @@ RTLIL::Const RTLIL::const_neg(const RTLIL::Const &arg1, const RTLIL::Const&, boo
 	return RTLIL::const_sub(zero, arg1_ext, true, signed1, result_len);
 }
 
+RTLIL::Const RTLIL::const_mux(const RTLIL::Const &arg1, const RTLIL::Const &arg2, const RTLIL::Const &arg3)
+{
+	log_assert(arg2.size() == arg1.size());
+	if (arg3[0] == State::S0)
+		return arg1;
+	else if (arg3[0] == State::S1)
+		return arg2;
+
+	RTLIL::Const ret = arg1;
+	for (int i = 0; i < ret.size(); i++)
+		if (ret[i] != arg2[i])
+			ret[i] = State::Sx;
+	return ret;
+}
+
+RTLIL::Const RTLIL::const_pmux(const RTLIL::Const &arg1, const RTLIL::Const &arg2, const RTLIL::Const &arg3)
+{
+	if (arg3.is_fully_zero())
+		return arg1;
+
+	if (!arg3.is_onehot())
+		return RTLIL::Const(State::Sx, arg1.size());
+
+	for (int i = 0; i < arg3.size(); i++)
+		if (arg3[i] == State::S1)
+			return RTLIL::Const(std::vector<RTLIL::State>(arg2.bits.begin() + i*arg1.bits.size(), arg2.bits.begin() + (i+1)*arg1.bits.size()));
+
+	log_abort(); // unreachable
+}
+
 RTLIL::Const RTLIL::const_bmux(const RTLIL::Const &arg1, const RTLIL::Const &arg2)
 {
 	std::vector<RTLIL::State> t = arg1.bits;
@@ -658,6 +688,29 @@ RTLIL::Const RTLIL::const_demux(const RTLIL::Const &arg1, const RTLIL::Const &ar
 		}
 	}
 	return res;
+}
+
+RTLIL::Const RTLIL::const_bweqx(const RTLIL::Const &arg1, const RTLIL::Const &arg2)
+{
+	log_assert(arg2.size() == arg1.size());
+	RTLIL::Const result(RTLIL::State::S0, arg1.size());
+	for (int i = 0; i < arg1.size(); i++)
+		result[i] = arg1[i] == arg2[i] ? State::S1 : State::S0;
+
+	return result;
+}
+
+RTLIL::Const RTLIL::const_bwmux(const RTLIL::Const &arg1, const RTLIL::Const &arg2, const RTLIL::Const &arg3)
+{
+	log_assert(arg2.size() == arg1.size());
+	log_assert(arg3.size() == arg1.size());
+	RTLIL::Const result(RTLIL::State::Sx, arg1.size());
+	for (int i = 0; i < arg1.size(); i++) {
+		if (arg3[i] != State::Sx || arg1[i] == arg2[i])
+			result[i] = arg3[i] == State::S1 ? arg2[i] : arg1[i];
+	}
+
+	return result;
 }
 
 YOSYS_NAMESPACE_END

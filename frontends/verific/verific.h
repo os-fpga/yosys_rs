@@ -26,7 +26,7 @@ YOSYS_NAMESPACE_BEGIN
 extern int verific_verbose;
 
 extern bool verific_import_pending;
-extern void verific_import(Design *design, const std::map<std::string,std::string> &parameters, std::string top = std::string());
+extern std::string verific_import(Design *design, const std::map<std::string,std::string> &parameters, std::string top = std::string());
 
 extern pool<int> verific_sva_prims;
 
@@ -83,10 +83,12 @@ struct VerificImporter
 	RTLIL::IdString new_verific_id(Verific::DesignObj *obj);
 	void import_attributes(dict<RTLIL::IdString, RTLIL::Const> &attributes, Verific::DesignObj *obj, Verific::Netlist  *nl = nullptr);
 
+	RTLIL::SigBit netToSigBit(Verific::Net *net);
 	RTLIL::SigSpec operatorInput(Verific::Instance *inst);
 	RTLIL::SigSpec operatorInput1(Verific::Instance *inst);
 	RTLIL::SigSpec operatorInput2(Verific::Instance *inst);
 	RTLIL::SigSpec operatorInport(Verific::Instance *inst, const char *portname);
+	RTLIL::SigSpec operatorInportCase(Verific::Instance *inst, const char *portname);
 	RTLIL::SigSpec operatorOutput(Verific::Instance *inst, const pool<Verific::Net*, hash_ptr_ops> *any_all_nets = nullptr);
 
 	bool import_netlist_instance_gates(Verific::Instance *inst, RTLIL::IdString inst_name);

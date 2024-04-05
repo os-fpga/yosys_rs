@@ -45,7 +45,7 @@ namespace AST {
 
 // instantiate global variables (private API)
 namespace AST_INTERNAL {
-	bool flag_dump_ast1, flag_dump_ast2, flag_no_dump_ptr, flag_dump_vlog1, flag_dump_vlog2, flag_dump_rtlil, flag_nolatches, flag_nomeminit;
+	bool flag_nodisplay, flag_dump_ast1, flag_dump_ast2, flag_no_dump_ptr, flag_dump_vlog1, flag_dump_vlog2, flag_dump_rtlil, flag_nolatches, flag_nomeminit;
 	bool flag_nomem2reg, flag_mem2reg, flag_noblackbox, flag_lib, flag_nowb, flag_noopt, flag_icells, flag_pwires, flag_autowire;
 	AstNode *current_ast, *current_ast_mod;
 	std::map<std::string, AstNode*> current_scope;
@@ -192,7 +192,7 @@ bool AstNode::get_bool_attribute(RTLIL::IdString id)
 
 	AstNode *attr = attributes.at(id);
 	if (attr->type != AST_CONSTANT)
-		log_file_error(attr->filename, attr->location.first_line, "Attribute `%s' with non-constant value!\n", id.c_str());
+		attr->input_error("Attribute `%s' with non-constant value!\n", id.c_str());
 
 	return attr->integer != 0;
 }
@@ -229,6 +229,10 @@ AstNode::AstNode(AstNodeType type, AstNode *child1, AstNode *child2, AstNode *ch
 	id2ast = NULL;
 	basic_prep = false;
 	lookahead = false;
+	in_lvalue_from_above = false;
+	in_param_from_above = false;
+	in_lvalue = false;
+	in_param = false;
 
 	if (child1)
 		children.push_back(child1);
@@ -238,6 +242,8 @@ AstNode::AstNode(AstNodeType type, AstNode *child1, AstNode *child2, AstNode *ch
 		children.push_back(child3);
 	if (child4)
 		children.push_back(child4);
+
+	fixup_hierarchy_flags();
 }
 
 // create a (deep recursive) copy of a node
@@ -249,6 +255,10 @@ AstNode *AstNode::clone() const
 		it = it->clone();
 	for (auto &it : that->attributes)
 		it.second = it.second->clone();
+
+	that->set_in_lvalue_flag(false);
+	that->set_in_param_flag(false);
+	that->fixup_hierarchy_flags(); // fixup to set flags on cloned children
 	return that;
 }
 
@@ -256,10 +266,13 @@ AstNode *AstNode::clone() const
 void AstNode::cloneInto(AstNode *other) const
 {
 	AstNode *tmp = clone();
+	tmp->in_lvalue_from_above = other->in_lvalue_from_above;
+	tmp->in_param_from_above = other->in_param_from_above;
 	other->delete_children();
 	*other = *tmp;
 	tmp->children.clear();
 	tmp->attributes.clear();
+	other->fixup_hierarchy_flags();
 	delete tmp;
 }
 
@@ -351,6 +364,10 @@ void AstNode::dumpAst(FILE *f, std::string indent) const
 	if (is_enum) {
 		fprintf(f, " type=enum");
 	}
+	if (in_lvalue)
+		fprintf(f, " in_lvalue");
+	if (in_param)
+		fprintf(f, " in_param");
 	fprintf(f, "\n");
 
 	for (auto &it : attributes) {
@@ -524,7 +541,13 @@ void AstNode::dumpVlog(FILE *f, std::string indent) const
 		break;
 
 	case AST_IDENTIFIER:
-		fprintf(f, "%s", id2vl(str).c_str());
+		{
+			AST::AstNode *member_node = AST::get_struct_member(this);
+			if (member_node)
+				fprintf(f, "%s[%d:%d]", id2vl(str).c_str(), member_node->range_left, member_node->range_right);
+			else
+				fprintf(f, "%s", id2vl(str).c_str());
+		}
 		for (auto child : children)
 			child->dumpVlog(f, "");
 		break;
@@ -635,8 +658,17 @@ void AstNode::dumpVlog(FILE *f, std::string indent) const
 	if (0) { case AST_NEG:         txt = "-";  }
 	if (0) { case AST_LOGIC_NOT:   txt = "!";  }
 	if (0) { case AST_SELFSZ:      txt = "@selfsz@";  }
+	if (0) { case AST_TO_SIGNED:   txt = "signed'";  }
+	if (0) { case AST_TO_UNSIGNED: txt = "unsigned'";  }
 		fprintf(f, "%s(", txt.c_str());
 		children[0]->dumpVlog(f, "");
+		fprintf(f, ")");
+		break;
+
+	case AST_CAST_SIZE:
+		children[0]->dumpVlog(f, "");
+		fprintf(f, "'(");
+		children[1]->dumpVlog(f, "");
 		fprintf(f, ")");
 		break;
 
@@ -818,6 +850,25 @@ AstNode *AstNode::mkconst_str(const std::string &str)
 	return node;
 }
 
+// create a temporary register
+AstNode *AstNode::mktemp_logic(const std::string &name, AstNode *mod, bool nosync, int range_left, int range_right, bool is_signed)
+{
+	AstNode *wire = new AstNode(AST_WIRE, new AstNode(AST_RANGE, mkconst_int(range_left, true), mkconst_int(range_right, true)));
+	wire->str = stringf("%s%s:%d$%d", name.c_str(), RTLIL::encode_filename(filename).c_str(), location.first_line, autoidx++);
+	if (nosync)
+		wire->set_attribute(ID::nosync, AstNode::mkconst_int(1, false));
+	wire->is_signed = is_signed;
+	wire->is_logic = true;
+	mod->children.push_back(wire);
+	while (wire->simplify(true, 1, -1, false)) { }
+
+	AstNode *ident = new AstNode(AST_IDENTIFIER);
+	ident->str = wire->str;
+	ident->id2ast = wire;
+
+	return ident;
+}
+
 bool AstNode::bits_only_01() const
 {
 	for (auto bit : bits)
@@ -841,7 +892,7 @@ RTLIL::Const AstNode::bitsAsConst(int width, bool is_signed)
 		bits.resize(width);
 	if (width >= 0 && width > int(bits.size())) {
 		RTLIL::State extbit = RTLIL::State::S0;
-		if (is_signed && !bits.empty())
+		if ((is_signed || is_unsized) && !bits.empty())
 			extbit = bits.back();
 		while (width > int(bits.size()))
 			bits.push_back(extbit);
@@ -1033,7 +1084,7 @@ static RTLIL::Module *process_module(RTLIL::Design *design, AstNode *ast, bool d
 	{
 		for (const AstNode *node : ast->children)
 			if (node->type == AST_PARAMETER && param_has_no_default(node))
-				log_file_error(node->filename, node->location.first_line, "Parameter `%s' has no default value and has not been overridden!\n", node->str.c_str());
+				node->input_error("Parameter `%s' has no default value and has not been overridden!\n", node->str.c_str());
 
 		bool blackbox_module = flag_lib;
 
@@ -1055,7 +1106,7 @@ static RTLIL::Module *process_module(RTLIL::Design *design, AstNode *ast, bool d
 		// simplify this module or interface using the current design as context
 		// for lookup up ports and wires within cells
 		set_simplify_design_context(design);
-		while (ast->simplify(!flag_noopt, false, false, 0, -1, false, false)) { }
+		while (ast->simplify_original(!flag_noopt, 0, -1, false)) { }
 		set_simplify_design_context(nullptr);
 
 		if (flag_dump_ast2) {
@@ -1085,7 +1136,7 @@ static RTLIL::Module *process_module(RTLIL::Design *design, AstNode *ast, bool d
 					ast->attributes.erase(ID::whitebox);
 				}
 				AstNode *n = ast->attributes.at(ID::lib_whitebox);
-				ast->attributes[ID::whitebox] = n;
+				ast->set_attribute(ID::whitebox, n);
 				ast->attributes.erase(ID::lib_whitebox);
 			}
 		}
@@ -1093,14 +1144,14 @@ static RTLIL::Module *process_module(RTLIL::Design *design, AstNode *ast, bool d
 		if (!blackbox_module && ast->attributes.count(ID::blackbox)) {
 			AstNode *n = ast->attributes.at(ID::blackbox);
 			if (n->type != AST_CONSTANT)
-				log_file_error(ast->filename, ast->location.first_line, "Got blackbox attribute with non-constant value!\n");
+				ast->input_error("Got blackbox attribute with non-constant value!\n");
 			blackbox_module = n->asBool();
 		}
 
 		if (blackbox_module && ast->attributes.count(ID::whitebox)) {
 			AstNode *n = ast->attributes.at(ID::whitebox);
 			if (n->type != AST_CONSTANT)
-				log_file_error(ast->filename, ast->location.first_line, "Got whitebox attribute with non-constant value!\n");
+				ast->input_error("Got whitebox attribute with non-constant value!\n");
 			blackbox_module = !n->asBool();
 		}
 
@@ -1108,7 +1159,7 @@ static RTLIL::Module *process_module(RTLIL::Design *design, AstNode *ast, bool d
 			if (blackbox_module) {
 				AstNode *n = ast->attributes.at(ID::noblackbox);
 				if (n->type != AST_CONSTANT)
-					log_file_error(ast->filename, ast->location.first_line, "Got noblackbox attribute with non-constant value!\n");
+					ast->input_error("Got noblackbox attribute with non-constant value!\n");
 				blackbox_module = !n->asBool();
 			}
 			delete ast->attributes.at(ID::noblackbox);
@@ -1144,7 +1195,7 @@ static RTLIL::Module *process_module(RTLIL::Design *design, AstNode *ast, bool d
 			ast->children.swap(new_children);
 
 			if (ast->attributes.count(ID::blackbox) == 0) {
-				ast->attributes[ID::blackbox] = AstNode::mkconst_int(1, false);
+				ast->set_attribute(ID::blackbox, AstNode::mkconst_int(1, false));
 			}
 		}
 
@@ -1152,7 +1203,7 @@ static RTLIL::Module *process_module(RTLIL::Design *design, AstNode *ast, bool d
 
 		for (auto &attr : ast->attributes) {
 			if (attr.second->type != AST_CONSTANT)
-				log_file_error(ast->filename, ast->location.first_line, "Attribute `%s' with non-constant value!\n", attr.first.c_str());
+				ast->input_error("Attribute `%s' with non-constant value!\n", attr.first.c_str());
 			module->attributes[attr.first] = attr.second->asAttrConst();
 		}
 		for (size_t i = 0; i < ast->children.size(); i++) {
@@ -1269,14 +1320,12 @@ static void rename_in_package_stmts(AstNode *pkg)
 }
 
 // create AstModule instances for all modules in the AST tree and add them to 'design'
-void AST::process(RTLIL::Design *design, AstNode *ast, bool dump_ast1, bool dump_ast2, 
-                  bool no_dump_ptr, bool dump_vlog1, bool dump_vlog2, bool dump_rtlil,
-                  bool nolatches, bool nomeminit, bool nomem2reg, bool mem2reg, bool noblackbox, 
-                  bool lib, bool nowb, bool noopt, bool icells, bool pwires, bool nooverwrite, 
-                  bool overwrite, bool defer, bool autowire)
+void AST::process(RTLIL::Design *design, AstNode *ast, bool nodisplay, bool dump_ast1, bool dump_ast2, bool no_dump_ptr, bool dump_vlog1, bool dump_vlog2, bool dump_rtlil,
+		bool nolatches, bool nomeminit, bool nomem2reg, bool mem2reg, bool noblackbox, bool lib, bool nowb, bool noopt, bool icells, bool pwires, bool nooverwrite, bool overwrite, bool defer, bool autowire)
 {
 	current_ast = ast;
 	current_ast_mod = nullptr;
+	flag_nodisplay = nodisplay;
 	flag_dump_ast1 = dump_ast1;
 	flag_dump_ast2 = dump_ast2;
 	flag_no_dump_ptr = no_dump_ptr;
@@ -1295,7 +1344,7 @@ void AST::process(RTLIL::Design *design, AstNode *ast, bool dump_ast1, bool dump
 	flag_pwires = pwires;
 	flag_autowire = autowire;
 
-
+	ast->fixup_hierarchy_flags(true);
         // Store both in MAP and VECTOR containers the current processed RTL file name
         // (Thierry)
         //
@@ -1383,7 +1432,7 @@ void AST::process(RTLIL::Design *design, AstNode *ast, bool dump_ast1, bool dump
 		}
 		else if (child->type == AST_PACKAGE) {
 			// process enum/other declarations
-			child->simplify(true, false, false, 1, -1, false, false);
+			child->simplify_original(true, 1, -1, false);
 			rename_in_package_stmts(child);
 			design->verilog_packages.push_back(child->clone());
 			current_scope.clear();
@@ -1677,7 +1726,7 @@ RTLIL::IdString AstModule::derive(RTLIL::Design *design, const dict<RTLIL::IdStr
 	AstNode *new_ast = NULL;
 	std::string modname = derive_common(design, parameters, &new_ast, quiet);
 
-	if (!design->has(modname)) {
+	if (!design->has(modname) && new_ast) {
 		new_ast->str = modname;
 		process_module(design, new_ast, false, NULL, quiet);
 		design->module(modname)->check();
@@ -1727,6 +1776,7 @@ std::string AST::derived_module_name(std::string stripped_name, const std::vecto
 std::string AstModule::derive_common(RTLIL::Design *design, const dict<RTLIL::IdString, RTLIL::Const> &parameters, AstNode **new_ast_out, bool quiet)
 {
 	std::string stripped_name = name.str();
+	(*new_ast_out) = nullptr;
 
 	if (stripped_name.compare(0, 9, "$abstract") == 0)
 		stripped_name = stripped_name.substr(9);
@@ -1769,7 +1819,7 @@ std::string AstModule::derive_common(RTLIL::Design *design, const dict<RTLIL::Id
 
 	AstNode *new_ast = ast->clone();
 	if (!new_ast->attributes.count(ID::hdlname))
-		new_ast->attributes[ID::hdlname] = AstNode::mkconst_str(stripped_name);
+		new_ast->set_attribute(ID::hdlname, AstNode::mkconst_str(stripped_name));
 
 	para_counter = 0;
 	for (auto child : new_ast->children) {
@@ -1816,6 +1866,7 @@ std::string AstModule::derive_common(RTLIL::Design *design, const dict<RTLIL::Id
 			new_ast->children.push_back(defparam);
 		}
 
+	new_ast->fixup_hierarchy_flags(true);
 	(*new_ast_out) = new_ast;
 	return modname;
 }
@@ -1860,6 +1911,13 @@ void AstModule::loadconfig() const
 	flag_icells = icells;
 	flag_pwires = pwires;
 	flag_autowire = autowire;
+}
+
+void AstNode::input_error(const char *format, ...) const
+{
+	va_list ap;
+	va_start(ap, format);
+	logv_file_error(filename, location.first_line, format, ap);
 }
 
 YOSYS_NAMESPACE_END

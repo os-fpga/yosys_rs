@@ -518,6 +518,14 @@ struct value : public expr_base<value<Bits>> {
 		return count;
 	}
 
+	size_t chunks_used() const {
+		for (size_t n = chunks; n > 0; n--) {
+			if (data[n - 1] != 0)
+				return n;
+		}
+		return 0;
+	}
+
 	template<bool Invert, bool CarryIn>
 	std::pair<value<Bits>, bool /*CarryOut*/> alu(const value<Bits> &other) const {
 		value<Bits> result;
@@ -574,6 +582,84 @@ struct value : public expr_base<value<Bits>> {
 		}
 		result.data[result.chunks - 1] &= result.msb_mask;
 		return result;
+	}
+
+	// parallel to BigUnsigned::divideWithRemainder; quotient is stored in q,
+	// *this is left with the remainder.  See that function for commentary describing
+	// how/why this works.
+	void divideWithRemainder(const value<Bits> &b, value<Bits> &q) {
+		assert(this != &q);
+
+		if (this == &b || &q == &b) {
+			value<Bits> tmpB(b);
+			divideWithRemainder(tmpB, q);
+			return;
+		}
+
+		q = value<Bits> {0u};
+
+		size_t blen = b.chunks_used();
+		if (blen == 0) {
+			return;
+		}
+
+		size_t len = chunks_used();
+		if (len < blen) {
+			return;
+		}
+
+		size_t i, j, k;
+		size_t i2;
+		chunk_t temp;
+		bool borrowIn, borrowOut;
+
+		size_t origLen = len;
+		len++;
+		chunk::type blk[len];
+		std::copy(data, data + origLen, blk);
+		blk[origLen] = 0;
+		chunk::type subtractBuf[len];
+		std::fill(subtractBuf, subtractBuf + len, 0);
+
+		size_t qlen = origLen - blen + 1;
+
+		i = qlen;
+		while (i > 0) {
+			i--;
+			i2 = chunk::bits;
+			while (i2 > 0) {
+				i2--;
+				for (j = 0, k = i, borrowIn = false; j <= blen; j++, k++) {
+					temp = blk[k] - getShiftedBlock(b, j, i2);
+					borrowOut = (temp > blk[k]);
+					if (borrowIn) {
+						borrowOut |= (temp == 0);
+						temp--;
+					}
+					subtractBuf[k] = temp;
+					borrowIn = borrowOut;
+				}
+				for (; k < origLen && borrowIn; k++) {
+					borrowIn = (blk[k] == 0);
+					subtractBuf[k] = blk[k] - 1;
+				}
+				if (!borrowIn) {
+					q.data[i] |= (chunk::type(1) << i2);
+					while (k > i) {
+						k--;
+						blk[k] = subtractBuf[k];
+					}
+				}
+			}
+		}
+
+		std::copy(blk, blk + origLen, data);
+	}
+
+	static chunk::type getShiftedBlock(const value<Bits> &num, size_t x, size_t y) {
+		chunk::type part1 = (x == 0 || y == 0) ? 0 : (num.data[x - 1] >> (chunk::bits - y));
+		chunk::type part2 = (x == num.chunks) ? 0 : (num.data[x] << y);
+		return part1 | part2;
 	}
 };
 
@@ -704,6 +790,99 @@ std::ostream &operator<<(std::ostream &os, const value<Bits> &val) {
 	os.fill(old_fill);
 	os.width(old_width);
 	os.flags(old_flags);
+	return os;
+}
+
+template<size_t Bits>
+struct value_formatted {
+	const value<Bits> &val;
+	bool character;
+	bool justify_left;
+	char padding;
+	int width;
+	int base;
+	bool signed_;
+	bool plus;
+
+	value_formatted(const value<Bits> &val, bool character, bool justify_left, char padding, int width, int base, bool signed_, bool plus) :
+		val(val), character(character), justify_left(justify_left), padding(padding), width(width), base(base), signed_(signed_), plus(plus) {}
+	value_formatted(const value_formatted<Bits> &) = delete;
+	value_formatted<Bits> &operator=(const value_formatted<Bits> &rhs) = delete;
+};
+
+template<size_t Bits>
+std::ostream &operator<<(std::ostream &os, const value_formatted<Bits> &vf)
+{
+	value<Bits> val = vf.val;
+
+	std::string buf;
+
+	// We might want to replace some of these bit() calls with direct
+	// chunk access if it turns out to be slow enough to matter.
+
+	if (!vf.character) {
+		size_t width = Bits;
+		if (vf.base != 10) {
+			width = 0;
+			for (size_t index = 0; index < Bits; index++)
+				if (val.bit(index))
+					width = index + 1;
+		}
+
+		if (vf.base == 2) {
+			for (size_t i = width; i > 0; i--)
+				buf += (val.bit(i - 1) ? '1' : '0');
+		} else if (vf.base == 8 || vf.base == 16) {
+			size_t step = (vf.base == 16) ? 4 : 3;
+			for (size_t index = 0; index < width; index += step) {
+				uint8_t value = val.bit(index) | (val.bit(index + 1) << 1) | (val.bit(index + 2) << 2);
+				if (step == 4)
+					value |= val.bit(index + 3) << 3;
+				buf += "0123456789abcdef"[value];
+			}
+			std::reverse(buf.begin(), buf.end());
+		} else if (vf.base == 10) {
+			bool negative = vf.signed_ && val.is_neg();
+			if (negative)
+				val = val.neg();
+			if (val.is_zero())
+				buf += '0';
+			while (!val.is_zero()) {
+				value<Bits> quotient;
+				val.divideWithRemainder(value<Bits>{10u}, quotient);
+				buf += '0' + val.template trunc<(Bits > 4 ? 4 : Bits)>().val().template get<uint8_t>();
+				val = quotient;
+			}
+			if (negative || vf.plus)
+				buf += negative ? '-' : '+';
+			std::reverse(buf.begin(), buf.end());
+		} else assert(false);
+	} else {
+		buf.reserve(Bits/8);
+		for (int i = 0; i < Bits; i += 8) {
+			char ch = 0;
+			for (int j = 0; j < 8 && i + j < int(Bits); j++)
+				if (val.bit(i + j))
+					ch |= 1 << j;
+			if (ch != 0)
+				buf.append({ch});
+		}
+		std::reverse(buf.begin(), buf.end());
+	}
+
+	assert(vf.width == 0 || vf.padding != '\0');
+	if (!vf.justify_left && buf.size() < vf.width) {
+		size_t pad_width = vf.width - buf.size();
+		if (vf.padding == '0' && (buf.front() == '+' || buf.front() == '-')) {
+			os << buf.front();
+			buf.erase(0, 1);
+		}
+		os << std::string(pad_width, vf.padding);
+	}
+	os << buf;
+	if (vf.justify_left && buf.size() < vf.width)
+		os << std::string(vf.width - buf.size(), vf.padding);
+
 	return os;
 }
 
@@ -840,14 +1019,14 @@ struct metadata {
 
 	// In debug mode, using the wrong .as_*() function will assert.
 	// In release mode, using the wrong .as_*() function will safely return a default value.
-	const unsigned    uint_value = 0;
-	const signed      sint_value = 0;
+	const uint64_t    uint_value = 0;
+	const int64_t     sint_value = 0;
 	const std::string string_value = "";
 	const double      double_value = 0.0;
 
 	metadata() : value_type(MISSING) {}
-	metadata(unsigned value) : value_type(UINT), uint_value(value) {}
-	metadata(signed value) : value_type(SINT), sint_value(value) {}
+	metadata(uint64_t value) : value_type(UINT), uint_value(value) {}
+	metadata(int64_t value) : value_type(SINT), sint_value(value) {}
 	metadata(const std::string &value) : value_type(STRING), string_value(value) {}
 	metadata(const char *value) : value_type(STRING), string_value(value) {}
 	metadata(double value) : value_type(DOUBLE), double_value(value) {}
@@ -855,12 +1034,12 @@ struct metadata {
 	metadata(const metadata &) = default;
 	metadata &operator=(const metadata &) = delete;
 
-	unsigned as_uint() const {
+	uint64_t as_uint() const {
 		assert(value_type == UINT);
 		return uint_value;
 	}
 
-	signed as_sint() const {
+	int64_t as_sint() const {
 		assert(value_type == SINT);
 		return sint_value;
 	}
@@ -889,6 +1068,9 @@ using debug_outline = ::_cxxrtl_outline;
 //
 // To avoid violating strict aliasing rules, this structure has to be a subclass of the one used
 // in the C API, or it would not be possible to cast between the pointers to these.
+//
+// The `attrs` member cannot be owned by this structure because a `cxxrtl_object` can be created
+// from external C code.
 struct debug_item : ::cxxrtl_object {
 	// Object types.
 	enum : uint32_t {
@@ -924,6 +1106,7 @@ struct debug_item : ::cxxrtl_object {
 		curr    = item.data;
 		next    = item.data;
 		outline = nullptr;
+		attrs   = nullptr;
 	}
 
 	template<size_t Bits>
@@ -939,6 +1122,7 @@ struct debug_item : ::cxxrtl_object {
 		curr    = const_cast<chunk_t*>(item.data);
 		next    = nullptr;
 		outline = nullptr;
+		attrs   = nullptr;
 	}
 
 	template<size_t Bits>
@@ -955,6 +1139,7 @@ struct debug_item : ::cxxrtl_object {
 		curr    = item.curr.data;
 		next    = item.next.data;
 		outline = nullptr;
+		attrs   = nullptr;
 	}
 
 	template<size_t Width>
@@ -970,6 +1155,7 @@ struct debug_item : ::cxxrtl_object {
 		curr    = item.data ? item.data[0].data : nullptr;
 		next    = nullptr;
 		outline = nullptr;
+		attrs   = nullptr;
 	}
 
 	template<size_t Bits>
@@ -985,6 +1171,7 @@ struct debug_item : ::cxxrtl_object {
 		curr    = const_cast<chunk_t*>(item.data);
 		next    = nullptr;
 		outline = nullptr;
+		attrs   = nullptr;
 	}
 
 	template<size_t Bits>
@@ -1001,6 +1188,7 @@ struct debug_item : ::cxxrtl_object {
 		curr    = const_cast<chunk_t*>(item.curr.data);
 		next    = nullptr;
 		outline = nullptr;
+		attrs   = nullptr;
 	}
 
 	template<size_t Bits>
@@ -1016,6 +1204,7 @@ struct debug_item : ::cxxrtl_object {
 		curr    = const_cast<chunk_t*>(item.data);
 		next    = nullptr;
 		outline = &group;
+		attrs   = nullptr;
 	}
 
 	template<size_t Bits, class IntegerT>
@@ -1036,10 +1225,28 @@ struct debug_item : ::cxxrtl_object {
 };
 static_assert(std::is_standard_layout<debug_item>::value, "debug_item is not compatible with C layout");
 
+} // namespace cxxrtl
+
+typedef struct _cxxrtl_attr_set {
+	cxxrtl::metadata_map map;
+} *cxxrtl_attr_set;
+
+namespace cxxrtl {
+
+// Representation of an attribute set in the C++ interface.
+using debug_attrs = ::_cxxrtl_attr_set;
+
 struct debug_items {
 	std::map<std::string, std::vector<debug_item>> table;
+	std::map<std::string, std::unique_ptr<debug_attrs>> attrs_table;
 
-	void add(const std::string &name, debug_item &&item) {
+	void add(const std::string &name, debug_item &&item, metadata_map &&item_attrs = {}) {
+		std::unique_ptr<debug_attrs> &attrs = attrs_table[name];
+		if (attrs.get() == nullptr)
+			attrs = std::unique_ptr<debug_attrs>(new debug_attrs);
+		for (auto attr : item_attrs)
+			attrs->map.insert(attr);
+		item.attrs = attrs.get();
 		std::vector<debug_item> &parts = table[name];
 		parts.emplace_back(item);
 		std::sort(parts.begin(), parts.end(),
@@ -1067,6 +1274,10 @@ struct debug_items {
 	const debug_item &operator [](const std::string &name) const {
 		return at(name);
 	}
+
+	const metadata_map &attrs(const std::string &name) const {
+		return attrs_table.at(name)->map;
+	}
 };
 
 // Tag class to disambiguate the default constructor used by the toplevel module that calls reset(),
@@ -1091,7 +1302,10 @@ struct module {
 	virtual bool eval() = 0;
 	virtual bool commit() = 0;
 
+	unsigned int steps = 0;
+
 	size_t step() {
+		++steps;
 		size_t deltas = 0;
 		bool converged = false;
 		do {
@@ -1573,6 +1787,46 @@ template<size_t BitsY, size_t BitsA, size_t BitsB>
 CXXRTL_ALWAYS_INLINE
 value<BitsY> mod_ss(const value<BitsA> &a, const value<BitsB> &b) {
 	return divmod_ss<BitsY>(a, b).second;
+}
+
+template<size_t BitsY, size_t BitsA, size_t BitsB>
+CXXRTL_ALWAYS_INLINE
+value<BitsY> modfloor_uu(const value<BitsA> &a, const value<BitsB> &b) {
+	return divmod_uu<BitsY>(a, b).second;
+}
+
+// GHDL Modfloor operator. Returns r=a mod b, such that r has the same sign as b and
+// a=b*N+r where N is some integer
+// In practical terms, when a and b have different signs and the remainder returned by divmod_ss is not 0
+// then return the remainder + b
+template<size_t BitsY, size_t BitsA, size_t BitsB>
+CXXRTL_ALWAYS_INLINE
+value<BitsY> modfloor_ss(const value<BitsA> &a, const value<BitsB> &b) {
+	value<BitsY> r;
+	r = divmod_ss<BitsY>(a, b).second;
+	if((b.is_neg() != a.is_neg()) && !r.is_zero())
+		return add_ss<BitsY>(b, r);
+	return r;
+}
+
+template<size_t BitsY, size_t BitsA, size_t BitsB>
+CXXRTL_ALWAYS_INLINE
+value<BitsY> divfloor_uu(const value<BitsA> &a, const value<BitsB> &b) {
+	return divmod_uu<BitsY>(a, b).first;
+}
+
+// Divfloor. Similar to above: returns q=a//b, where q has the sign of a*b and a=b*q+N.
+// In other words, returns (truncating) a/b, except if a and b have different signs
+// and there's non-zero remainder, subtract one more towards floor.
+template<size_t BitsY, size_t BitsA, size_t BitsB>
+CXXRTL_ALWAYS_INLINE
+value<BitsY> divfloor_ss(const value<BitsA> &a, const value<BitsB> &b) {
+	value<BitsY> q, r;
+	std::tie(q, r) = divmod_ss<BitsY>(a, b);
+	if ((b.is_neg() != a.is_neg()) && !r.is_zero())
+		return sub_uu<BitsY>(q, value<1> { 1u });
+	return q;
+
 }
 
 // Memory helper

@@ -51,6 +51,7 @@ struct CellTypes
 
 		setup_internals();
 		setup_internals_mem();
+		setup_internals_anyinit();
 		setup_stdcells();
 		setup_stdcells_mem();
 	}
@@ -100,6 +101,14 @@ struct CellTypes
 		setup_type(ID($specify2), {ID::EN, ID::SRC, ID::DST}, pool<RTLIL::IdString>(), true);
 		setup_type(ID($specify3), {ID::EN, ID::SRC, ID::DST, ID::DAT}, pool<RTLIL::IdString>(), true);
 		setup_type(ID($specrule), {ID::EN_SRC, ID::EN_DST, ID::SRC, ID::DST}, pool<RTLIL::IdString>(), true);
+		setup_type(ID($print), {ID::EN, ID::ARGS, ID::TRG}, pool<RTLIL::IdString>());
+		setup_type(ID($check), {ID::A, ID::EN, ID::ARGS, ID::TRG}, pool<RTLIL::IdString>());
+		setup_type(ID($set_tag), {ID::A, ID::SET, ID::CLR}, {ID::Y});
+		setup_type(ID($get_tag), {ID::A}, {ID::Y});
+		setup_type(ID($overwrite_tag), {ID::A, ID::SET, ID::CLR}, pool<RTLIL::IdString>());
+		setup_type(ID($original_tag), {ID::A}, {ID::Y});
+		setup_type(ID($future_ff), {ID::A}, {ID::Y});
+		setup_type(ID($scopeinfo), {}, {});
 	}
 
 	void setup_internals_eval()
@@ -115,7 +124,8 @@ struct CellTypes
 			ID($shl), ID($shr), ID($sshl), ID($sshr), ID($shift), ID($shiftx),
 			ID($lt), ID($le), ID($eq), ID($ne), ID($eqx), ID($nex), ID($ge), ID($gt),
 			ID($add), ID($sub), ID($mul), ID($div), ID($mod), ID($divfloor), ID($modfloor), ID($pow),
-			ID($logic_and), ID($logic_or), ID($concat), ID($macc)
+			ID($logic_and), ID($logic_or), ID($concat), ID($macc),
+			ID($bweqx)
 		};
 
 		for (auto type : unary_ops)
@@ -124,7 +134,7 @@ struct CellTypes
 		for (auto type : binary_ops)
 			setup_type(type, {ID::A, ID::B}, {ID::Y}, true);
 
-		for (auto type : std::vector<RTLIL::IdString>({ID($mux), ID($pmux)}))
+		for (auto type : std::vector<RTLIL::IdString>({ID($mux), ID($pmux), ID($bwmux)}))
 			setup_type(type, {ID::A, ID::B, ID::S}, {ID::Y}, true);
 
 		for (auto type : std::vector<RTLIL::IdString>({ID($bmux), ID($demux)}))
@@ -153,6 +163,11 @@ struct CellTypes
 		setup_type(ID($dlatch), {ID::EN, ID::D}, {ID::Q});
 		setup_type(ID($adlatch), {ID::EN, ID::D, ID::ARST}, {ID::Q});
 		setup_type(ID($dlatchsr), {ID::EN, ID::SET, ID::CLR, ID::D}, {ID::Q});
+	}
+
+	void setup_internals_anyinit()
+	{
+		setup_type(ID($anyinit), {ID::D}, {ID::Q});
 	}
 
 	void setup_internals_mem()
@@ -424,6 +439,11 @@ struct CellTypes
 			return const_demux(arg1, arg2);
 		}
 
+		if (cell->type == ID($bweqx))
+		{
+			return const_bweqx(arg1, arg2);
+		}
+
 		if (cell->type == ID($lut))
 		{
 			int width = cell->parameters.at(ID::WIDTH).as_int();
@@ -482,16 +502,12 @@ struct CellTypes
 
 	static RTLIL::Const eval(RTLIL::Cell *cell, const RTLIL::Const &arg1, const RTLIL::Const &arg2, const RTLIL::Const &arg3, bool *errp = nullptr)
 	{
-		if (cell->type.in(ID($mux), ID($pmux), ID($_MUX_))) {
-			RTLIL::Const ret = arg1;
-			for (size_t i = 0; i < arg3.bits.size(); i++)
-				if (arg3.bits[i] == RTLIL::State::S1) {
-					std::vector<RTLIL::State> bits(arg2.bits.begin() + i*arg1.bits.size(), arg2.bits.begin() + (i+1)*arg1.bits.size());
-					ret = RTLIL::Const(bits);
-				}
-			return ret;
-		}
-
+		if (cell->type.in(ID($mux), ID($_MUX_)))
+			return const_mux(arg1, arg2, arg3);
+		if (cell->type == ID($bwmux))
+			return const_bwmux(arg1, arg2, arg3);
+		if (cell->type == ID($pmux))
+			return const_pmux(arg1, arg2, arg3);
 		if (cell->type == ID($_AOI3_))
 			return eval_not(const_or(const_and(arg1, arg2, false, false, 1), arg3, false, false, 1));
 		if (cell->type == ID($_OAI3_))

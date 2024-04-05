@@ -171,29 +171,6 @@ static bool isInLocalScope(const std::string *name)
 	return (user_types.count(*name) > 0);
 }
 
-static AstNode *getTypeDefinitionNode(std::string type_name)
-{
-	// check current scope then outer scopes for a name
-	for (auto it = user_type_stack.rbegin(); it != user_type_stack.rend(); ++it) {
-		if (it->count(type_name) > 0) {
-			// return the definition nodes from the typedef statement
-			auto typedef_node = (*it)[type_name];
-			log_assert(typedef_node->type == AST_TYPEDEF);
-			return typedef_node->children[0];
-		}
-	}
-
-	// The lexer recognized the name as a TOK_USER_TYPE, but now we can't find it anymore?
-	log_error("typedef for user type `%s' not found", type_name.c_str());
-}
-
-static AstNode *copyTypeDefinition(std::string type_name)
-{
-	// return a copy of the template from a typedef definition
-	auto typedef_node = getTypeDefinitionNode(type_name);
-	return typedef_node->clone();
-}
-
 static AstNode *makeRange(int msb = 31, int lsb = 0, bool isSigned = true)
 {
 	auto range = new AstNode(AST_RANGE);
@@ -229,9 +206,9 @@ static AstNode *checkRange(AstNode *type_node, AstNode *range_node)
 static void rewriteRange(AstNode *rangeNode)
 {
 	if (rangeNode->type == AST_RANGE && rangeNode->children.size() == 1) {
-		// SV array size [n], rewrite as [n-1:0]
-		rangeNode->children[0] = new AstNode(AST_SUB, rangeNode->children[0], AstNode::mkconst_int(1, true));
-		rangeNode->children.push_back(AstNode::mkconst_int(0, false));
+		// SV array size [n], rewrite as [0:n-1]
+		rangeNode->children.push_back(new AstNode(AST_SUB, rangeNode->children[0], AstNode::mkconst_int(1, true)));
+		rangeNode->children[0] = AstNode::mkconst_int(0, false);
 	}
 }
 
@@ -315,6 +292,65 @@ static void rewriteGenForDeclInit(AstNode *loop)
 	substitute(incr);
 }
 
+static void ensureAsgnExprAllowed()
+{
+	if (!sv_mode)
+		frontend_verilog_yyerror("Assignments within expressions are only supported in SystemVerilog mode.");
+	if (ast_stack.back()->type != AST_BLOCK)
+		frontend_verilog_yyerror("Assignments within expressions are only permitted within procedures.");
+}
+
+// add a pre/post-increment/decrement statement
+static const AstNode *addIncOrDecStmt(dict<IdString, AstNode*> *stmt_attr, AstNode *lhs,
+				      dict<IdString, AstNode*> *op_attr, AST::AstNodeType op,
+				      YYLTYPE begin, YYLTYPE end)
+{
+	AstNode *one = AstNode::mkconst_int(1, true);
+	AstNode *rhs = new AstNode(op, lhs->clone(), one);
+	if (op_attr != nullptr)
+		append_attr(rhs, op_attr);
+	AstNode *stmt = new AstNode(AST_ASSIGN_EQ, lhs, rhs);
+	SET_AST_NODE_LOC(stmt, begin, end);
+	if (stmt_attr != nullptr)
+		append_attr(stmt, stmt_attr);
+	ast_stack.back()->children.push_back(stmt);
+	return stmt;
+}
+
+// create a pre/post-increment/decrement expression, and add the corresponding statement
+static AstNode *addIncOrDecExpr(AstNode *lhs, dict<IdString, AstNode*> *attr, AST::AstNodeType op, YYLTYPE begin, YYLTYPE end, bool undo)
+{
+	ensureAsgnExprAllowed();
+	const AstNode *stmt = addIncOrDecStmt(nullptr, lhs, attr, op, begin, end);
+	log_assert(stmt->type == AST_ASSIGN_EQ);
+	AstNode *expr = stmt->children[0]->clone();
+	if (undo) {
+		AstNode *minus_one = AstNode::mkconst_int(-1, true, 1);
+		expr = new AstNode(op, expr, minus_one);
+	}
+	SET_AST_NODE_LOC(expr, begin, end);
+	return expr;
+}
+
+// add a binary operator assignment statement, e.g., a += b
+static const AstNode *addAsgnBinopStmt(dict<IdString, AstNode*> *attr, AstNode *lhs, AST::AstNodeType op, AstNode *rhs, YYLTYPE begin, YYLTYPE end)
+{
+	SET_AST_NODE_LOC(rhs, end, end);
+	if (op == AST_SHIFT_LEFT || op == AST_SHIFT_RIGHT ||
+		op == AST_SHIFT_SLEFT || op == AST_SHIFT_SRIGHT) {
+		rhs = new AstNode(AST_TO_UNSIGNED, rhs);
+		SET_AST_NODE_LOC(rhs, end, end);
+	}
+	rhs = new AstNode(op, lhs->clone(), rhs);
+	AstNode *stmt = new AstNode(AST_ASSIGN_EQ, lhs, rhs);
+	SET_AST_NODE_LOC(rhs, begin, end);
+	SET_AST_NODE_LOC(stmt, begin, end);
+	ast_stack.back()->children.push_back(stmt);
+	if (attr != nullptr)
+		append_attr(stmt, attr);
+	return lhs;
+}
+
 %}
 
 %define api.prefix {frontend_verilog_yy}
@@ -365,7 +401,7 @@ static void rewriteGenForDeclInit(AstNode *loop)
 %token TOK_POS_INDEXED TOK_NEG_INDEXED TOK_PROPERTY TOK_ENUM TOK_TYPEDEF
 %token TOK_RAND TOK_CONST TOK_CHECKER TOK_ENDCHECKER TOK_EVENTUALLY
 %token TOK_INCREMENT TOK_DECREMENT TOK_UNIQUE TOK_UNIQUE0 TOK_PRIORITY
-%token TOK_STRUCT TOK_PACKED TOK_UNSIGNED TOK_INT TOK_BYTE TOK_SHORTINT TOK_LONGINT TOK_UNION
+%token TOK_STRUCT TOK_PACKED TOK_UNSIGNED TOK_INT TOK_BYTE TOK_SHORTINT TOK_LONGINT TOK_VOID TOK_UNION
 %token TOK_BIT_OR_ASSIGN TOK_BIT_AND_ASSIGN TOK_BIT_XOR_ASSIGN TOK_ADD_ASSIGN
 %token TOK_SUB_ASSIGN TOK_DIV_ASSIGN TOK_MOD_ASSIGN TOK_MUL_ASSIGN
 %token TOK_SHL_ASSIGN TOK_SHR_ASSIGN TOK_SSHL_ASSIGN TOK_SSHR_ASSIGN
@@ -381,7 +417,7 @@ static void rewriteGenForDeclInit(AstNode *loop)
 %type <integer> integer_atom_type integer_vector_type
 %type <al> attr case_attr
 %type <ast> struct_union
-%type <ast_node_type> asgn_binop
+%type <ast_node_type> asgn_binop inc_or_dec_op
 %type <ast> genvar_identifier
 
 %type <specify_target_ptr> specify_target
@@ -1013,6 +1049,23 @@ task_func_decl:
 		current_function_or_task = NULL;
 		ast_stack.pop_back();
 	} |
+	attr TOK_FUNCTION opt_automatic TOK_VOID TOK_ID {
+		// The difference between void functions and tasks is that
+		// always_comb's implicit sensitivity list behaves as if functions were
+		// inlined, but ignores signals read only in tasks. This only matters
+		// for event based simulation, and for synthesis we can treat a void
+		// function like a task.
+		current_function_or_task = new AstNode(AST_TASK);
+		current_function_or_task->str = *$5;
+		append_attr(current_function_or_task, $1);
+		ast_stack.back()->children.push_back(current_function_or_task);
+		ast_stack.push_back(current_function_or_task);
+		current_function_or_task_port_id = 1;
+		delete $5;
+	} task_func_args_opt ';' task_func_body TOK_ENDFUNCTION {
+		current_function_or_task = NULL;
+		ast_stack.pop_back();
+	} |
 	attr TOK_FUNCTION opt_automatic func_return_type TOK_ID {
 		current_function_or_task = new AstNode(AST_FUNCTION);
 		current_function_or_task->str = *$5;
@@ -1609,10 +1662,7 @@ param_implicit_type: param_signed param_range;
 param_type:
 	param_integer_type | param_real | param_range_type | param_implicit_type |
 	hierarchical_type_id {
-		astbuf1->is_custom_type = true;
-		astbuf1->children.push_back(new AstNode(AST_WIRETYPE));
-		astbuf1->children.back()->str = *$1;
-		delete $1;
+		addWiretypeNode($1, astbuf1);
 	};
 
 param_decl:
@@ -1785,7 +1835,12 @@ enum_decl: enum_type enum_var_list ';'		{ delete $1; }
 // struct or union
 //////////////////
 
-struct_decl: struct_type struct_var_list ';' 	{ delete astbuf2; }
+struct_decl:
+	attr struct_type {
+		append_attr($2, $1);
+	} struct_var_list ';' {
+		delete astbuf2;
+	}
 	;
 
 struct_type: struct_union { astbuf2 = $1; } struct_body { $$ = astbuf2; }
@@ -1834,23 +1889,9 @@ struct_member_type: { astbuf1 = new AstNode(AST_STRUCT_ITEM); } member_type_toke
 	;
 
 member_type_token:
-	  member_type 
+	  member_type
 	| hierarchical_type_id {
-			// use a clone of the typedef definition nodes
-			auto template_node = copyTypeDefinition(*$1);
-			delete $1;
-			switch (template_node->type) {
-			case AST_WIRE:
-				template_node->type = AST_STRUCT_ITEM;
-				break;
-			case AST_STRUCT:
-			case AST_UNION:
-				break;
-			default:
-				frontend_verilog_yyerror("Invalid type for struct member: %s", type2str(template_node->type).c_str());
-			}
-			delete astbuf1;
-			astbuf1 = template_node;
+			addWiretypeNode($1, astbuf1);
 		}
 	| {
 		delete astbuf1;
@@ -2443,7 +2484,7 @@ assert:
 			delete $5;
 		} else {
 			AstNode *node = new AstNode(assume_asserts_mode ? AST_ASSUME : AST_ASSERT, $5);
-			SET_AST_NODE_LOC(node, @1, @6);
+			SET_AST_NODE_LOC(node, ($1 != nullptr ? @1 : @2), @6);
 			if ($1 != nullptr)
 				node->str = *$1;
 			ast_stack.back()->children.push_back(node);
@@ -2456,7 +2497,7 @@ assert:
 			delete $5;
 		} else {
 			AstNode *node = new AstNode(assert_assumes_mode ? AST_ASSERT : AST_ASSUME, $5);
-			SET_AST_NODE_LOC(node, @1, @6);
+			SET_AST_NODE_LOC(node, ($1 != nullptr ? @1 : @2), @6);
 			if ($1 != nullptr)
 				node->str = *$1;
 			ast_stack.back()->children.push_back(node);
@@ -2469,7 +2510,7 @@ assert:
 			delete $6;
 		} else {
 			AstNode *node = new AstNode(assume_asserts_mode ? AST_FAIR : AST_LIVE, $6);
-			SET_AST_NODE_LOC(node, @1, @7);
+			SET_AST_NODE_LOC(node, ($1 != nullptr ? @1 : @2), @7);
 			if ($1 != nullptr)
 				node->str = *$1;
 			ast_stack.back()->children.push_back(node);
@@ -2482,7 +2523,7 @@ assert:
 			delete $6;
 		} else {
 			AstNode *node = new AstNode(assert_assumes_mode ? AST_LIVE : AST_FAIR, $6);
-			SET_AST_NODE_LOC(node, @1, @7);
+			SET_AST_NODE_LOC(node, ($1 != nullptr ? @1 : @2), @7);
 			if ($1 != nullptr)
 				node->str = *$1;
 			ast_stack.back()->children.push_back(node);
@@ -2492,7 +2533,7 @@ assert:
 	} |
 	opt_sva_label TOK_COVER opt_property '(' expr ')' ';' {
 		AstNode *node = new AstNode(AST_COVER, $5);
-		SET_AST_NODE_LOC(node, @1, @6);
+		SET_AST_NODE_LOC(node, ($1 != nullptr ? @1 : @2), @6);
 		if ($1 != nullptr) {
 			node->str = *$1;
 			delete $1;
@@ -2501,7 +2542,7 @@ assert:
 	} |
 	opt_sva_label TOK_COVER opt_property '(' ')' ';' {
 		AstNode *node = new AstNode(AST_COVER, AstNode::mkconst_int(1, false));
-		SET_AST_NODE_LOC(node, @1, @5);
+		SET_AST_NODE_LOC(node, ($1 != nullptr ? @1 : @2), @5);
 		if ($1 != nullptr) {
 			node->str = *$1;
 			delete $1;
@@ -2510,7 +2551,7 @@ assert:
 	} |
 	opt_sva_label TOK_COVER ';' {
 		AstNode *node = new AstNode(AST_COVER, AstNode::mkconst_int(1, false));
-		SET_AST_NODE_LOC(node, @1, @2);
+		SET_AST_NODE_LOC(node, ($1 != nullptr ? @1 : @2), @2);
 		if ($1 != nullptr) {
 			node->str = *$1;
 			delete $1;
@@ -2522,7 +2563,7 @@ assert:
 			delete $5;
 		} else {
 			AstNode *node = new AstNode(AST_ASSUME, $5);
-			SET_AST_NODE_LOC(node, @1, @6);
+			SET_AST_NODE_LOC(node, ($1 != nullptr ? @1 : @2), @6);
 			if ($1 != nullptr)
 				node->str = *$1;
 			ast_stack.back()->children.push_back(node);
@@ -2537,7 +2578,7 @@ assert:
 			delete $6;
 		} else {
 			AstNode *node = new AstNode(AST_FAIR, $6);
-			SET_AST_NODE_LOC(node, @1, @7);
+			SET_AST_NODE_LOC(node, ($1 != nullptr ? @1 : @2), @7);
 			if ($1 != nullptr)
 				node->str = *$1;
 			ast_stack.back()->children.push_back(node);
@@ -2628,17 +2669,11 @@ simple_behavioral_stmt:
 		SET_AST_NODE_LOC(node, @2, @5);
 		append_attr(node, $1);
 	} |
-	attr lvalue TOK_INCREMENT {
-		AstNode *node = new AstNode(AST_ASSIGN_EQ, $2, new AstNode(AST_ADD, $2->clone(), AstNode::mkconst_int(1, true)));
-		ast_stack.back()->children.push_back(node);
-		SET_AST_NODE_LOC(node, @2, @3);
-		append_attr(node, $1);
+	attr lvalue attr inc_or_dec_op {
+		addIncOrDecStmt($1, $2, $3, $4, @1, @4);
 	} |
-	attr lvalue TOK_DECREMENT {
-		AstNode *node = new AstNode(AST_ASSIGN_EQ, $2, new AstNode(AST_SUB, $2->clone(), AstNode::mkconst_int(1, true)));
-		ast_stack.back()->children.push_back(node);
-		SET_AST_NODE_LOC(node, @2, @3);
-		append_attr(node, $1);
+	attr inc_or_dec_op attr lvalue {
+		addIncOrDecStmt($1, $4, $3, $2, @1, @4);
 	} |
 	attr lvalue OP_LE delay expr {
 		AstNode *node = new AstNode(AST_ASSIGN_LE, $2, $5);
@@ -2647,18 +2682,7 @@ simple_behavioral_stmt:
 		append_attr(node, $1);
 	} |
 	attr lvalue asgn_binop delay expr {
-		AstNode *expr_node = $5;
-		if ($3 == AST_SHIFT_LEFT || $3 == AST_SHIFT_RIGHT ||
-			$3 == AST_SHIFT_SLEFT || $3 == AST_SHIFT_SRIGHT) {
-			expr_node = new AstNode(AST_TO_UNSIGNED, expr_node);
-			SET_AST_NODE_LOC(expr_node, @5, @5);
-		}
-		AstNode *op_node = new AstNode($3, $2->clone(), expr_node);
-		AstNode *node = new AstNode(AST_ASSIGN_EQ, $2, op_node);
-		SET_AST_NODE_LOC(op_node, @2, @5);
-		SET_AST_NODE_LOC(node, @2, @5);
-		ast_stack.back()->children.push_back(node);
-		append_attr(node, $1);
+		addAsgnBinopStmt($1, $2, $3, $5, @2, @5);
 	};
 
 asgn_binop:
@@ -2674,6 +2698,12 @@ asgn_binop:
 	TOK_SHR_ASSIGN { $$ = AST_SHIFT_RIGHT; } |
 	TOK_SSHL_ASSIGN { $$ = AST_SHIFT_SLEFT; } |
 	TOK_SSHR_ASSIGN { $$ = AST_SHIFT_SRIGHT; } ;
+
+inc_or_dec_op:
+	// NOTE: These should only be permitted in SV mode, but Yosys has
+	// allowed them in all modes since support for them was added in 2017.
+	TOK_INCREMENT { $$ = AST_ADD; } |
+	TOK_DECREMENT { $$ = AST_SUB; } ;
 
 for_initialization:
 	TOK_ID '=' expr {
@@ -2739,6 +2769,7 @@ behavioral_stmt:
 		ast_stack.push_back(node);
 		append_attr(node, $1);
 	} opt_arg_list ';'{
+		SET_AST_NODE_LOC(ast_stack.back(), @2, @5);
 		ast_stack.pop_back();
 	} |
 	attr TOK_MSG_TASKS {
@@ -2749,6 +2780,7 @@ behavioral_stmt:
 		ast_stack.push_back(node);
 		append_attr(node, $1);
 	} opt_arg_list ';'{
+		SET_AST_NODE_LOC(ast_stack.back(), @2, @5);
 		ast_stack.pop_back();
 	} |
 	attr TOK_BEGIN {
@@ -3165,6 +3197,14 @@ expr:
 		$$->children.push_back($6);
 		SET_AST_NODE_LOC($$, @1, @$);
 		append_attr($$, $3);
+	} |
+	inc_or_dec_op attr rvalue {
+		$$ = addIncOrDecExpr($3, $2, $1, @1, @3, false);
+	} |
+	// TODO: Attributes are allowed in the middle here, but they create some
+	// non-trivial conflicts that don't seem worth solving for now.
+	rvalue inc_or_dec_op {
+		$$ = addIncOrDecExpr($1, nullptr, $2, @1, @2, true);
 	};
 
 basic_expr:
@@ -3452,6 +3492,17 @@ basic_expr:
 			frontend_verilog_yyerror("Static cast is only supported in SystemVerilog mode.");
 		$$ = new AstNode(AST_CAST_SIZE, $1, $4);
 		SET_AST_NODE_LOC($$, @1, @4);
+	} |
+	'(' expr '=' expr ')' {
+		ensureAsgnExprAllowed();
+		AstNode *node = new AstNode(AST_ASSIGN_EQ, $2, $4);
+		ast_stack.back()->children.push_back(node);
+		SET_AST_NODE_LOC(node, @2, @4);
+		$$ = $2->clone();
+	} |
+	'(' expr asgn_binop expr ')' {
+		ensureAsgnExprAllowed();
+		$$ = addAsgnBinopStmt(nullptr, $2, $3, $4, @2, @4)-> clone();
 	};
 
 concat_list:
