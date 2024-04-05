@@ -210,11 +210,14 @@ struct ClkbufmapPass : public Pass {
 			};
 
 			// Collect all driven bits.
-			for (auto cell : module->cells())
+			for (auto cell : module->cells()){
+				if (cell->type == RTLIL::escape_id("PLL")) //EDA-2653:No CLK_BUFs on output clocks of PLL
+					continue;
 			for (auto port : cell->connections())
 				if (cell->output(port.first))
 					for (int i = 0; i < port.second.size(); i++)
 						driven_wire_bits.insert(port.second[i]);
+			}
 
 			// Insert buffers.
 			std::vector<pair<Wire *, Wire *>> input_queue;
@@ -244,6 +247,7 @@ struct ClkbufmapPass : public Pass {
 					SigBit wire_bit(wire, i);
 					SigBit mapped_wire_bit = sigmap(wire_bit);
 					if (buf_wire_bits.count(mapped_wire_bit)) {
+
 						// Already buffered downstream.  If this is an output, mark it.
 						if (wire->port_output)
 							buf_ports.insert(make_pair(module->name, make_pair(wire->name, i)));
@@ -256,7 +260,7 @@ struct ClkbufmapPass : public Pass {
 						Wire *iwire = nullptr;
 						RTLIL::Cell *cell = nullptr;
 						bool is_input = wire->port_input && !inpad_celltype.empty() && module->get_bool_attribute(ID::top);
-						if (!buf_celltype.empty() && (!is_input || buffer_inputs)) {
+						if (!buf_celltype.empty() && (!is_input || buffer_inputs) && !wire->port_output) {
 							log("Inserting %s on %s.%s[%d].\n", buf_celltype.c_str(), log_id(module), log_id(wire), i);
 							cell = module->addCell(NEW_ID, RTLIL::escape_id(buf_celltype));
 							iwire = module->addWire(NEW_ID);
