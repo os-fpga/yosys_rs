@@ -233,22 +233,23 @@ void prep_hier(RTLIL::Design *design, bool dff_mode)
 
 				if (derived_type != cell->type) {
 					auto unmap_module = unmap_design->addModule(derived_type);
+					auto replace_cell = unmap_module->addCell(ID::_TECHMAP_REPLACE_, cell->type);
 					for (auto port : derived_module->ports) {
 						auto w = unmap_module->addWire(port, derived_module->wire(port));
 						// Do not propagate (* init *) values into the box,
 						//   in fact, remove it from outside too
 						if (w->port_output)
 							w->attributes.erase(ID::init);
+						// Attach (* techmap_autopurge *) to all ports to ensure that
+						//   undriven inputs/unused outputs are propagated through to
+						//   the techmapped cell
+						w->attributes[ID::techmap_autopurge] = 1;
+
+						replace_cell->setPort(port, w);
 					}
 					unmap_module->ports = derived_module->ports;
 					unmap_module->check();
 
-					auto replace_cell = unmap_module->addCell(ID::_TECHMAP_REPLACE_, cell->type);
-					for (const auto &conn : cell->connections()) {
-						auto w = unmap_module->wire(conn.first);
-						log_assert(w);
-						replace_cell->setPort(conn.first, w);
-					}
 					replace_cell->parameters = cell->parameters;
 				}
 			}
@@ -674,8 +675,12 @@ void prep_delays(RTLIL::Design *design, bool dff_mode)
 				continue;
 
 			auto offset = i.first.offset;
-			auto O = module->addWire(NEW_ID);
+			if (!cell->hasPort(i.first.name))
+				continue;
 			auto rhs = cell->getPort(i.first.name);
+			if (offset >= rhs.size())
+				continue;
+			auto O = module->addWire(NEW_ID);
 
 #ifndef NDEBUG
 			if (ys_debug(1)) {
@@ -1572,14 +1577,14 @@ struct Abc9OpsPass : public Pass {
 		log("the `abc9' script pass. Only fully-selected modules are supported.\n");
 		log("\n");
 		log("    -check\n");
-		log("        check that the design is valid, e.g. (* abc9_box_id *) values are unique,\n");
-		log("        (* abc9_carry *) is only given for one input/output port, etc.\n");
+		log("        check that the design is valid, e.g. (* abc9_box_id *) values are\n");
+		log("        unique, (* abc9_carry *) is only given for one input/output port, etc.\n");
 		log("\n");
 		log("    -prep_hier\n");
 		log("        derive all used (* abc9_box *) or (* abc9_flop *) (if -dff option)\n");
 		log("        whitebox modules. with (* abc9_flop *) modules, only those containing\n");
-		log("        $dff/$_DFF_[NP]_ cells with zero initial state -- due to an ABC limitation\n");
-		log("        -- will be derived.\n");
+		log("        $dff/$_DFF_[NP]_ cells with zero initial state -- due to an ABC\n");
+		log("        limitation -- will be derived.\n");
 		log("\n");
 		log("    -prep_bypass\n");
 		log("        create techmap rules in the '$abc9_map' and '$abc9_unmap' designs for\n");
@@ -1597,33 +1602,35 @@ struct Abc9OpsPass : public Pass {
 		log("    -prep_dff_submod\n");
 		log("        within (* abc9_flop *) modules, rewrite all edge-sensitive path\n");
 		log("        declarations and $setup() timing checks ($specify3 and $specrule cells)\n");
-		log("        that share a 'DST' port with the $_DFF_[NP]_.Q port from this 'Q' port to\n");
-		log("        the DFF's 'D' port. this is to prepare such specify cells to be moved\n");
+		log("        that share a 'DST' port with the $_DFF_[NP]_.Q port from this 'Q' port\n");
+		log("        to the DFF's 'D' port. this is to prepare such specify cells to be moved\n");
 		log("        into the flop box.\n");
 		log("\n");
 		log("    -prep_dff_unmap\n");
-		log("        populate the '$abc9_unmap' design with techmap rules for mapping *_$abc9_flop\n");
-		log("        cells back into their derived cell types (where the rules created by\n");
-		log("        -prep_hier will then map back to the original cell with parameters).\n");
+		log("        populate the '$abc9_unmap' design with techmap rules for mapping\n");
+		log("        *_$abc9_flop cells back into their derived cell types (where the rules\n");
+		log("        created by -prep_hier will then map back to the original cell with\n");
+		log("        parameters).\n");
 		log("\n");
 		log("    -prep_delays\n");
 		log("        insert `$__ABC9_DELAY' blackbox cells into the design to account for\n");
 		log("        certain required times.\n");
 		log("\n");
 		log("    -break_scc\n");
-		log("        for an arbitrarily chosen cell in each unique SCC of each selected module\n");
-		log("        (tagged with an (* abc9_scc_id = <int> *) attribute) interrupt all wires\n");
-		log("        driven by this cell's outputs with a temporary $__ABC9_SCC_BREAKER cell\n");
-		log("        to break the SCC.\n");
+		log("        for an arbitrarily chosen cell in each unique SCC of each selected\n");
+		log("        module (tagged with an (* abc9_scc_id = <int> *) attribute) interrupt\n");
+		log("        all wires driven by this cell's outputs with a temporary\n");
+		log("        $__ABC9_SCC_BREAKER cell to break the SCC.\n");
 		log("\n");
 		log("    -prep_xaiger\n");
 		log("        prepare the design for XAIGER output. this includes computing the\n");
-		log("        topological ordering of ABC9 boxes, as well as preparing the '$abc9_holes'\n");
-		log("        design that contains the logic behaviour of ABC9 whiteboxes.\n");
+		log("        topological ordering of ABC9 boxes, as well as preparing the \n");
+		log("        '$abc9_holes' design that contains the logic behaviour of ABC9\n");
+		log("        whiteboxes.\n");
 		log("\n");
 		log("    -dff\n");
-		log("        consider flop cells (those instantiating modules marked with (* abc9_flop *))\n");
-		log("        during -prep_{delays,xaiger,box}.\n");
+		log("        consider flop cells (those instantiating modules marked with\n");
+		log("        (* abc9_flop *)) during -prep_{delays,xaiger,box}.\n");
 		log("\n");
 		log("    -prep_lut <maxlut>\n");
 		log("        pre-compute the lut library by analysing all modules marked with\n");
@@ -1641,8 +1648,8 @@ struct Abc9OpsPass : public Pass {
 		log("\n");
 		log("    -reintegrate\n");
 		log("        for each selected module, re-intergrate the module '<module-name>$abc9'\n");
-		log("        by first recovering ABC9 boxes, and then stitching in the remaining primary\n");
-		log("        inputs and outputs.\n");
+		log("        by first recovering ABC9 boxes, and then stitching in the remaining\n");
+		log("        primary inputs and outputs.\n");
 		log("\n");
 	}
 	void execute(std::vector<std::string> args, RTLIL::Design *design) override

@@ -21,12 +21,13 @@
 #include "kernel/register.h"
 #include "kernel/sigtools.h"
 #include "kernel/celltypes.h"
-#include "kernel/cellaigs.h"
 #include "kernel/log.h"
 #include <string>
 #include <algorithm>
 #include <unordered_map>
 #include <vector>
+#include <sstream>
+#include <iterator>
 
 USING_YOSYS_NAMESPACE
 PRIVATE_NAMESPACE_BEGIN
@@ -116,17 +117,17 @@ struct JnyWriter
         _include_connections(connections), _include_attributes(attributes), _include_properties(properties)
          { }
 
-    void write_metadata(Design *design, uint16_t indent_level = 0)
+    void write_metadata(Design *design, uint16_t indent_level = 0, std::string invk = "")
     {
         log_assert(design != nullptr);
 
         design->sort();
 
         f << "{\n";
+        f << "  \"$schema\": \"https://raw.githubusercontent.com/YosysHQ/yosys/master/misc/jny.schema.json\",\n";
         f << stringf("  \"generator\": \"%s\",\n", escape_string(yosys_version_str).c_str());
-        // XXX(aki): Replace this with a proper version info eventually:tm:
-        f << "  \"version\": \"0.0.0\",\n";
-
+        f << "  \"version\": \"0.0.1\",\n";
+        f << "  \"invocation\": \"" << escape_string(invk) << "\",\n";
         f << "  \"features\": [";
 
         size_t fnum{0};
@@ -414,6 +415,8 @@ struct JnyBackend : public Backend {
         log("\n");
         log("    jny [options] [selection]\n");
         log("\n");
+        log("Write JSON netlist metadata for the current design\n");
+        log("\n");
         log("    -no-connections\n");
         log("        Don't include connection information in the netlist output.\n");
         log("\n");
@@ -423,8 +426,8 @@ struct JnyBackend : public Backend {
         log("    -no-properties\n");
         log("        Don't include property information in the netlist output.\n");
         log("\n");
-        log("Write a JSON metadata for the current design\n");
-        log("\n");
+        log("The JSON schema for JNY output files is located in the \"jny.schema.json\" file\n");
+        log("which is located at \"https://raw.githubusercontent.com/YosysHQ/yosys/master/misc/jny.schema.json\"\n");
         log("\n");
     }
 
@@ -458,12 +461,22 @@ struct JnyBackend : public Backend {
 
             break;
         }
+
+        // Compose invocation line
+        std::ostringstream invk;
+        if (!args.empty()) {
+            std::copy(args.begin(), args.end(),
+                std::ostream_iterator<std::string>(invk, " ")
+            );
+        }
+        invk << filename;
+
         extra_args(f, filename, args, argidx);
 
         log_header(design, "Executing jny backend.\n");
 
         JnyWriter jny_writer(*f, false, connections, attributes, properties);
-        jny_writer.write_metadata(design);
+        jny_writer.write_metadata(design, 0, invk.str());
     }
 
 } JnyBackend;
@@ -477,7 +490,7 @@ struct JnyPass : public Pass {
         log("\n");
         log("    jny [options] [selection]\n");
         log("\n");
-        log("Write a JSON netlist metadata for the current design\n");
+        log("Write JSON netlist metadata for the current design\n");
         log("\n");
         log("    -o <filename>\n");
         log("        write to the specified file.\n");
@@ -530,12 +543,22 @@ struct JnyPass : public Pass {
 
             break;
         }
+
+        // Compose invocation line
+        std::ostringstream invk;
+        if (!args.empty()) {
+            std::copy(args.begin(), args.end(),
+                std::ostream_iterator<std::string>(invk, " ")
+            );
+        }
+
         extra_args(args, argidx, design);
 
         std::ostream *f;
         std::stringstream buf;
+        bool empty = filename.empty();
 
-        if (!filename.empty()) {
+        if (!empty) {
             rewrite_filename(filename);
             std::ofstream *ff = new std::ofstream;
             ff->open(filename.c_str(), std::ofstream::trunc);
@@ -544,15 +567,16 @@ struct JnyPass : public Pass {
                 log_error("Can't open file `%s' for writing: %s\n", filename.c_str(), strerror(errno));
             }
             f = ff;
+            invk << filename;
         } else {
             f = &buf;
         }
 
 
         JnyWriter jny_writer(*f, false, connections, attributes, properties);
-        jny_writer.write_metadata(design);
+        jny_writer.write_metadata(design, 0, invk.str());
 
-        if (!filename.empty()) {
+        if (!empty) {
             delete f;
         } else {
             log("%s", buf.str().c_str());

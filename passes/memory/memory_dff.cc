@@ -728,9 +728,6 @@ struct MemoryDffWorker
 				log("    Write port %d: non-transparent.\n", pi);
 			}
 		}
-		/* Added below attribute to distinguish b/w write-first & No-change mode
-		as we supposed to add a d-out reg for No-change in memory libmap stage for new-RS-primitives*/
-		mem.set_bool_attribute(RTLIL::escape_id("memory_dff_match_wr"),match_wr);
 		mem.emit();
 	}
 
@@ -789,7 +786,6 @@ struct MemoryDffWorker
 					add_logic=false;
 				}
 			}
-			mem.set_bool_attribute(RTLIL::escape_id("new_primitive_dff_merge"),true);
 		}
 		// Trick part: this transform is invalid if the initial
 		// value of the FF is fully-defined.  However, we
@@ -876,8 +872,8 @@ struct MemoryDffPass : public Pass {
 		log("\n");
 		log("    memory_dff [-no-rw-check] [selection]\n");
 		log("\n");
-		log("This pass detects DFFs at memory read ports and merges them into the memory port.\n");
-		log("I.e. it consumes an asynchronous memory port and the flip-flops at its\n");
+		log("This pass detects DFFs at memory read ports and merges them into the memory\n");
+		log("port. I.e. it consumes an asynchronous memory port and the flip-flops at its\n");
 		log("interface and yields a synchronous memory port.\n");
 		log("\n");
 		log("    -no-rw-check\n");
@@ -906,7 +902,7 @@ struct MemoryDffPass : public Pass {
 			MemoryDffWorker worker(mod, flag_no_rw_check);
 			worker.run();
 		}
-		//design->scratchpad_set_bool("memory_dff.match_wr", match_wr);
+		design->scratchpad_set_bool("memory_dff.match_wr", match_wr);
 	}
 } MemoryDffPass;
 

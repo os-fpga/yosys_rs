@@ -1125,7 +1125,7 @@ struct SelectPass : public Pass {
 		log("    <obj_pattern>\n");
 		log("        select the specified object(s) from the current module\n");
 		log("\n");
-		log("By default, patterns will not match black/white-box modules or their");
+		log("By default, patterns will not match black/white-box modules or their\n");
 		log("contents. To include such objects, prefix the pattern with '='.\n");
 		log("\n");
 		log("A <mod_pattern> can be a module name, wildcard expression (*, ?, [..])\n");
@@ -1607,11 +1607,13 @@ struct CdPass : public Pass {
 		log("with the specified name in the current module, then this is equivalent\n");
 		log("to 'cd <celltype>'.\n");
 		log("\n");
+		log("\n");
 		log("    cd ..\n");
 		log("\n");
 		log("Remove trailing substrings that start with '.' in current module name until\n");
 		log("the name of a module in the current design is generated, then switch to that\n");
 		log("module. Otherwise clear the current selection.\n");
+		log("\n");
 		log("\n");
 		log("    cd\n");
 		log("\n");

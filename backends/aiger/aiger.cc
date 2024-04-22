@@ -19,6 +19,9 @@
 
 #include "kernel/yosys.h"
 #include "kernel/sigtools.h"
+#include "kernel/json.h"
+#include "kernel/yw.h"
+#include "libs/json11/json11.hpp"
 
 USING_YOSYS_NAMESPACE
 PRIVATE_NAMESPACE_BEGIN
@@ -51,6 +54,8 @@ struct AigerWriter
 
 	vector<pair<int, int>> aig_gates;
 	vector<int> aig_latchin, aig_latchinit, aig_outputs;
+	vector<SigBit> bit2aig_stack;
+	size_t next_loop_check = 1024;
 	int aig_m = 0, aig_i = 0, aig_l = 0, aig_o = 0, aig_a = 0;
 	int aig_b = 0, aig_c = 0, aig_j = 0, aig_f = 0;
 
@@ -60,6 +65,8 @@ struct AigerWriter
 
 	dict<SigBit, int> init_inputs;
 	int initstate_ff = 0;
+
+	dict<SigBit, int> ywmap_clocks;
 
 	int mkgate(int a0, int a1)
 	{
@@ -75,6 +82,23 @@ struct AigerWriter
 			log_assert(it->second >= 0);
 			return it->second;
 		}
+
+		if (bit2aig_stack.size() == next_loop_check) {
+			for (size_t i = 0; i < next_loop_check; ++i)
+			{
+				SigBit report_bit = bit2aig_stack[i];
+				if (report_bit != bit)
+					continue;
+				for (size_t j = i; j < next_loop_check; ++j) {
+					report_bit = bit2aig_stack[j];
+					if (report_bit.is_wire() && report_bit.wire->name.isPublic())
+						break;
+				}
+				log_error("Found combinational logic loop while processing signal %s.\n", log_signal(report_bit));
+			}
+			next_loop_check *= 2;
+		}
+		bit2aig_stack.push_back(bit);
 
 		// NB: Cannot use iterator returned from aig_map.insert()
 		//     since this function is called recursively
@@ -96,6 +120,8 @@ struct AigerWriter
 			a = initstate_ff;
 		}
 
+		bit2aig_stack.pop_back();
+
 		if (bit == State::Sx || bit == State::Sz)
 			log_error("Design contains 'x' or 'z' bits. Use 'setundef' to replace those constants.\n");
 
@@ -114,14 +140,14 @@ struct AigerWriter
 			if (wire->name.isPublic())
 				sigmap.add(wire);
 
-		// promote input wires
-		for (auto wire : module->wires())
-			if (wire->port_input)
-				sigmap.add(wire);
-
 		// promote output wires
 		for (auto wire : module->wires())
 			if (wire->port_output)
+				sigmap.add(wire);
+
+		// promote input wires
+		for (auto wire : module->wires())
+			if (wire->port_input)
 				sigmap.add(wire);
 
 		for (auto wire : module->wires())
@@ -159,6 +185,17 @@ struct AigerWriter
 					output_bits.insert(wirebit);
 				}
 			}
+
+			if (wire->width == 1) {
+				auto gclk_attr = wire->attributes.find(ID::replaced_by_gclk);
+				if (gclk_attr != wire->attributes.end()) {
+					SigBit bit = sigmap(wire);
+					if (gclk_attr->second == State::S1)
+						ywmap_clocks[bit] |= 1;
+					else if (gclk_attr->second == State::S0)
+						ywmap_clocks[bit] |= 2;
+				}
+			}
 		}
 
 		for (auto bit : input_bits)
@@ -186,6 +223,22 @@ struct AigerWriter
 				unused_bits.erase(D);
 				undriven_bits.erase(Q);
 				ff_map[Q] = D;
+
+				if (cell->type != ID($_FF_)) {
+					auto sig_clk = sigmap(cell->getPort(ID::C).as_bit());
+					ywmap_clocks[sig_clk] |= cell->type == ID($_DFF_N_) ? 2 : 1;
+				}
+				continue;
+			}
+
+			if (cell->type == ID($anyinit))
+			{
+				auto sig_d = sigmap(cell->getPort(ID::D));
+				auto sig_q = sigmap(cell->getPort(ID::Q));
+				for (int i = 0; i < sig_d.size(); i++) {
+					undriven_bits.erase(sig_q[i]);
+					ff_map[sig_q[i]] = sig_d[i];
+				}
 				continue;
 			}
 
@@ -674,10 +727,131 @@ struct AigerWriter
 		for (auto &it : latch_lines)
 			f << it.second;
 
+		if (initstate_ff)
+			f << stringf("ninitff %d\n", ((initstate_ff >> 1)-1-aig_i));
+
 		wire_lines.sort();
 		for (auto &it : wire_lines)
 			f << it.second;
 	}
+
+	void write_ywmap(PrettyJson &json)
+	{
+		json.begin_object();
+		json.entry("version", "Yosys Witness Aiger map");
+		json.entry("gennerator", yosys_version_str);
+
+		json.entry("latch_count", aig_l);
+		json.entry("input_count", aig_i);
+
+		dict<int, Json> clock_lines;
+		dict<int, Json> input_lines;
+		dict<int, Json> init_lines;
+		dict<int, Json> seq_lines;
+
+		for (auto cell : module->cells())
+		{
+			if (cell->type.in(ID($_FF_), ID($_DFF_N_), ID($_DFF_P_), ID($anyinit), ID($anyconst), ID($anyseq)))
+			{
+				// Use sig_q to get the FF output name, but sig to lookup aiger bits
+				auto sig_qy = cell->getPort(cell->type.in(ID($anyconst), ID($anyseq)) ? ID::Y : ID::Q);
+				SigSpec sig = sigmap(sig_qy);
+
+				if (cell->get_bool_attribute(ID(clk2fflogic)))
+					sig_qy = cell->getPort(ID::D); // For a clk2fflogic $_FF_ the named signal is the D input not the Q output
+
+				for (int i = 0; i < GetSize(sig_qy); i++) {
+					if (sig_qy[i].wire == nullptr || sig[i].wire == nullptr)
+						continue;
+
+					auto wire = sig_qy[i].wire;
+
+					if (init_inputs.count(sig[i])) {
+						int a = init_inputs.at(sig[i]);
+						log_assert((a & 1) == 0);
+						init_lines[a] = json11::Json(json11::Json::object {
+							{ "path", witness_path(wire) },
+							{ "input", (a >> 1) - 1 },
+							{ "offset", sig_qy[i].offset },
+						});
+					}
+
+					if (input_bits.count(sig[i])) {
+						int a = aig_map.at(sig[i]);
+						log_assert((a & 1) == 0);
+						seq_lines[a] = json11::Json(json11::Json::object {
+							{ "path", witness_path(wire) },
+							{ "input", (a >> 1) - 1 },
+							{ "offset", sig_qy[i].offset },
+						});
+					}
+				}
+			}
+		}
+
+		for (auto wire : module->wires())
+		{
+			SigSpec sig = sigmap(wire);
+			if (wire->port_input)
+			{
+				auto path = witness_path(wire);
+				for (int i = 0; i < GetSize(wire); i++) {
+					if (aig_map.count(sig[i]) == 0 || sig[i].wire == nullptr)
+						continue;
+
+					int a = aig_map.at(sig[i]);
+					log_assert((a & 1) == 0);
+					input_lines[a] = json11::Json(json11::Json::object {
+						{ "path", path },
+						{ "input", (a >> 1) - 1 },
+						{ "offset", i },
+					});
+
+					if (ywmap_clocks.count(sig[i])) {
+						int clock_mode = ywmap_clocks[sig[i]];
+						if (clock_mode != 3) {
+							clock_lines[a] = json11::Json(json11::Json::object {
+								{ "path", path },
+								{ "input", (a >> 1) - 1 },
+								{ "offset", i },
+								{ "edge", clock_mode == 1 ? "posedge" : "negedge" },
+							});
+						}
+					}
+				}
+			}
+		}
+
+		json.name("clocks");
+		json.begin_array();
+		clock_lines.sort();
+		for (auto &it : clock_lines)
+			json.value(it.second);
+		json.end_array();
+
+		json.name("inputs");
+		json.begin_array();
+		input_lines.sort();
+		for (auto &it : input_lines)
+			json.value(it.second);
+		json.end_array();
+
+		json.name("seqs");
+		json.begin_array();
+		input_lines.sort();
+		for (auto &it : seq_lines)
+			json.value(it.second);
+		json.end_array();
+
+		json.name("inits");
+		json.begin_array();
+		input_lines.sort();
+		for (auto &it : init_lines)
+			json.value(it.second);
+		json.end_array();
+		json.end_object();
+	}
+
 };
 
 struct AigerBackend : public Backend {
@@ -717,6 +891,9 @@ struct AigerBackend : public Backend {
 		log("    -no-startoffset\n");
 		log("        make indexes zero based, enable using map files with smt solvers.\n");
 		log("\n");
+		log("    -ywmap <filename>\n");
+		log("        write a map file for conversion to and from yosys witness traces.\n");
+		log("\n");
 		log("    -I, -O, -B, -L\n");
 		log("        If the design contains no input/output/assert/flip-flop then create one\n");
 		log("        dummy input/output/bad_state-pin or latch to make the tools reading the\n");
@@ -741,6 +918,7 @@ struct AigerBackend : public Backend {
 		bool lmode = false;
 		bool no_startoffset = false;
 		std::string map_filename;
+		std::string yw_map_filename;
 
 		log_header(design, "Executing AIGER backend.\n");
 
@@ -772,6 +950,10 @@ struct AigerBackend : public Backend {
 				verbose_map = true;
 				continue;
 			}
+			if (yw_map_filename.empty() && args[argidx] == "-ywmap" && argidx+1 < args.size()) {
+				yw_map_filename = args[++argidx];
+				continue;
+			}
 			if (args[argidx] == "-no-startoffset") {
 				no_startoffset = true;
 				continue;
@@ -796,6 +978,9 @@ struct AigerBackend : public Backend {
 		}
 		extra_args(f, filename, args, argidx, !ascii_mode);
 
+		if (!yw_map_filename.empty() && !zinit_mode)
+			log_error("Currently -ywmap requires -zinit.\n");
+
 		Module *top_module = design->top_module();
 
 		if (top_module == nullptr)
@@ -819,6 +1004,17 @@ struct AigerBackend : public Backend {
 			if (mapf.fail())
 				log_error("Can't open file `%s' for writing: %s\n", map_filename.c_str(), strerror(errno));
 			writer.write_map(mapf, verbose_map, no_startoffset);
+		}
+
+		if (!yw_map_filename.empty()) {
+			std::ofstream mapf;
+			mapf.open(yw_map_filename.c_str(), std::ofstream::trunc);
+
+			PrettyJson json;
+
+			if (!json.write_to_file(yw_map_filename))
+				log_error("Can't open file `%s' for writing: %s\n", yw_map_filename.c_str(), strerror(errno));
+			writer.write_ywmap(json);
 		}
 	}
 } AigerBackend;

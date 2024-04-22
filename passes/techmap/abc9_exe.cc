@@ -31,7 +31,9 @@
 #endif
 
 #ifdef YOSYS_LINK_ABC
-extern "C" int Abc_RealMain(int argc, char *argv[]);
+namespace abc {
+	int Abc_RealMain(int argc, char *argv[]);
+}
 #endif
 
 std::string fold_abc9_cmd(std::string str)
@@ -173,12 +175,12 @@ void abc9_module(RTLIL::Design *design, std::string script_file, std::string exe
 	if (!lut_costs.empty())
 		abc9_script += stringf("read_lut %s/lutdefs.txt; ", tempdir_name.c_str());
 	else if (!lut_file.empty())
-		abc9_script += stringf("read_lut %s; ", lut_file.c_str());
+		abc9_script += stringf("read_lut \"%s\"; ", lut_file.c_str());
 	else
 		log_abort();
 
 	log_assert(!box_file.empty());
-	abc9_script += stringf("read_box %s; ", box_file.c_str());
+	abc9_script += stringf("read_box \"%s\"; ", box_file.c_str());
 	abc9_script += stringf("&read %s/input.xaig; &ps; ", tempdir_name.c_str());
 
 	if (!script_file.empty()) {
@@ -262,13 +264,31 @@ void abc9_module(RTLIL::Design *design, std::string script_file, std::string exe
 		fclose(f);
 	}
 
-	buffer = stringf("%s -s -f %s/abc.script 2>&1", exe_file.c_str(), tempdir_name.c_str());
+	buffer = stringf("\"%s\" -s -f %s/abc.script 2>&1", exe_file.c_str(), tempdir_name.c_str());
 	log("Running ABC command: %s\n", replace_tempdir(buffer, tempdir_name, show_tempdir).c_str());
 
 #ifndef YOSYS_LINK_ABC
 	abc9_output_filter filt(tempdir_name, show_tempdir);
 	int ret = run_command(buffer, std::bind(&abc9_output_filter::next_line, filt, std::placeholders::_1));
 #else
+	string temp_stdouterr_name = stringf("%s/stdouterr.txt", tempdir_name.c_str());
+	FILE *temp_stdouterr_w = fopen(temp_stdouterr_name.c_str(), "w");
+	if (temp_stdouterr_w == NULL)
+		log_error("ABC: cannot open a temporary file for output redirection");
+	fflush(stdout);
+	fflush(stderr);
+	FILE *old_stdout = fopen(temp_stdouterr_name.c_str(), "r"); // need any fd for renumbering
+	FILE *old_stderr = fopen(temp_stdouterr_name.c_str(), "r"); // need any fd for renumbering
+#if defined(__wasm)
+#define fd_renumber(from, to) (void)__wasi_fd_renumber(from, to)
+#else
+#define fd_renumber(from, to) dup2(from, to)
+#endif
+	fd_renumber(fileno(stdout), fileno(old_stdout));
+	fd_renumber(fileno(stderr), fileno(old_stderr));
+	fd_renumber(fileno(temp_stdouterr_w), fileno(stdout));
+	fd_renumber(fileno(temp_stdouterr_w), fileno(stderr));
+	fclose(temp_stdouterr_w);
 	// These needs to be mutable, supposedly due to getopt
 	char *abc9_argv[5];
 	string tmp_script_name = stringf("%s/abc.script", tempdir_name.c_str());
@@ -277,11 +297,22 @@ void abc9_module(RTLIL::Design *design, std::string script_file, std::string exe
 	abc9_argv[2] = strdup("-f");
 	abc9_argv[3] = strdup(tmp_script_name.c_str());
 	abc9_argv[4] = 0;
-	int ret = Abc_RealMain(4, abc9_argv);
+	int ret = abc::Abc_RealMain(4, abc9_argv);
 	free(abc9_argv[0]);
 	free(abc9_argv[1]);
 	free(abc9_argv[2]);
 	free(abc9_argv[3]);
+	fflush(stdout);
+	fflush(stderr);
+	fd_renumber(fileno(old_stdout), fileno(stdout));
+	fd_renumber(fileno(old_stderr), fileno(stderr));
+	fclose(old_stdout);
+	fclose(old_stderr);
+	std::ifstream temp_stdouterr_r(temp_stdouterr_name);
+	abc9_output_filter filt(tempdir_name, show_tempdir);
+	for (std::string line; std::getline(temp_stdouterr_r, line); )
+		filt.next_line(line + "\n");
+	temp_stdouterr_r.close();
 #endif
 	if (ret != 0) {
 		if (check_file_exists(stringf("%s/output.aig", tempdir_name.c_str())))
@@ -301,8 +332,8 @@ struct Abc9ExePass : public Pass {
 		log("\n");
 		log(" \n");
 		log("This pass uses the ABC tool [1] for technology mapping of the top module\n");
-		log("(according to the (* top *) attribute or if only one module is currently selected)\n");
-		log("to a target FPGA architecture.\n");
+		log("(according to the (* top *) attribute or if only one module is currently\n");
+		log("selected) to a target FPGA architecture.\n");
 		log("\n");
 		log("    -exe <command>\n");
 #ifdef ABCEXTERNAL

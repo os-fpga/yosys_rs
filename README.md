@@ -156,9 +156,10 @@ reading and elaborating the design using the Verilog frontend:
 	yosys> read -sv tests/simple/fiedler-cooley.v
 	yosys> hierarchy -top up3down5
 
-writing the design to the console in Yosys's internal format:
+writing the design to the console in the RTLIL format used by Yosys
+internally:
 
-	yosys> write_ilang
+	yosys> write_rtlil
 
 convert processes (``always`` blocks) to netlist elements and perform
 some simple optimizations:
@@ -505,6 +506,18 @@ Verilog Attributes and non-standard features
   module. Modules with such cells will be reprocessed during the ``hierarchy``
   pass once the referenced module definition(s) become available.
 
+- The ``smtlib2_module`` attribute can be set on a blackbox module to specify a
+  formal model directly using SMT-LIB 2. For such a module, the
+  ``smtlib2_comb_expr`` attribute can be used on output ports to define their
+  value using an SMT-LIB 2 expression. For example:
+
+      (* blackbox *)
+      (* smtlib2_module *)
+      module submod(a, b);
+        input [7:0] a;
+        (* smtlib2_comb_expr = "(bvnot a)" *)
+        output [7:0] b;
+      endmodule
 
 Non-standard or SystemVerilog features for formal verification
 ==============================================================
@@ -579,36 +592,29 @@ from SystemVerilog:
 - SystemVerilog interfaces (SVIs) are supported. Modports for specifying whether
   ports are inputs or outputs are supported.
 
+- Assignments within expressions are supported.
+
 
 Building the documentation
 ==========================
 
 Note that there is no need to build the manual if you just want to read it.
-Simply download the PDF from https://yosyshq.net/yosys/documentation.html
-instead.
+Simply visit https://yosys.readthedocs.io/en/latest/ instead.
 
-On Ubuntu, texlive needs these packages to be able to build the manual:
+In addition to those packages listed above for building Yosys from source, the
+following are used for building the website: 
 
-	sudo apt-get install texlive-binaries
-	sudo apt-get install texlive-science      # install algorithm2e.sty
-	sudo apt-get install texlive-bibtex-extra # gets multibib.sty
-	sudo apt-get install texlive-fonts-extra  # gets skull.sty and dsfont.sty
-	sudo apt-get install texlive-publishers   # IEEEtran.cls
+	$ sudo apt-get install pdf2svg faketime
 
-Also the non-free font luximono should be installed, there is unfortunately
-no Ubuntu package for this so it should be installed separately using
-`getnonfreefonts`:
+PDFLaTeX, included with most LaTeX distributions, is also needed during the
+build process for the website.
 
-	wget https://tug.org/fonts/getnonfreefonts/install-getnonfreefonts
-	sudo texlua install-getnonfreefonts # will install to /usr/local by default, can be changed by editing BINDIR at MANDIR at the top of the script
-	getnonfreefonts luximono # installs to /home/user/texmf
+The Python package, Sphinx, is needed along with those listed in
+`docs/source/requirements.txt`:
 
-Then execute, from the root of the repository:
+	$ pip install -U sphinx -r docs/source/requirements.txt
 
-	make manual
-
-Notes:
-
-- To run `make manual` you need to have installed Yosys with `make install`,
-  otherwise it will fail on finding `kernel/yosys.h` while building
-  `PRESENTATION_Prog`.
+From the root of the repository, run `make docs`.  This will build/rebuild yosys
+as necessary before generating the website documentation from the yosys help
+commands.  To build for pdf instead of html, call 
+`make docs DOC_TARGET=latexpdf`.

@@ -23,6 +23,9 @@
 #include "kernel/mem.h"
 #include "kernel/fstdata.h"
 #include "kernel/ff.h"
+#include "kernel/yw.h"
+#include "kernel/json.h"
+#include "kernel/fmt.h"
 
 #include <ctime>
 
@@ -74,6 +77,28 @@ struct OutputWriter
 	SimWorker *worker;
 };
 
+struct SimInstance;
+struct TriggeredAssertion {
+	int step;
+	SimInstance *instance;
+	Cell *cell;
+
+	TriggeredAssertion(int step, SimInstance *instance, Cell *cell) :
+		step(step), instance(instance), cell(cell)
+	{ }
+};
+
+struct DisplayOutput {
+	int step;
+	SimInstance *instance;
+	Cell *cell;
+	std::string output;
+
+	DisplayOutput(int step, SimInstance *instance, Cell *cell, std::string output) :
+		step(step), instance(instance), cell(cell), output(output)
+	{ }
+};
+
 struct SimShared
 {
 	bool debug = false;
@@ -81,6 +106,7 @@ struct SimShared
 	bool hide_internal = true;
 	bool writeback = false;
 	bool zinit = false;
+	bool hdlname = false;
 	int rstlen = 1;
 	FstData *fst = nullptr;
 	double start_time = 0;
@@ -92,6 +118,12 @@ struct SimShared
 	bool ignore_x = false;
 	bool date = false;
 	bool multiclock = false;
+	int next_output_id = 0;
+	int step = 0;
+	std::vector<TriggeredAssertion> triggered_assertions;
+	std::vector<DisplayOutput> display_output;
+	bool serious_asserts = false;
+	bool initstate = true;
 };
 
 void zinit(State &v)
@@ -122,6 +154,9 @@ struct SimInstance
 	dict<SigBit, pool<Cell*>> upd_cells;
 	dict<SigBit, pool<Wire*>> upd_outports;
 
+	dict<SigBit, SigBit> in_parent_drivers;
+	dict<SigBit, SigBit> clk2fflogic_drivers;
+
 	pool<SigBit> dirty_bits;
 	pool<Cell*> dirty_cells;
 	pool<IdString> dirty_memories;
@@ -148,21 +183,61 @@ struct SimInstance
 		Const data;
 	};
 
+	struct print_state_t
+	{
+		bool initial_done;
+		Const past_trg;
+		Const past_en;
+		Const past_args;
+
+		Cell *cell;
+		Fmt fmt;
+
+		std::tuple<bool, SigSpec, Const, int, Cell*> _sort_label() const
+		{
+			return std::make_tuple(
+				cell->getParam(ID::TRG_ENABLE).as_bool(), // Group by trigger
+				cell->getPort(ID::TRG),
+				cell->getParam(ID::TRG_POLARITY),
+				-cell->getParam(ID::PRIORITY).as_int(), // Then sort by descending PRIORITY
+				cell
+			);
+		}
+
+		bool operator<(const print_state_t &other) const
+		{
+			return _sort_label() < other._sort_label();
+		}
+	};
+
 	dict<Cell*, ff_state_t> ff_database;
 	dict<IdString, mem_state_t> mem_database;
 	pool<Cell*> formal_database;
+	pool<Cell*> initstate_database;
 	dict<Cell*, IdString> mem_cells;
+	std::vector<print_state_t> print_database;
 
 	std::vector<Mem> memories;
 
 	dict<Wire*, pair<int, Const>> signal_database;
+	dict<IdString, std::map<int, pair<int, Const>>> trace_mem_database;
+	dict<std::pair<IdString, int>, Const> trace_mem_init_database;
 	dict<Wire*, fstHandle> fst_handles;
+	dict<Wire*, fstHandle> fst_inputs;
 	dict<IdString, dict<int,fstHandle>> fst_memories;
 
 	SimInstance(SimShared *shared, std::string scope, Module *module, Cell *instance = nullptr, SimInstance *parent = nullptr) :
 			shared(shared), scope(scope), module(module), instance(instance), parent(parent), sigmap(module)
 	{
 		log_assert(module);
+
+		if (module->get_blackbox_attribute(true))
+			log_error("Cannot simulate blackbox module %s (instantiated at %s).\n",
+					  log_id(module->name), hiername().c_str());
+
+		if (module->has_processes())
+			log_error("Found processes in simulation hierarchy (in module %s at %s). Run 'proc' first.\n",
+					  log_id(module), hiername().c_str());
 
 		if (parent) {
 			log_assert(parent->children.count(instance) == 0);
@@ -197,6 +272,13 @@ struct SimInstance
 						dirty_bits.insert(sig[i]);
 					}
 			}
+
+			if (wire->port_input && instance != nullptr && parent != nullptr) {
+				for (int i = 0; i < GetSize(sig); i++) {
+					if (instance->hasPort(wire->name))
+						in_parent_drivers.emplace(sig[i], parent->sigmap(instance->getPort(wire->name)[i]));
+				}
+			}
 		}
 
 		memories = Mem::get_all_memories(module);
@@ -230,7 +312,7 @@ struct SimInstance
 					}
 			}
 
-			if (RTLIL::builtin_ff_cell_types().count(cell->type)) {
+			if (RTLIL::builtin_ff_cell_types().count(cell->type) || cell->type == ID($anyinit)) {
 				FfData ff_data(nullptr, cell);
 				ff_state_t ff;
 				ff.past_d = Const(State::Sx, ff_data.width);
@@ -240,6 +322,11 @@ struct SimInstance
 				ff.past_srst = State::Sx;
 				ff.data = ff_data;
 				ff_database[cell] = ff;
+
+				if (cell->get_bool_attribute(ID(clk2fflogic))) {
+					for (int i = 0; i < ff_data.width; i++)
+						clk2fflogic_drivers.emplace(sigmap(ff_data.sig_d[i]), sigmap(ff_data.sig_q[i]));
+				}
 			}
 
 			if (cell->is_mem_cell())
@@ -249,10 +336,26 @@ struct SimInstance
 				if (shared->fst)
 					fst_memories[name] = shared->fst->getMemoryHandles(scope + "." + RTLIL::unescape_id(name));
 			}
-			if (cell->type.in(ID($assert), ID($cover), ID($assume))) {
+
+			if (cell->type.in(ID($assert), ID($cover), ID($assume)))
 				formal_database.insert(cell);
+
+			if (cell->type == ID($initstate))
+				initstate_database.insert(cell);
+
+			if (cell->type == ID($print)) {
+				print_database.emplace_back();
+				auto &print = print_database.back();
+				print.cell = cell;
+				print.fmt.parse_rtlil(cell);
+				print.past_trg = Const(State::Sx, cell->getPort(ID::TRG).size());
+				print.past_args = Const(State::Sx, cell->getPort(ID::ARGS).size());
+				print.past_en = State::Sx;
+				print.initial_done = false;
 			}
 		}
+
+		std::sort(print_database.begin(), print_database.end());
 
 		if (shared->zinit)
 		{
@@ -298,6 +401,21 @@ struct SimInstance
 		return log_id(module->name);
 	}
 
+	vector<std::string> witness_full_path() const
+	{
+		if (instance != nullptr)
+			return parent->witness_full_path(instance);
+		return vector<std::string>();
+	}
+
+	vector<std::string> witness_full_path(Cell *cell) const
+	{
+		auto result = witness_full_path();
+		auto cell_path = witness_path(cell);
+		result.insert(result.end(), cell_path.begin(), cell_path.end());
+		return result;
+	}
+
 	Const get_state(SigSpec sig)
 	{
 		Const value;
@@ -323,7 +441,7 @@ struct SimInstance
 		log_assert(GetSize(sig) <= GetSize(value));
 
 		for (int i = 0; i < GetSize(sig); i++)
-			if (state_nets.at(sig[i]) != value[i]) {
+			if (value[i] != State::Sa && state_nets.at(sig[i]) != value[i]) {
 				state_nets.at(sig[i]) = value[i];
 				dirty_bits.insert(sig[i]);
 				did_something = true;
@@ -334,14 +452,45 @@ struct SimInstance
 		return did_something;
 	}
 
+	void set_state_parent_drivers(SigSpec sig, Const value)
+	{
+		sigmap.apply(sig);
+
+		for (int i = 0; i < GetSize(sig); i++) {
+			auto sigbit = sig[i];
+			auto sigval = value[i];
+
+			auto clk2fflogic_driver = clk2fflogic_drivers.find(sigbit);
+			if (clk2fflogic_driver != clk2fflogic_drivers.end())
+				sigbit = clk2fflogic_driver->second;
+
+			auto in_parent_driver = in_parent_drivers.find(sigbit);
+			if (in_parent_driver == in_parent_drivers.end())
+				set_state(sigbit, sigval);
+			else
+				parent->set_state_parent_drivers(in_parent_driver->second, sigval);
+		}
+	}
+
 	void set_memory_state(IdString memid, Const addr, Const data)
+	{
+		set_memory_state(memid, addr.as_int(), data);
+	}
+
+	void set_memory_state(IdString memid, int addr, Const data)
 	{
 		auto &state = mem_database[memid];
 
-		int offset = (addr.as_int() - state.mem->start_offset) * state.mem->width;
+		bool dirty = false;
+
+		int offset = (addr - state.mem->start_offset) * state.mem->width;
 		for (int i = 0; i < GetSize(data); i++)
-			if (0 <= i+offset && i+offset < state.mem->size * state.mem->width)
-				state.data.bits[i+offset] = data.bits[i];
+			if (0 <= i+offset && i+offset < state.mem->size * state.mem->width && data.bits[i] != State::Sa)
+				if (state.data.bits[i+offset] != data.bits[i])
+					dirty = true, state.data.bits[i+offset] = data.bits[i];
+
+		if (dirty)
+			dirty_memories.insert(memid);
 	}
 
 	void set_memory_state_bit(IdString memid, int offset, State data)
@@ -349,7 +498,10 @@ struct SimInstance
 		auto &state = mem_database[memid];
 		if (offset >= state.mem->size * state.mem->width)
 			log_error("Addressing out of bounds bit %d/%d of memory %s\n", offset, state.mem->size * state.mem->width, log_id(memid));
-		state.data.bits[offset] = data;
+		if (state.data.bits[offset] != data) {
+			state.data.bits[offset] = data;
+			dirty_memories.insert(memid);
+		}
 	}
 
 	void update_cell(Cell *cell)
@@ -428,6 +580,9 @@ struct SimInstance
 			return;
 		}
 
+		if (cell->type == ID($print))
+			return;
+
 		log_error("Unsupported cell type: %s (%s.%s)\n", log_id(cell->type), log_id(module), log_id(cell));
 	}
 
@@ -442,12 +597,17 @@ struct SimInstance
 			Const data = Const(State::Sx, mem.width << port.wide_log2);
 
 			if (port.clk_enable)
-				log_error("Memory %s.%s has clocked read ports. Run 'memory' with -nordff.\n", log_id(module), log_id(mem.memid));
+				log_error("Memory %s.%s has clocked read ports. Run 'memory_nordff' to transform the circuit to remove those.\n", log_id(module), log_id(mem.memid));
 
 			if (addr.is_fully_def()) {
-				int index = addr.as_int() - mem.start_offset;
+				int addr_int = addr.as_int();
+				int index = addr_int - mem.start_offset;
 				if (index >= 0 && index < mem.size)
 					data = mdb.data.extract(index*mem.width, mem.width << port.wide_log2);
+
+				for (int offset = 0; offset < 1 << port.wide_log2; offset++) {
+					register_memory_addr(id, addr_int + offset);
+				}
 			}
 
 			set_state(port.data, data);
@@ -507,7 +667,7 @@ struct SimInstance
 		}
 	}
 
-	bool update_ph2()
+	bool update_ph2(bool gclk, bool stable_past_update = false)
 	{
 		bool did_something = false;
 
@@ -518,7 +678,7 @@ struct SimInstance
 
 			Const current_q = get_state(ff.data.sig_q);
 
-			if (ff_data.has_clk) {
+			if (ff_data.has_clk && !stable_past_update) {
 				// flip-flops
 				State current_clk = get_state(ff_data.sig_clk)[0];
 				if (ff_data.pol_clk ? (ff.past_clk == State::S0 && current_clk != State::S0) :
@@ -539,7 +699,7 @@ struct SimInstance
 			if (ff_data.has_aload) {
 				State current_aload = get_state(ff_data.sig_aload)[0];
 				if (current_aload == (ff_data.pol_aload ? State::S1 : State::S0)) {
-					current_q = ff_data.has_clk ? ff.past_ad : get_state(ff.data.sig_ad);
+					current_q = ff_data.has_clk && !stable_past_update ? ff.past_ad : get_state(ff.data.sig_ad);
 				}
 			}
 			// async reset
@@ -565,7 +725,8 @@ struct SimInstance
 			}
 			if (ff_data.has_gclk) {
 				// $ff
-				current_q = ff.past_d;
+				if (gclk)
+					current_q = ff.past_d;
 			}
 			if (set_state(ff_data.sig_q, current_q))
 				did_something = true;
@@ -589,6 +750,8 @@ struct SimInstance
 				}
 				else
 				{
+					if (stable_past_update)
+						continue;
 					if (port.clk_polarity ?
 							(mdb.past_wr_clk[port_idx] == State::S1 || get_state(port.clk) != State::S1) :
 							(mdb.past_wr_clk[port_idx] == State::S0 || get_state(port.clk) != State::S0))
@@ -601,7 +764,8 @@ struct SimInstance
 
 				if (addr.is_fully_def())
 				{
-					int index = addr.as_int() - mem.start_offset;
+					int addr_int = addr.as_int();
+					int index = addr_int - mem.start_offset;
 					if (index >= 0 && index < mem.size)
 						for (int i = 0; i < (mem.width << port.wide_log2); i++)
 							if (enable[i] == State::S1 && mdb.data.bits.at(index*mem.width+i) != data[i]) {
@@ -609,12 +773,15 @@ struct SimInstance
 								dirty_memories.insert(mem.memid);
 								did_something = true;
 							}
+
+					for (int i = 0; i < 1 << port.wide_log2; i++)
+						register_memory_addr(it.first, addr_int + i);
 				}
 			}
 		}
 
 		for (auto it : children)
-			if (it.second->update_ph2()) {
+			if (it.second->update_ph2(gclk, stable_past_update)) {
 				dirty_children.insert(it.second);
 				did_something = true;
 			}
@@ -622,7 +789,31 @@ struct SimInstance
 		return did_something;
 	}
 
-	void update_ph3()
+	static void log_source(RTLIL::AttrObject *src)
+	{
+		for (auto src : src->get_strpool_attribute(ID::src))
+			log("    %s\n", src.c_str());
+	}
+
+	void log_cell_w_hierarchy(std::string opening_verbiage, RTLIL::Cell *cell)
+	{
+		log_assert(cell->module == module);
+		bool has_src = cell->has_attribute(ID::src);
+		log("%s %s%s\n", opening_verbiage.c_str(),
+			log_id(cell), has_src ? " at" : "");
+		log_source(cell);
+
+		struct SimInstance *sim = this;
+		while (sim->instance) {
+			has_src = sim->instance->has_attribute(ID::src);
+			log("  in instance %s of module %s%s\n", log_id(sim->instance),
+				log_id(sim->instance->type), has_src ? " at" : "");
+			log_source(sim->instance);
+			sim = sim->parent;
+		}
+	}
+
+	void update_ph3(bool gclk_trigger)
 	{
 		for (auto &it : ff_database)
 		{
@@ -657,35 +848,112 @@ struct SimInstance
 			}
 		}
 
-		for (auto cell : formal_database)
+		// Do prints *before* assertions
+		for (auto &print : print_database) {
+			Cell *cell = print.cell;
+			bool triggered = false;
+
+			Const trg = get_state(cell->getPort(ID::TRG));
+			bool trg_en = cell->getParam(ID::TRG_ENABLE).as_bool();
+			Const en = get_state(cell->getPort(ID::EN));
+			Const args = get_state(cell->getPort(ID::ARGS));
+
+			bool sampled = trg_en && trg.size() > 0;
+
+			if (sampled ? print.past_en.as_bool() : en.as_bool()) {
+				if (sampled) {
+					sampled = true;
+					Const trg_pol = cell->getParam(ID::TRG_POLARITY);
+					for (int i = 0; i < trg.size(); i++) {
+						bool pol = trg_pol[i] == State::S1;
+						State curr = trg[i], past = print.past_trg[i];
+						if (pol && curr == State::S1 && past == State::S0)
+							triggered = true;
+						if (!pol && curr == State::S0 && past == State::S1)
+							triggered = true;
+					}
+				} else if (trg_en) {
+					// initial $print (TRG width = 0, TRG_ENABLE = true)
+					if (!print.initial_done && en != print.past_en)
+						triggered = true;
+				} else if (cell->get_bool_attribute(ID(trg_on_gclk))) {
+					// unified $print for cycle based FV semantics
+					triggered = gclk_trigger;
+				} else {
+					// always @(*) $print
+					if (args != print.past_args || en != print.past_en)
+						triggered = true;
+				}
+
+				if (triggered) {
+					int pos = 0;
+					for (auto &part : print.fmt.parts) {
+						part.sig = (sampled ? print.past_args : args).extract(pos, part.sig.size());
+						pos += part.sig.size();
+					}
+
+					std::string rendered = print.fmt.render();
+					log("%s", rendered.c_str());
+					shared->display_output.emplace_back(shared->step, this, cell, rendered);
+				}
+			}
+
+			print.past_trg = trg;
+			print.past_en = en;
+			print.past_args = args;
+			print.initial_done = true;
+		}
+
+		if (gclk_trigger)
 		{
-			string label = log_id(cell);
-			if (cell->attributes.count(ID::src))
-				label = cell->attributes.at(ID::src).decode_string();
+			for (auto cell : formal_database)
+			{
+				string label = log_id(cell);
+				if (cell->attributes.count(ID::src))
+					label = cell->attributes.at(ID::src).decode_string();
 
-			State a = get_state(cell->getPort(ID::A))[0];
-			State en = get_state(cell->getPort(ID::EN))[0];
+				State a = get_state(cell->getPort(ID::A))[0];
+				State en = get_state(cell->getPort(ID::EN))[0];
 
-			if (cell->type == ID($cover) && en == State::S1 && a != State::S1)
-				log("Cover %s.%s (%s) reached.\n", hiername().c_str(), log_id(cell), label.c_str());
+				if (en == State::S1 && (cell->type == ID($cover) ? a == State::S1 : a != State::S1)) {
+					shared->triggered_assertions.emplace_back(shared->step, this, cell);
+				}
 
-			if (cell->type == ID($assume) && en == State::S1 && a != State::S1)
-				log("Assumption %s.%s (%s) failed.\n", hiername().c_str(), log_id(cell), label.c_str());
+				if (cell->type == ID($cover) && en == State::S1 && a == State::S1)
+					log("Cover %s.%s (%s) reached.\n", hiername().c_str(), log_id(cell), label.c_str());
 
-			if (cell->type == ID($assert) && en == State::S1 && a != State::S1)
-				log_warning("Assert %s.%s (%s) failed.\n", hiername().c_str(), log_id(cell), label.c_str());
+				if (cell->type == ID($assume) && en == State::S1 && a != State::S1)
+					log("Assumption %s.%s (%s) failed.\n", hiername().c_str(), log_id(cell), label.c_str());
+
+				if (cell->type == ID($assert) && en == State::S1 && a != State::S1) {
+					log_cell_w_hierarchy("Failed assertion", cell);
+					if (shared->serious_asserts)
+						log_error("Assertion %s.%s (%s) failed.\n", hiername().c_str(), log_id(cell), label.c_str());
+					else
+						log_warning("Assertion %s.%s (%s) failed.\n", hiername().c_str(), log_id(cell), label.c_str());
+				}
+			}
 		}
 
 		for (auto it : children)
-			it.second->update_ph3();
+			it.second->update_ph3(gclk_trigger);
+	}
+
+	void set_initstate_outputs(State state)
+	{
+		for (auto cell : initstate_database)
+			set_state(cell->getPort(ID::Y), state);
+		for (auto child : children)
+			child.second->set_initstate_outputs(state);
 	}
 
 	void writeback(pool<Module*> &wbmods)
 	{
-		if (wbmods.count(module))
-			log_error("Instance %s of module %s is not unique: Writeback not possible. (Fix by running 'uniquify'.)\n", hiername().c_str(), log_id(module));
-
-		wbmods.insert(module);
+		if (!ff_database.empty() || !mem_database.empty()) {
+			if (wbmods.count(module))
+				log_error("Instance %s of module %s is not unique: Writeback not possible. (Fix by running 'uniquify'.)\n", hiername().c_str(), log_id(module));
+			wbmods.insert(module);
+		}
 
 		for (auto wire : module->wires())
 			wire->attributes.erase(ID::init);
@@ -737,9 +1005,17 @@ struct SimInstance
 			child.second->register_signals(id);
 	}
 
-	void write_output_header(std::function<void(IdString)> enter_scope, std::function<void()> exit_scope, std::function<void(Wire*, int, bool)> register_signal)
+	void write_output_header(std::function<void(IdString)> enter_scope, std::function<void()> exit_scope, std::function<void(const char*, int, Wire*, int, bool)> register_signal)
 	{
-		enter_scope(name());
+		int exit_scopes = 1;
+		if (shared->hdlname && instance != nullptr && instance->name.isPublic() && instance->has_attribute(ID::hdlname)) {
+			auto hdlname = instance->get_hdlname_attribute();
+			log_assert(!hdlname.empty());
+			for (auto name : hdlname)
+				enter_scope("\\" + name);
+			exit_scopes = hdlname.size();
+		} else
+			enter_scope(name());
 
 		dict<Wire*,bool> registers;
 		for (auto cell : module->cells())
@@ -755,13 +1031,83 @@ struct SimInstance
 		
 		for (auto signal : signal_database)
 		{
-			register_signal(signal.first, signal.second.first, registers.count(signal.first)!=0);
+			if (shared->hdlname && signal.first->name.isPublic() && signal.first->has_attribute(ID::hdlname)) {
+				auto hdlname = signal.first->get_hdlname_attribute();
+				log_assert(!hdlname.empty());
+				auto signal_name = std::move(hdlname.back());
+				hdlname.pop_back();
+				for (auto name : hdlname)
+					enter_scope("\\" + name);
+				register_signal(signal_name.c_str(), GetSize(signal.first), signal.first, signal.second.first, registers.count(signal.first)!=0);
+				for (auto name : hdlname)
+					exit_scope();
+			} else
+				register_signal(log_id(signal.first->name), GetSize(signal.first), signal.first, signal.second.first, registers.count(signal.first)!=0);
+		}
+
+		for (auto &trace_mem : trace_mem_database)
+		{
+			auto memid = trace_mem.first;
+			auto &mdb = mem_database.at(memid);
+			Cell *cell = mdb.mem->cell;
+
+			std::vector<std::string> hdlname;
+			std::string signal_name;
+			bool has_hdlname = shared->hdlname && cell != nullptr && cell->name.isPublic() && cell->has_attribute(ID::hdlname);
+
+			if (has_hdlname) {
+				hdlname = cell->get_hdlname_attribute();
+				log_assert(!hdlname.empty());
+				signal_name = std::move(hdlname.back());
+				hdlname.pop_back();
+				for (auto name : hdlname)
+					enter_scope("\\" + name);
+			} else {
+				signal_name = log_id(memid);
+			}
+
+			for (auto &trace_index : trace_mem.second) {
+				int output_id = trace_index.second.first;
+				int index = trace_index.first;
+				register_signal(
+						stringf("%s[%d]", signal_name.c_str(), (index + mdb.mem->start_offset)).c_str(),
+						mdb.mem->width, nullptr, output_id, true);
+			}
+
+			if (has_hdlname)
+				for (auto name : hdlname)
+					exit_scope();
 		}
 
 		for (auto child : children)
 			child.second->write_output_header(enter_scope, exit_scope, register_signal);
 
-		exit_scope();
+		for (int i = 0; i < exit_scopes; i++)
+			exit_scope();
+	}
+
+	void register_memory_addr(IdString memid, int addr)
+	{
+		auto &mdb = mem_database.at(memid);
+		auto &mem = *mdb.mem;
+		int index = addr - mem.start_offset;
+		if (index < 0 || index >= mem.size)
+			return;
+		auto it = trace_mem_database.find(memid);
+		if (it != trace_mem_database.end() && it->second.count(index))
+			return;
+		int output_id = shared->next_output_id++;
+		Const data;
+		if (!shared->output_data.empty()) {
+			auto init_it = trace_mem_init_database.find(std::make_pair(memid, addr));
+			if (init_it != trace_mem_init_database.end())
+				data = init_it->second;
+			else
+				data = mem.get_init_data().extract(index * mem.width, mem.width);
+			shared->output_data.front().second.emplace(output_id, data);
+		}
+		trace_mem_database[memid].emplace(index, make_pair(output_id, data));
+
 	}
 
 	void register_output_step_values(std::map<int,Const> *data)
@@ -779,6 +1125,26 @@ struct SimInstance
 			data->emplace(id, value);
 		}
 
+		for (auto &trace_mem : trace_mem_database)
+		{
+			auto memid = trace_mem.first;
+			auto &mdb = mem_database.at(memid);
+			auto &mem = *mdb.mem;
+			for (auto &trace_index : trace_mem.second)
+			{
+				int output_id = trace_index.second.first;
+				int index = trace_index.first;
+
+				auto value = mdb.data.extract(index * mem.width, mem.width);
+
+				if (trace_index.second.second == value)
+					continue;
+
+				trace_index.second.second = value;
+				data->emplace(output_id, value);
+			}
+		}
+
 		for (auto child : children)
 			child.second->register_output_step_values(data);
 	}
@@ -790,18 +1156,6 @@ struct SimInstance
 			if (item.second==0) continue; // Ignore signals not found
 			std::string v = shared->fst->valueOf(item.second);
 			did_something |= set_state(item.first, Const::from_string(v));
-		}
-		for (auto &it : ff_database)
-		{
-			ff_state_t &ff = it.second;
-			SigSpec dsig = it.second.data.sig_d;
-			Const value = get_state(dsig);
-			if (dsig.is_wire()) {
-				ff.past_d = value;
-				if (ff.data.has_aload)
-					ff.past_ad = value;
-				did_something |= true;
-			}
 		}
 		for (auto cell : module->cells())
 		{
@@ -820,7 +1174,7 @@ struct SimInstance
 		return did_something;
 	}
 
-	void addAdditionalInputs(std::map<Wire*,fstHandle> &inputs)
+	void addAdditionalInputs()
 	{
 		for (auto cell : module->cells())
 		{
@@ -831,7 +1185,7 @@ struct SimInstance
 					for(auto &item : fst_handles) {
 						if (item.second==0) continue; // Ignore signals not found
 						if (sig_y == sigmap(item.first)) {
-							inputs[sig_y.as_wire()] = item.second;
+							fst_inputs[sig_y.as_wire()] = item.second;
 							found = true;
 							break;
 						}
@@ -842,7 +1196,21 @@ struct SimInstance
 			}
 		}
 		for (auto child : children)
-			child.second->addAdditionalInputs(inputs);
+			child.second->addAdditionalInputs();
+	}
+
+	bool setInputs()
+	{
+		bool did_something = false;
+		for(auto &item : fst_inputs) {
+			std::string v = shared->fst->valueOf(item.second);
+			did_something |= set_state(item.first, Const::from_string(v));
+		}
+
+		for (auto child : children)
+			did_something |= child.second->setInputs();
+
+		return did_something;
 	}
 
 	void setState(dict<int, std::pair<SigBit,bool>> bits, std::string values)
@@ -920,6 +1288,7 @@ struct SimWorker : SimShared
 	std::string timescale;
 	std::string sim_filename;
 	std::string map_filename;
+	std::string summary_filename;
 	std::string scope;
 
 	~SimWorker()
@@ -930,8 +1299,8 @@ struct SimWorker : SimShared
 
 	void register_signals()
 	{
-		int id = 1;
-		top->register_signals(id);
+		next_output_id = 1;
+		top->register_signals(top->shared->next_output_id);
 	}
 
 	void register_output_step(int t)
@@ -959,10 +1328,18 @@ struct SimWorker : SimShared
 		}
 		for(auto& writer : outputfiles)
 			writer->write(use_signal);
+		
+		if (writeback) {
+			pool<Module*> wbmods;
+			top->writeback(wbmods);
+		}
 	}
 
-	void update()
+	void update(bool gclk)
 	{
+		if (gclk)
+			step += 1;
+
 		while (1)
 		{
 			if (debug)
@@ -973,14 +1350,36 @@ struct SimWorker : SimShared
 			if (debug)
 				log("\n-- ph2 --\n");
 
-			if (!top->update_ph2())
+			if (!top->update_ph2(gclk))
 				break;
 		}
 
 		if (debug)
 			log("\n-- ph3 --\n");
 
-		top->update_ph3();
+		top->update_ph3(gclk);
+	}
+
+	void initialize_stable_past()
+	{
+
+		while (1)
+		{
+			if (debug)
+				log("\n-- ph1 (initialize) --\n");
+
+			top->update_ph1();
+
+			if (debug)
+				log("\n-- ph2 (initialize) --\n");
+
+			if (!top->update_ph2(false, true))
+				break;
+		}
+
+		if (debug)
+			log("\n-- ph3 (initialize) --\n");
+		top->update_ph3(true);
 	}
 
 	void set_inports(pool<IdString> ports, State value)
@@ -1013,7 +1412,9 @@ struct SimWorker : SimShared
 		set_inports(clock, State::Sx);
 		set_inports(clockn, State::Sx);
 
-		update();
+		top->set_initstate_outputs(initstate ? State::S1 : State::S0);
+
+		update(false);
 
 		register_output_step(0);
 
@@ -1026,8 +1427,11 @@ struct SimWorker : SimShared
 			set_inports(clock, State::S0);
 			set_inports(clockn, State::S1);
 
-			update();
+			update(true);
 			register_output_step(10*cycle + 5);
+
+			if (cycle == 0)
+				top->set_initstate_outputs(State::S0);
 
 			if (debug)
 				log("\n===== %d =====\n", 10*cycle + 10);
@@ -1042,18 +1446,13 @@ struct SimWorker : SimShared
 				set_inports(resetn, State::S1);
 			}
 
-			update();
+			update(true);
 			register_output_step(10*cycle + 10);
 		}
 
 		register_output_step(10*numcycles + 2);
 
 		write_output_files();
-
-		if (writeback) {
-			pool<Module*> wbmods;
-			top->writeback(wbmods);
-		}
 	}
 
 	void run_cosim_fst(Module *topmod, int numcycles)
@@ -1095,18 +1494,17 @@ struct SimWorker : SimShared
 		}
 
 		SigMap sigmap(topmod);
-		std::map<Wire*,fstHandle> inputs;
 
 		for (auto wire : topmod->wires()) {
 			if (wire->port_input) {
 				fstHandle id = fst->getHandle(scope + "." + RTLIL::unescape_id(wire->name));
 				if (id==0)
 					log_error("Unable to find required '%s' signal in file\n",(scope + "." + RTLIL::unescape_id(wire->name)).c_str());
-				inputs[wire] = id;
+				top->fst_inputs[wire] = id;
 			}
 		}
 
-		top->addAdditionalInputs(inputs);
+		top->addAdditionalInputs();
 
 		uint64_t startCount = 0;
 		uint64_t stopCount = 0;
@@ -1152,18 +1550,15 @@ struct SimWorker : SimShared
 			fst->reconstructAllAtTimes(fst_clock, startCount, stopCount, [&](uint64_t time) {
 				if (verbose)
 					log("Co-simulating %s %d [%lu%s].\n", (all_samples ? "sample" : "cycle"), cycle, (unsigned long)time, fst->getTimescaleString());
-				bool did_something = false;
-				for(auto &item : inputs) {
-					std::string v = fst->valueOf(item.second);
-					did_something |= top->set_state(item.first, Const::from_string(v));
-				}
+				bool did_something = top->setInputs();
 
 				if (initial) {
 					did_something |= top->setInitState();
+					initialize_stable_past();
 					initial = false;
 				}
 				if (did_something)
-					update();
+					update(true);
 				register_output_step(time);
 
 				bool status = top->checkSignals();
@@ -1182,11 +1577,6 @@ struct SimWorker : SimShared
 		}
 
 		write_output_files();
-
-		if (writeback) {
-			pool<Module*> wbmods;
-			top->writeback(wbmods);
-		}
 		delete fst;
 	}
 
@@ -1312,12 +1702,12 @@ struct SimWorker : SimShared
 						set_inports(clock, State::S0);
 						set_inports(clockn, State::S1);
 					}
-					update();
+					update(true);
 					register_output_step(10*cycle);
 					if (!multiclock && cycle) {
 						set_inports(clock, State::S0);
 						set_inports(clockn, State::S1);
-						update();
+						update(true);
 						register_output_step(10*cycle + 5);
 					}
 					cycle++;
@@ -1389,12 +1779,12 @@ struct SimWorker : SimShared
 						log("Simulating cycle %d.\n", cycle);
 					set_inports(clock, State::S1);
 					set_inports(clockn, State::S0);
-					update();
+					update(true);
 					register_output_step(10*cycle+0);
 					if (!multiclock) {
 						set_inports(clock, State::S0);
 						set_inports(clockn, State::S1);
-						update();
+						update(true);
 						register_output_step(10*cycle+5);
 					}
 					cycle++;
@@ -1456,6 +1846,256 @@ struct SimWorker : SimShared
 		}
 		register_output_step(10*cycle);
 		write_output_files();
+	}
+
+	struct FoundYWPath
+	{
+		SimInstance *instance;
+		Wire *wire;
+		IdString memid;
+		int addr;
+	};
+
+	struct YwHierarchy {
+		dict<IdPath, FoundYWPath> paths;
+	};
+
+	YwHierarchy prepare_yw_hierarchy(const ReadWitness &yw)
+	{
+		YwHierarchy hierarchy;
+		pool<IdPath> paths;
+		dict<IdPath, pool<IdString>> mem_paths;
+
+		for (auto &signal : yw.signals)
+			paths.insert(signal.path);
+
+		for (auto &clock : yw.clocks)
+			paths.insert(clock.path);
+
+		for (auto &path : paths)
+			if (path.has_address())
+				mem_paths[path.prefix()].insert(path.back());
+
+		witness_hierarchy(top->module, top, [&](IdPath const &path, WitnessHierarchyItem item, SimInstance *instance) {
+			if (item.cell != nullptr)
+				return instance->children.at(item.cell);
+			if (item.wire != nullptr) {
+				if (paths.count(path)) {
+					if (debug)
+						log("witness hierarchy: found wire %s\n", path.str().c_str());
+					bool inserted = hierarchy.paths.emplace(path, {instance, item.wire, {}, INT_MIN}).second;
+					if (!inserted)
+						log_warning("Yosys witness path `%s` is ambiguous in this design\n", path.str().c_str());
+				}
+			} else if (item.mem) {
+				auto it = mem_paths.find(path);
+				if (it != mem_paths.end()) {
+					if (debug)
+						log("witness hierarchy: found mem %s\n", path.str().c_str());
+					IdPath word_path = path;
+					word_path.emplace_back();
+					for (auto addr_part : it->second) {
+						word_path.back() = addr_part;
+						int addr;
+						word_path.get_address(addr);
+						if (addr < item.mem->start_offset || (addr - item.mem->start_offset) >= item.mem->size)
+							continue;
+						bool inserted = hierarchy.paths.emplace(word_path, {instance, nullptr, item.mem->memid, addr}).second;
+						if (!inserted)
+							log_warning("Yosys witness path `%s` is ambiguous in this design\n", path.str().c_str());
+					}
+				}
+			}
+			return instance;
+		});
+
+		for (auto &path : paths)
+			if (!hierarchy.paths.count(path))
+				log_warning("Yosys witness path `%s` was not found in this design, ignoring\n", path.str().c_str());
+
+		dict<IdPath, dict<int, bool>> clock_inputs;
+
+		for (auto &clock : yw.clocks) {
+			if (clock.is_negedge == clock.is_posedge)
+				continue;
+			clock_inputs[clock.path].emplace(clock.offset, clock.is_posedge);
+		}
+		for (auto &signal : yw.signals) {
+			auto it = clock_inputs.find(signal.path);
+			if (it == clock_inputs.end())
+				continue;
+
+			for (auto &clock_input : it->second) {
+				int offset = clock_input.first;
+				if (offset >= signal.offset && (offset - signal.offset) < signal.width) {
+					int clock_bits_offset = signal.bits_offset + (offset - signal.offset);
+
+					State expected = clock_input.second ? State::S0 : State::S1;
+
+					for (int t = 0; t < GetSize(yw.steps); t++) {
+						if (yw.get_bits(t, clock_bits_offset, 1) != expected)
+							log_warning("Yosys witness trace has an unexpected value for the clock input `%s` in step %d.\n", signal.path.str().c_str(), t);
+					}
+				}
+			}
+		}
+		// TODO add checks and warnings for witness signals (toplevel inputs, $any*) not present in the witness file
+
+		return hierarchy;
+	}
+
+	void set_yw_state(const ReadWitness &yw, const YwHierarchy &hierarchy, int t)
+	{
+		log_assert(t >= 0 && t < GetSize(yw.steps));
+
+		for (auto &signal : yw.signals) {
+			if (signal.init_only && t >= 1)
+				continue;
+			auto found_path_it = hierarchy.paths.find(signal.path);
+			if (found_path_it == hierarchy.paths.end())
+				continue;
+			auto &found_path = found_path_it->second;
+
+			Const value = yw.get_bits(t, signal.bits_offset, signal.width);
+
+			if (debug)
+				log("yw: set %s to %s\n", signal.path.str().c_str(), log_const(value));
+
+			if (found_path.wire != nullptr) {
+				found_path.instance->set_state_parent_drivers(
+						SigChunk(found_path.wire, signal.offset, signal.width),
+						value);
+			} else if (!found_path.memid.empty()) {
+				if (t >= 1)
+					found_path.instance->register_memory_addr(found_path.memid, found_path.addr);
+				else
+					found_path.instance->trace_mem_init_database.emplace(make_pair(found_path.memid, found_path.addr), value);
+				found_path.instance->set_memory_state(
+						found_path.memid, found_path.addr,
+						value);
+			}
+		}
+	}
+
+	void set_yw_clocks(const ReadWitness &yw, const YwHierarchy &hierarchy, bool active_edge)
+	{
+		for (auto &clock : yw.clocks) {
+			if (clock.is_negedge == clock.is_posedge)
+				continue;
+			auto found_path_it = hierarchy.paths.find(clock.path);
+			if (found_path_it == hierarchy.paths.end())
+				continue;
+			auto &found_path = found_path_it->second;
+
+			if (found_path.wire != nullptr) {
+				found_path.instance->set_state(
+						SigChunk(found_path.wire, clock.offset, 1),
+						active_edge == clock.is_posedge ? State::S1 : State::S0);
+			}
+		}
+	}
+
+	void run_cosim_yw_witness(Module *topmod, int append)
+	{
+		if (!clock.empty())
+			log_cmd_error("The -clock option is not required nor supported when reading a Yosys witness file.\n");
+		if (!reset.empty())
+			log_cmd_error("The -reset option is not required nor supported when reading a Yosys witness file.\n");
+		if (multiclock)
+			log_warning("The -multiclock option is not required and ignored when reading a Yosys witness file.\n");
+
+		ReadWitness yw(sim_filename);
+
+		top = new SimInstance(this, scope, topmod);
+		register_signals();
+
+		YwHierarchy hierarchy = prepare_yw_hierarchy(yw);
+
+		if (yw.steps.empty()) {
+			log_warning("Yosys witness file `%s` contains no time steps\n", yw.filename.c_str());
+		} else {
+			top->set_initstate_outputs(initstate ? State::S1 : State::S0);
+			set_yw_state(yw, hierarchy, 0);
+			set_yw_clocks(yw, hierarchy, true);
+			initialize_stable_past();
+			register_output_step(0);
+
+			if (!yw.clocks.empty()) {
+				if (debug)
+					log("Simulating non-active clock edge.\n");
+				set_yw_clocks(yw, hierarchy, false);
+				update(false);
+				register_output_step(5);
+			}
+			top->set_initstate_outputs(State::S0);
+		}
+
+		for (int cycle = 1; cycle < GetSize(yw.steps) + append; cycle++)
+		{
+			if (verbose)
+				log("Simulating cycle %d.\n", cycle);
+			if (cycle < GetSize(yw.steps))
+				set_yw_state(yw, hierarchy, cycle);
+			set_yw_clocks(yw, hierarchy, true);
+			update(true);
+			register_output_step(10 * cycle);
+
+			if (!yw.clocks.empty()) {
+				if (debug)
+					log("Simulating non-active clock edge.\n");
+				set_yw_clocks(yw, hierarchy, false);
+				update(false);
+				register_output_step(5 + 10 * cycle);
+			}
+		}
+
+		register_output_step(10 * (GetSize(yw.steps) + append));
+		write_output_files();
+	}
+
+	void write_summary()
+	{
+		if (summary_filename.empty())
+			return;
+
+		PrettyJson json;
+		if (!json.write_to_file(summary_filename))
+			log_error("Can't open file `%s' for writing: %s\n", summary_filename.c_str(), strerror(errno));
+
+		json.begin_object();
+		json.entry("version", "Yosys sim summary");
+		json.entry("generator", yosys_version_str);
+		json.entry("steps", step);
+		json.entry("top", log_id(top->module->name));
+		json.name("assertions");
+		json.begin_array();
+		for (auto &assertion : triggered_assertions) {
+			json.begin_object();
+			json.entry("step", assertion.step);
+			json.entry("type", log_id(assertion.cell->type));
+			json.entry("path", assertion.instance->witness_full_path(assertion.cell));
+			auto src = assertion.cell->get_string_attribute(ID::src);
+			if (!src.empty()) {
+				json.entry("src", src);
+			}
+			json.end_object();
+		}
+		json.end_array();
+		json.name("display_output");
+		json.begin_array();
+		for (auto &output : display_output) {
+			json.begin_object();
+			json.entry("step", output.step);
+			json.entry("path", output.instance->witness_full_path(output.cell));
+			auto src = output.cell->get_string_attribute(ID::src);
+			if (!src.empty()) {
+				json.entry("src", src);
+			}
+			json.entry("output", output.output);
+			json.end_object();
+		}
+		json.end_array();
+		json.end_object();
 	}
 
 	std::string define_signal(Wire *wire)
@@ -1702,7 +2342,17 @@ struct VCDWriter : public OutputWriter
 		worker->top->write_output_header(
 			[this](IdString name) { vcdfile << stringf("$scope module %s $end\n", log_id(name)); },
 			[this]() { vcdfile << stringf("$upscope $end\n");},
-			[this,use_signal](Wire *wire, int id, bool is_reg) { if (use_signal.at(id)) vcdfile << stringf("$var %s %d n%d %s%s $end\n", is_reg ? "reg" : "wire", GetSize(wire), id, wire->name[0] == '$' ? "\\" : "", log_id(wire)); }
+			[this,use_signal](const char *name, int size, Wire *, int id, bool is_reg) {
+				if (use_signal.at(id)) {
+					// Works around gtkwave trying to parse everything past the last [ in a signal
+					// name. While the emitted range doesn't necessarily match the wire's range,
+					// this is consistent with the range gtkwave makes up if it doesn't find a
+					// range
+					std::string range = strchr(name, '[') ? stringf("[%d:0]", size - 1) : std::string();
+					vcdfile << stringf("$var %s %d n%d %s%s%s $end\n", is_reg ? "reg" : "wire", size, id, name[0] == '$' ? "\\" : "", name, range.c_str());
+
+				}
+			}
 		);
 
 		vcdfile << stringf("$enddefinitions $end\n");
@@ -1760,11 +2410,10 @@ struct FSTWriter : public OutputWriter
 	   	worker->top->write_output_header(
 			[this](IdString name) { fstWriterSetScope(fstfile, FST_ST_VCD_MODULE, stringf("%s",log_id(name)).c_str(), nullptr); },
 			[this]() { fstWriterSetUpscope(fstfile); },
-			[this,use_signal](Wire *wire, int id, bool is_reg) {
+			[this,use_signal](const char *name, int size, Wire *, int id, bool is_reg) {
 				if (!use_signal.at(id)) return;
-				fstHandle fst_id = fstWriterCreateVar(fstfile, is_reg ? FST_VT_VCD_REG : FST_VT_VCD_WIRE, FST_VD_IMPLICIT, GetSize(wire),
-												stringf("%s%s", wire->name[0] == '$' ? "\\" : "", log_id(wire)).c_str(), 0);
-
+				fstHandle fst_id = fstWriterCreateVar(fstfile, is_reg ? FST_VT_VCD_REG : FST_VT_VCD_WIRE, FST_VD_IMPLICIT, size,
+												name, 0);
 				mapping.emplace(id, fst_id);
 			}
 		);
@@ -1846,7 +2495,7 @@ struct AIWWriter : public OutputWriter
 		worker->top->write_output_header(
 			[](IdString) {},
 			[]() {},
-			[this](Wire *wire, int id, bool) { mapping[wire] = id; }
+			[this](const char */*name*/, int /*size*/, Wire *wire, int id, bool) { if (wire != nullptr) mapping[wire] = id; }
 		);
 
 		std::map<int, Yosys::RTLIL::Const> current;
@@ -1935,6 +2584,10 @@ struct SimPass : public Pass {
 		log("        write the simulation results to an AIGER witness file\n");
 		log("        (requires a *.aim file via -map)\n");
 		log("\n");
+		log("    -hdlname\n");
+		log("        use the hdlname attribute when writing simulation results\n");
+		log("        (preserves hierarchy in a flattened design)\n");
+		log("\n");
 		log("    -x\n");
 		log("        ignore constant x outputs in simulation file.\n");
 		log("\n");
@@ -1968,15 +2621,25 @@ struct SimPass : public Pass {
 		log("    -n <integer>\n");
 		log("        number of clock cycles to simulate (default: 20)\n");
 		log("\n");
+		log("    -noinitstate\n");
+		log("        do not activate $initstate cells during the first cycle\n");
+		log("\n");
 		log("    -a\n");
 		log("        use all nets in VCD/FST operations, not just those with public names\n");
 		log("\n");
 		log("    -w\n");
 		log("        writeback mode: use final simulation state as new init state\n");
 		log("\n");
-		log("    -r\n");
-		log("        read simulation results file (file formats supported: FST, VCD, AIW and WIT)\n");
-		log("		 VCD support requires vcd2fst external tool to be present\n");
+		log("    -r <filename>\n");
+		log("        read simulation or formal results file\n");
+		log("            File formats supported: FST, VCD, AIW, WIT and .yw\n");
+		log("            VCD support requires vcd2fst external tool to be present\n");
+		log("\n");
+		log("    -append <integer>\n");
+		log("        number of extra clock cycles to simulate for a Yosys witness input\n");
+		log("\n");
+		log("    -summary <filename>\n");
+		log("        write a JSON summary to the given file\n");
 		log("\n");
 		log("    -map <filename>\n");
 		log("        read file with port and latch symbols, needed for AIGER witness input\n");
@@ -2005,6 +2668,10 @@ struct SimPass : public Pass {
 		log("    -sim-gate\n");
 		log("        co-simulation, x in FST can match any value in simulation\n");
 		log("\n");
+		log("    -assert\n");
+		log("        fail the simulation command if, in the course of simulating,\n");
+		log("        any of the asserts in the design fail\n");
+		log("\n");
 		log("    -q\n");
 		log("        disable per-cycle/sample log message\n");
 		log("\n");
@@ -2023,6 +2690,7 @@ struct SimPass : public Pass {
 	{
 		SimWorker worker;
 		int numcycles = 20;
+		int append = 0;
 		bool start_set = false, stop_set = false, at_set = false;
 
 		log_header(design, "Executing SIM pass (simulate the circuit).\n");
@@ -2047,9 +2715,17 @@ struct SimPass : public Pass {
 				worker.outputfiles.emplace_back(std::unique_ptr<AIWWriter>(new AIWWriter(&worker, aiw_filename.c_str())));
 				continue;
 			}
+			if (args[argidx] == "-hdlname") {
+				worker.hdlname = true;
+				continue;
+			}
 			if (args[argidx] == "-n" && argidx+1 < args.size()) {
 				numcycles = atoi(args[++argidx].c_str());
 				worker.cycles_set = true;
+				continue;
+			}
+			if (args[argidx] == "-noinitstate") {
+				worker.initstate = false;
 				continue;
 			}
 			if (args[argidx] == "-rstlen" && argidx+1 < args.size()) {
@@ -2102,10 +2778,20 @@ struct SimPass : public Pass {
 				worker.sim_filename = sim_filename;
 				continue;
 			}
+			if (args[argidx] == "-append" && argidx+1 < args.size()) {
+				append = atoi(args[++argidx].c_str());
+				continue;
+			}
 			if (args[argidx] == "-map" && argidx+1 < args.size()) {
 				std::string map_filename = args[++argidx];
 				rewrite_filename(map_filename);
 				worker.map_filename = map_filename;
+				continue;
+			}
+			if (args[argidx] == "-summary" && argidx+1 < args.size()) {
+				std::string summary_filename = args[++argidx];
+				rewrite_filename(summary_filename);
+				worker.summary_filename = summary_filename;
 				continue;
 			}
 			if (args[argidx] == "-scope" && argidx+1 < args.size()) {
@@ -2142,6 +2828,10 @@ struct SimPass : public Pass {
 			}
 			if (args[argidx] == "-sim-gate") {
 				worker.sim_mode = SimulationMode::gate;
+				continue;
+			}
+			if (args[argidx] == "-assert") {
+				worker.serious_asserts = true;
 				continue;
 			}
 			if (args[argidx] == "-x") {
@@ -2191,10 +2881,14 @@ struct SimPass : public Pass {
 				worker.run_cosim_aiger_witness(top_mod);
 			} else if (filename_trim.size() > 4 && filename_trim.compare(filename_trim.size()-4, std::string::npos, ".wit") == 0) {
 				worker.run_cosim_btor2_witness(top_mod);
+			} else if (filename_trim.size() > 3 && filename_trim.compare(filename_trim.size()-3, std::string::npos, ".yw") == 0) {
+				worker.run_cosim_yw_witness(top_mod, append);
 			} else {
 				log_cmd_error("Unhandled extension for simulation input file `%s`.\n", worker.sim_filename.c_str());
 			}
 		}
+
+		worker.write_summary();
 	}
 } SimPass;
 
@@ -2206,8 +2900,8 @@ struct Fst2TbPass : public Pass {
 		log("\n");
 		log("    fst2tb [options] [top-level]\n");
 		log("\n");
-		log("This command generates testbench for the circuit using the given top-level module\n");
-		log("and simulus signal from FST file\n");
+		log("This command generates testbench for the circuit using the given top-level\n");
+		log("module and simulus signal from FST file\n");
 		log("\n");
 		log("    -tb <name>\n");
 		log("        generated testbench name.\n");

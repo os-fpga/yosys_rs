@@ -93,12 +93,15 @@ struct SynthEcp5Pass : public ScriptPass
 		log("    -abc2\n");
 		log("        run two passes of 'abc' for slightly improved logic density\n");
 		log("\n");
-		log("    -abc9\n");
-		log("        use new ABC9 flow (EXPERIMENTAL)\n");
+		log("    -noabc9\n");
+		log("        disable use of new ABC9 flow\n");
 		log("\n");
 		log("    -vpr\n");
 		log("        generate an output netlist (and BLIF file) suitable for VPR\n");
 		log("        (this feature is experimental and incomplete)\n");
+		log("\n");
+		log("    -iopad\n");
+		log("        insert IO buffers\n");
 		log("\n");
 		log("    -nodsp\n");
 		log("        do not map multipliers to MULT18X18D\n");
@@ -115,7 +118,7 @@ struct SynthEcp5Pass : public ScriptPass
 	}
 
 	string top_opt, blif_file, edif_file, json_file;
-	bool noccu2, nodffe, nobram, nolutram, nowidelut, asyncprld, flatten, dff, retime, abc2, abc9, nodsp, vpr, no_rw_check;
+	bool noccu2, nodffe, nobram, nolutram, nowidelut, asyncprld, flatten, dff, retime, abc2, abc9, iopad, nodsp, vpr, no_rw_check;
 
 	void clear_flags() override
 	{
@@ -134,7 +137,8 @@ struct SynthEcp5Pass : public ScriptPass
 		retime = false;
 		abc2 = false;
 		vpr = false;
-		abc9 = false;
+		abc9 = true;
+		iopad = false;
 		nodsp = false;
 		no_rw_check = false;
 	}
@@ -220,7 +224,15 @@ struct SynthEcp5Pass : public ScriptPass
 				continue;
 			}
 			if (args[argidx] == "-abc9") {
-				abc9 = true;
+				// removed, ABC9 is on by default.
+				continue;
+			}
+			if (args[argidx] == "-noabc9") {
+				abc9 = false;
+				continue;
+			}
+			if (args[argidx] == "-iopad") {
+				iopad = true;
 				continue;
 			}
 			if (args[argidx] == "-nodsp") {
@@ -319,6 +331,11 @@ struct SynthEcp5Pass : public ScriptPass
 				run("techmap");
 			else
 				run("techmap -map +/techmap.v -map +/ecp5/arith_map.v");
+			if (help_mode || iopad) {
+				run("iopadmap -bits -outpad OB I:O -inpad IB O:I -toutpad OBZ ~T:I:O -tinoutpad BB ~T:O:I:B A:top", "(only if '-iopad')");
+				run("attrmvcp -attr src -attr LOC t:OB %x:+[O] t:OBZ %x:+[O] t:BB %x:+[B]");
+				run("attrmvcp -attr src -attr LOC -driven t:IB %x:+[I]");
+			}
 			run("opt -fast");
 			if (retime || help_mode)
 				run("abc -dff -D 1", "(only if -retime)");
@@ -346,7 +363,7 @@ struct SynthEcp5Pass : public ScriptPass
 			run("techmap -D NO_LUT -map +/ecp5/cells_map.v");
 			run("opt_expr -undriven -mux_undef");
 			run("simplemap");
-			run("ecp5_gsr");
+			run("lattice_gsr");
 			run("attrmvcp -copy -attr syn_useioff");
 			run("opt_clean");
 		}
@@ -391,7 +408,7 @@ struct SynthEcp5Pass : public ScriptPass
 				run("techmap -map +/ecp5/cells_map.v", "(skip if -vpr)");
 			else if (!vpr)
 				run("techmap -map +/ecp5/cells_map.v");
-			run("opt_lut_ins -tech ecp5");
+			run("opt_lut_ins -tech lattice");
 			run("clean");
 		}
 
