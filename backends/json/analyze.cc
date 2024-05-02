@@ -245,18 +245,35 @@ struct AnlzWriter
                 f << stringf("\n          ],\n");
         }
 
+        // Returns true if the 'name' corresponds to an internal module, e.g a
+        // module which was not user defined but created internally by Yosys itself.
+        // All internal names starts with a '$'. The only exception is a 
+        // parametrized user module that start with "$paramod" and which should
+        // be considered as real user module.
+        //
+        bool isInternalModule(IdString name) 
+        {
+                if ((name[0] == '$') &&
+                    (name.substr(0, 8) != "$paramod")) {
+
+                  return true;
+                }
+
+                return false;
+        }
+
 	void dump_moduleInsts(Module *module)
 	{
                 int anyInst = 0;
 
 		for (auto c : module->cells()) {
 
-                   if (c->name[0] == '$') {
+                   // do not consider internal Yosys module
+                   //
+                   if (isInternalModule(c->type)) {
                       continue;
                    }
-                   if (c->type[0] == '$') {
-                      continue;
-                   }
+
                    anyInst++;
                    break;
                 }
@@ -269,13 +286,16 @@ struct AnlzWriter
 
                 int first = 1;
 		for (auto c : module->cells()) {
+ 
+                   // do not consider and dump internal Yosys module
+                   //
+                   if (isInternalModule(c->type)) {
+                      continue;
+                   }
 
-                   if (c->name[0] == '$') {
-                      continue;
-                   }
-                   if (c->type[0] == '$') {
-                      continue;
-                   }
+#if 0
+                   log("\n%s\n", c->type.substr(0, 8).c_str());
+#endif
 
                    if (!first) {
                       f << stringf(",\n");
@@ -609,7 +629,7 @@ struct AnlzPass : public Pass {
                   string cmd = "hierarchy -top " + top_name;
                   run_pass(cmd.c_str());
                 }
-                     
+
 		std::ostream *f;
 
                 // Dumping "hier_info.js" file

@@ -1294,6 +1294,8 @@ AST_INTERNAL::process_and_replace_module(RTLIL::Design *design,
 	// Generate RTLIL from AST for the new module and add to the design:
 	RTLIL::Module* new_module = process_module(design, new_ast, false, original_ast);
 
+        new_module->fileID = old_module->fileID;
+
 	if (is_top)
 		new_module->set_bool_attribute(ID::top);
 
@@ -1715,6 +1717,12 @@ RTLIL::IdString AstModule::derive(RTLIL::Design *design, const dict<RTLIL::IdStr
 	}
 
 	delete new_ast;
+
+	// Transfer the file ID of the original Module to its parametrized clone
+	//
+	RTLIL::Module* param_mod = design->module(modname);
+	param_mod->fileID = fileID;
+
 	return modname;
 }
 
