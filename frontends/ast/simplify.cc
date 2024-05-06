@@ -242,6 +242,18 @@ void AstNode::annotateTypedEnums(AstNode *template_node)
 	}
 }
 
+#if 1 // revert yosys PR Correct hierarchical path names for structs and unions for maintaining compatibility with synlig 
+static bool name_has_dot(const std::string &name, std::string &struct_name)
+{
+	// check if plausible struct member name \sss.mmm
+	std::string::size_type pos;
+	if (name.substr(0, 1) == "\\" && (pos = name.find('.', 0)) != std::string::npos) {
+		struct_name = name.substr(0, pos);
+		return true;
+	}
+	return false;
+}
+#endif 
 static AstNode *make_range(int left, int right, bool is_signed = false)
 {
 	// generate a pre-validated range node for a fixed signal range.
@@ -2202,6 +2214,12 @@ bool AstNode::simplify(bool const_fold, int stage, int width_hint, bool sign_hin
 
 	if (type == AST_IDENTIFIER && !basic_prep) {
 		// check if a plausible struct member sss.mmmm
+		std::string sname;
+		if (name_has_dot(str, sname)) {
+			if (current_scope.count(str) > 0) {
+				auto item_node = current_scope[str];
+				if (item_node->type == AST_STRUCT_ITEM || item_node->type == AST_STRUCT || item_node->type == AST_UNION) {
+#if 0 // commenting a PR from Yosys 0.37 which is not fully compatible with current synlig
 		if (!str.empty() && str[0] == '\\' && current_scope.count(str)) {
 			auto item_node = current_scope[str];
 			if (item_node->type == AST_STRUCT_ITEM || item_node->type == AST_STRUCT || item_node->type == AST_UNION) {
@@ -2220,6 +2238,7 @@ bool AstNode::simplify(bool const_fold, int stage, int width_hint, bool sign_hin
 				}
 
 				if (found_sname) {
+#endif
 					// structure member, rewrite this node to reference the packed struct wire
 					auto range = make_struct_member_range(this, item_node);
 					newNode = new AstNode(AST_IDENTIFIER, range);
@@ -4666,8 +4685,10 @@ void AstNode::expand_genblock(const std::string &prefix)
 		switch (child->type) {
 		case AST_WIRE:
 		case AST_MEMORY:
-		case AST_STRUCT:
-		case AST_UNION:
+#if 0 // revert yosys PR Correct hierarchical path names for structs and unions for maintaining compatibility with synlig 
+		// case AST_STRUCT:
+		// case AST_UNION:
+#endif
 		case AST_PARAMETER:
 		case AST_LOCALPARAM:
 		case AST_FUNCTION:
