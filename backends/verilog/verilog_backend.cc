@@ -405,7 +405,11 @@ void dump_attributes(std::stringstream &f, std::string indent, dict<RTLIL::IdStr
 
 void dump_wire(std::stringstream &f1, std::stringstream &f2, std::string indent, RTLIL::Wire *wire)
 {
+#if 0
+	// [Awais]: Stop dumping wire attributes to fix EDA-2768. 
 	dump_attributes(f1, indent, wire->attributes, "\n", /*modattr=*/false, /*regattr=*/reg_wires.count(wire->name));
+#endif
+
 #if 0
 	if (wire->port_input && !wire->port_output){
 		dump_attributes(f1, indent, wire->attributes, "\n", /*modattr=*/false, /*regattr=*/reg_wires.count(wire->name));
