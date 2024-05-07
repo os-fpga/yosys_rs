@@ -1255,6 +1255,18 @@ static RTLIL::Module *process_module(RTLIL::Design *design, AstNode *ast, bool d
 	module->autowire = flag_autowire;
 	module->fixup_ports();
 
+        // If first processing of RTL file name 'ast->filename' then create a 
+        // new file ID and stores it in a global map/vector. (Thierry)
+        //
+        if (design->rtlFiles.find(ast->filename) == design->rtlFiles.end()) {
+          design->rtlFiles[ast->filename] = design->rtlFilesId++;
+          design->rtlFilesNames.push_back(ast->filename);
+        } 
+
+        int fileID = design->rtlFiles[ast->filename];
+
+        module->fileID = fileID;
+
 	if (flag_dump_rtlil) {
 		log("Dumping generated RTLIL:\n");
 		log_module(module);
@@ -1347,19 +1359,6 @@ void AST::process(RTLIL::Design *design, AstNode *ast, bool nodisplay, bool dump
 	flag_autowire = autowire;
 
 	ast->fixup_hierarchy_flags(true);
-        // Store both in MAP and VECTOR containers the current processed RTL file name
-        // (Thierry)
-        //
-        unsigned int fileID = 0;
-        std::string fileName = current_ast->filename;
-
-        if (design->rtlFiles.find(current_ast->filename) == design->rtlFiles.end()) {
-          fileID = design->rtlFilesId;
-          design->rtlFiles[current_ast->filename] = design->rtlFilesId++;
-          design->rtlFilesNames.push_back(current_ast->filename);
-        } else {
-          fileID = design->rtlFiles[current_ast->filename];
-        }
 
 	log_assert(current_ast->type == AST_DESIGN);
 	for (AstNode *child : current_ast->children)
@@ -1427,8 +1426,6 @@ void AST::process(RTLIL::Design *design, AstNode *ast, bool nodisplay, bool dump
                         //
                         if (design->has(child->str)) {
                           RTLIL::Module *existing_mod = design->module(child->str);
-                          existing_mod->fileName = fileName;
-                          existing_mod->fileID = fileID;
                           existing_mod->line = child->location.first_line;
                         }
 		}
