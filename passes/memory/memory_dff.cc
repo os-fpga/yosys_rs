@@ -711,6 +711,8 @@ struct MemoryDffWorker
 				port.srst = State::S0;
 			}
 			port.data = ff.sig_q;
+			//EDA-2901 Pure Write-First Bypass MUX not recognised
+			match_wr = false;
 		}
 
 		merger.remove_output_ff(bits);
