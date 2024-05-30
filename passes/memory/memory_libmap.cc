@@ -535,17 +535,18 @@ void MemMapping::determine_style() {
 		return;
 	}
 	for (auto attr: {ID::ram_block, ID::rom_block, ID::ram_style, ID::rom_style, ID::ramstyle, ID::romstyle, ID::syn_ramstyle, ID::syn_romstyle}) {
+		// Begin: Awais: Fix for EDA-1436: (Map memory with async read to soft logic when inline attribute is block)
+		for (int pidx = 0; pidx < GetSize(mem.rd_ports); pidx++) {
+			auto &port = mem.rd_ports[pidx];
+			//Searching for read port having no associated clk i.e async read
+			if (!port.clk_enable){
+				log_warning("Asyncronous read in BRAM is not supported, memory will be mapped to soft logic.\n");
+				mem.set_string_attribute(attr,"logic");
+			}
+		}
+		// End: Awais: Fix for EDA-1436: (Map memory with async read to soft logic when inline attribute is block)
 		find_attr = search_for_attribute(mem, attr);
 		if (find_attr.first) {
-			// Begin: Awais: Fix for EDA-1436: (Map memory with async read to soft logic when inline attribute is block)
-			for (int pidx = 0; pidx < GetSize(mem.rd_ports); pidx++) {
-					auto &port = mem.rd_ports[pidx];
-					if (!port.clk_enable){
-						log_warning("Asyncronous read in BRAM is not supported, memory will be mapped to soft logic.\n");
-						mem.set_string_attribute(attr,"logic");
-					}
-			}
-			// End: Awais: Fix for EDA-1436: (Map memory with async read to soft logic when inline attribute is block)
 			Const val = find_attr.second;
 			if (val == 1) {
 				kind = RamKind::NotLogic;
