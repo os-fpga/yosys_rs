@@ -211,7 +211,7 @@ struct ClkbufmapPass : public Pass {
 
 			// Collect all driven bits.
 			for (auto cell : module->cells()){
-				if (cell->type == RTLIL::escape_id("PLL")) //EDA-2653:No CLK_BUFs on output clocks of PLL
+				if (cell->type == RTLIL::escape_id("PLL") || cell->type == RTLIL::escape_id("BOOT_CLOCK")) //EDA-2653/EDA-2911:No CLK_BUFs on output clocks of PLL/BOOT_CLOCK
 					continue;
 			for (auto port : cell->connections())
 				if (cell->output(port.first))
