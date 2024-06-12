@@ -160,6 +160,7 @@ struct ClkbufmapPass : public Pass {
 			pool<SigBit> sink_wire_bits;
 			pool<SigBit> buf_wire_bits;
 			pool<SigBit> driven_wire_bits;
+			pool<SigBit> generated_clk_bits;
 			SigMap sigmap(module);
 			// bit -> (buffer, buffer's input)
 			dict<SigBit, pair<Cell *, Wire *>> buffered_bits;
@@ -219,6 +220,20 @@ struct ClkbufmapPass : public Pass {
 						driven_wire_bits.insert(port.second[i]);
 			}
 
+			// Collect generated CLK bits.
+			for (auto cell : module->cells()){
+				if (cell->type == RTLIL::escape_id("DFFRE")){
+					for (auto port : cell->connections()){
+						if (cell->input(port.first) && (port.first == RTLIL::escape_id("C")) && (driven_wire_bits.count(port.second))){
+							if(!generated_clk_bits.count(port.second)){
+								generated_clk_bits.insert(port.second);
+								log_warning("%s is generated clock\n",log_signal(port.second));
+							}
+						}
+					}
+				}
+			}
+
 			// Insert buffers.
 			std::vector<pair<Wire *, Wire *>> input_queue;
 			// Copy current wire list, as we will be adding new ones during iteration.
@@ -235,8 +250,9 @@ struct ClkbufmapPass : public Pass {
 					// This wire is supposed to be bypassed, so make sure we don't buffer it in
 					// some buffer higher up in the hierarchy.
 					if (wire->port_output)
-						for (int i = 0; i < GetSize(wire); i++)
+						for (int i = 0; i < GetSize(wire); i++){
 							buf_ports.insert(make_pair(module->name, make_pair(wire->name, i)));
+						}
 					continue;
 				}
 
@@ -262,10 +278,15 @@ struct ClkbufmapPass : public Pass {
 						bool is_input = wire->port_input && !inpad_celltype.empty() && module->get_bool_attribute(ID::top);
 						if (!buf_celltype.empty() && (!is_input || buffer_inputs) && !wire->port_output) {
 							log("Inserting %s on %s.%s[%d].\n", buf_celltype.c_str(), log_id(module), log_id(wire), i);
-							cell = module->addCell(NEW_ID, RTLIL::escape_id(buf_celltype));
+							// FCLK_BUF for generated clock
+							if(generated_clk_bits.count(wire_bit))
+								cell = module->addCell(NEW_ID, RTLIL::escape_id("FCLK_BUF"));
+							else
+								cell = module->addCell(NEW_ID, RTLIL::escape_id(buf_celltype));
 							iwire = module->addWire(NEW_ID);
 							cell->setPort(RTLIL::escape_id(buf_portname), mapped_wire_bit);
 							cell->setPort(RTLIL::escape_id(buf_portname2), iwire);
+
 						}
 						if (is_input) {
 							log("Inserting %s on %s.%s[%d].\n", inpad_celltype.c_str(), log_id(module), log_id(wire), i);
