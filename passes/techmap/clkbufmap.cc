@@ -285,7 +285,6 @@ struct ClkbufmapPass : public Pass {
 							iwire = module->addWire(NEW_ID);
 							cell->setPort(RTLIL::escape_id(buf_portname), mapped_wire_bit);
 							cell->setPort(RTLIL::escape_id(buf_portname2), iwire);
-
 						}
 						if (is_input) {
 							log("Inserting %s on %s.%s[%d].\n", inpad_celltype.c_str(), log_id(module), log_id(wire), i);
