@@ -43,7 +43,7 @@
 USING_YOSYS_NAMESPACE
 PRIVATE_NAMESPACE_BEGIN
 
-bool verbose, enableopt, norename, noattr, attr2comment, noexpr, nodec, nohex, nostr, extmem, defparam, decimal, siminit, systemverilog, simple_lhs, noparallelcase;
+bool verbose, enableopt, norename, noattr, attr2comment, noexpr, nodec, nohex, nostr, extmem, defparam, decimal, siminit, systemverilog, org_name, simple_lhs, noparallelcase;
 int auto_name_counter, auto_name_offset, auto_name_digits, extmem_counter;
 dict<RTLIL::IdString, int> auto_name_map;
 std::set<RTLIL::IdString> reg_wires;
@@ -1924,6 +1924,12 @@ void dump_cell(std::stringstream &f, std::string indent, RTLIL::Cell *cell)
 	}
 
 	std::string cell_name = cellname(cell);
+
+        if (org_name) {
+           const char *str = (cell->name).c_str();
+          cell_name = std::string(str);
+        }
+
 	if (cell_name != id(cell->name))
 		f << stringf(" %s /* %s */ (", cell_name.c_str(), id(cell->name).c_str());
 	else
@@ -2605,6 +2611,7 @@ struct VerilogBackend : public Backend {
 		decimal = false;
 		siminit = false;
 		simple_lhs = false;
+		org_name = false;
 		noparallelcase = false;
 		auto_prefix = "";
 
@@ -2686,6 +2693,10 @@ struct VerilogBackend : public Backend {
 			}
 			if (arg == "-simple-lhs") {
 				simple_lhs = true;
+				continue;
+			}
+			if (arg == "-org-name") {
+				org_name = true;
 				continue;
 			}
 			if (arg == "-v") {
