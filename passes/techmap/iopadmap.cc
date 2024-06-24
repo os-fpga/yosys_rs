@@ -215,6 +215,11 @@ struct IopadmapPass : public Pass {
 		pool<Module *> modules_processed;
 		for (auto module : design->selected_modules())
 			module_queue(design, module, modules_sorted, modules_processed);
+
+		// EDA-2989: List of SOC_FPGA_INTF_* primitives (No Buffer insertion for them)
+		std::set<RTLIL::IdString> skipped_modules = {"\\SOC_FPGA_INTF_AHB_M","\\SOC_FPGA_INTF_AHB_S","\\SOC_FPGA_INTF_AXI_M0","\\SOC_FPGA_INTF_AXI_M1",
+													"\\SOC_FPGA_INTF_DMA","\\SOC_FPGA_INTF_IRQ","\\SOC_FPGA_INTF_JTAG"};
+
 		/* EDA-2166: Checking IO mapping limit is provided? If limit is provided and design IOs
 		   are within this limit then we map IO buffers, else we do not map IOs Buffers
 		*/
@@ -271,7 +276,16 @@ struct IopadmapPass : public Pass {
 		{
 			dict<Wire *, dict<int, pair<Cell *, IdString>>> rewrite_bits;
 			dict<SigSig, pool<int>> remove_conns;
+			pool<SigSpec> skipped_ports;
 
+			// EDA-2989: Do not insert BUFs for SOC_FPGA_INTF_* primitives
+			for (auto cell : module->cells()){
+				if (!skipped_modules.count(cell->type))
+					continue;
+				for (auto port : cell->connections())
+					skipped_ports.insert(port.second);
+				log_warning("Skipping IO-Buffer insertion for %s\n",log_id(cell->type));
+			}
 			if (!toutpad_celltype.empty() || !tinoutpad_celltype.empty())
 			{
 				dict<SigBit, Cell *> tbuf_bits;
@@ -406,7 +420,8 @@ struct IopadmapPass : public Pass {
 			{
 				if (!wire->port_id)
 					continue;
-
+				if (skipped_ports.count(wire))
+					continue;
 				std::string celltype, portname_int, portname_pad;
 				pool<int> skip_bit_indices;
 
