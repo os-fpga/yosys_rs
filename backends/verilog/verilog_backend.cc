@@ -2283,10 +2283,10 @@ void dump_process(std::stringstream &f, std::string indent, RTLIL::Process *proc
 	}
 }
 
-std::istringstream* ss;
 bool enc_verilog_global = false;
 
 #ifdef YOSYS_ENABLE_VERIFIC
+std::istringstream* ss;
 Verific::verific_stream *get_verific_stream(const char* file_name)
 {
 	using namespace Verific;
@@ -2475,6 +2475,7 @@ void dump_module(std::stringstream &f, std::string indent, RTLIL::Module *module
 	active_initdata.clear();
 }
 
+#ifdef YOSYS_ENABLE_VERIFIC
 void read_file_save_and_delete(std::ostream &f,const char* out_file_name)
 {
 	std::string line;
@@ -2491,6 +2492,7 @@ void read_file_save_and_delete(std::ostream &f,const char* out_file_name)
 	if (std::remove(out_file_name) != 0)
 		log_error("%s file could not be removed", out_file_name);
 }
+#endif
 
 struct VerilogBackend : public Backend {
 	VerilogBackend() : Backend("verilog", "write design to Verilog file") { }
