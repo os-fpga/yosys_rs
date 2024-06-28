@@ -17,6 +17,15 @@
  *
  */
 
+// Thierry (Rapid Silicon) : I modified the top level algo to make it deterministic:
+// Mostly : 
+//   1- fix enumeration on a set of pointers
+//   2- fix looping on objects when adding/removing the same objects within the same loop.
+//      Objects are Cells and Wires.
+//
+// I did not dive into the full code to make it more efficient since the underlying code is quite
+// complex and hard to read (there are no comments !)
+//
 #include "kernel/yosys.h"
 #include "kernel/sigtools.h"
 #include "kernel/modtools.h"
@@ -53,7 +62,11 @@ struct WreduceWorker
 	Module *module;
 	ModIndex mi;
 
-	std::set<Cell*, IdString::compare_ptr_by_name<Cell>> work_queue_cells;
+	// Thierry : this leads to non determinsim even with the sort function.
+	//std::set<Cell*, IdString::compare_ptr_by_name<Cell>> work_queue_cells;
+        // Use a dictionnary/map and use IdString as key to get always same order.
+        //
+        dict<RTLIL::IdString, Cell*> work_queue_cells;
 	std::set<SigBit> work_queue_bits;
 	pool<SigBit> keep_bits;
 	FfInitVals initvals;
@@ -61,7 +74,7 @@ struct WreduceWorker
 	WreduceWorker(WreduceConfig *config, Module *module) :
 			config(config), module(module), mi(module) { }
 
-	void run_cell_mux(Cell *cell)
+	int run_cell_mux(Cell *cell)
 	{
 		// Reduce size of MUX if inputs agree on a value for a bit or a output bit is unused
 
@@ -72,7 +85,7 @@ struct WreduceWorker
 		std::vector<SigBit> bits_removed;
 
 		if (sig_y.has_const())
-			return;
+			return 0;
 
 		for (int i = GetSize(sig_y)-1; i >= 0; i--)
 		{
@@ -96,7 +109,7 @@ struct WreduceWorker
 		}
 
 		if (bits_removed.empty())
-			return;
+			return 0;
 
 		SigSpec sig_removed;
 		for (int i = GetSize(bits_removed)-1; i >= 0; i--)
@@ -106,7 +119,7 @@ struct WreduceWorker
 			log("Removed cell %s.%s (%s).\n", log_id(module), log_id(cell), log_id(cell->type));
 			module->connect(sig_y, sig_removed);
 			module->remove(cell);
-			return;
+			return 1;
 		}
 
 		log("Removed top %d bits (of %d) from mux cell %s.%s (%s).\n",
@@ -137,9 +150,11 @@ struct WreduceWorker
 		cell->fixup_parameters();
 
 		module->connect(sig_y.extract(n_kept, n_removed), sig_removed);
+
+                return 1;
 	}
 
-	void run_cell_dff(Cell *cell)
+	int run_cell_dff(Cell *cell)
 	{
 		// Reduce size of FF if inputs are just sign/zero extended or output bit is not used
 
@@ -151,7 +166,7 @@ struct WreduceWorker
 		int width_before = GetSize(sig_q);
 
 		if (width_before == 0)
-			return;
+			return 0;
 
 		if (cell->parameters.count(ID::ARST_VALUE)) {
 			rst_value = cell->parameters[ID::ARST_VALUE];
@@ -164,6 +179,8 @@ struct WreduceWorker
 		bool zero_ext = sig_d[GetSize(sig_d)-1] == State::S0;
 		bool sign_ext = !zero_ext;
 
+                int remove = 0;
+
 		for (int i = GetSize(sig_q)-1; i >= 0; i--)
 		{
 			if (zero_ext && sig_d[i] == State::S0 && (initval[i] == State::S0 || (!config->keepdc && initval[i] == State::Sx)) &&
@@ -172,6 +189,7 @@ struct WreduceWorker
 				initvals.remove_init(sig_q[i]);
 				sig_d.remove(i);
 				sig_q.remove(i);
+                                remove = 1;
 				continue;
 			}
 
@@ -181,18 +199,20 @@ struct WreduceWorker
 				initvals.remove_init(sig_q[i]);
 				sig_d.remove(i);
 				sig_q.remove(i);
+                                remove = 1;
 				continue;
 			}
 
 			auto info = mi.query(sig_q[i]);
 			if (info == nullptr)
-				return;
+				return remove;
 			if (!info->is_output && GetSize(info->ports) == 1 && !keep_bits.count(mi.sigmap(sig_q[i]))) {
 				initvals.remove_init(sig_q[i]);
 				sig_d.remove(i);
 				sig_q.remove(i);
 				zero_ext = false;
 				sign_ext = false;
+                                remove = 1;
 				continue;
 			}
 
@@ -200,12 +220,12 @@ struct WreduceWorker
 		}
 
 		if (width_before == GetSize(sig_q))
-			return;
+			return 0;
 
 		if (GetSize(sig_q) == 0) {
 			log("Removed cell %s.%s (%s).\n", log_id(module), log_id(cell), log_id(cell->type));
 			module->remove(cell);
-			return;
+			return 1;
 		}
 
 		log("Removed top %d bits (of %d) from FF cell %s.%s (%s).\n", width_before - GetSize(sig_q), width_before,
@@ -229,6 +249,8 @@ struct WreduceWorker
 		cell->setPort(ID::D, sig_d);
 		cell->setPort(ID::Q, sig_q);
 		cell->fixup_parameters();
+
+                return 1;
 	}
 
 	void run_reduce_inport(Cell *cell, char port, int max_port_size, bool &port_signed, bool &did_something)
@@ -261,14 +283,15 @@ struct WreduceWorker
 			cell->setPort(stringf("\\%c", port), sig);
 			did_something = true;
 		}
+
 	}
 
-	void run_cell(Cell *cell)
+	int run_cell(Cell *cell)
 	{
 		bool did_something = false;
 
 		if (!cell->type.in(config->supported_cell_types))
-			return;
+			return 0;
 
 		if (cell->type.in(ID($mux), ID($pmux)))
 			return run_cell_mux(cell);
@@ -279,7 +302,7 @@ struct WreduceWorker
 		SigSpec sig = mi.sigmap(cell->getPort(ID::Y));
 
 		if (sig.has_const())
-			return;
+			return 0;
 
 
 		// Reduce size of ports A and B based on constant input bits and size of output port
@@ -380,7 +403,7 @@ struct WreduceWorker
 		if (GetSize(sig) == 0) {
 			log("Removed cell %s.%s (%s).\n", log_id(module), log_id(cell), log_id(cell->type));
 			module->remove(cell);
-			return;
+			return 1;
 		}
 
 		if (bits_removed) {
@@ -392,8 +415,11 @@ struct WreduceWorker
 
 		if (did_something) {
 			cell->fixup_parameters();
-			run_cell(cell);
+			//run_cell(cell);
+			return 1;
 		}
+
+                return 0;
 	}
 
 	static int count_nontrivial_wire_attrs(RTLIL::Wire *w)
@@ -404,8 +430,18 @@ struct WreduceWorker
 		return count;
 	}
 
-	void run()
+	void run_on_cells()
 	{
+           int change = 1;
+
+           while (change) {
+
+                change = 0;
+
+                keep_bits.clear();
+                work_queue_cells.clear();
+                work_queue_bits.clear();
+
 		// create a copy as mi.sigmap will be updated as we process the module
 		SigMap init_attr_sigmap = mi.sigmap;
 		initvals.set(&init_attr_sigmap, module);
@@ -416,21 +452,30 @@ struct WreduceWorker
 					keep_bits.insert(bit);
 		}
 
-		for (auto c : module->selected_cells())
-			work_queue_cells.insert(c);
+		for (auto c : module->selected_cells()) {
+                    // Thierry
+		    //work_queue_cells.insert(c); // using the original std::set of 
+		                                  // pointers leads to non-determinism
+                    work_queue_cells[c->name] = c;
+                }
 
-		while (!work_queue_cells.empty())
-		{
-			work_queue_bits.clear();
-			for (auto c : work_queue_cells)
-				run_cell(c);
+		for (auto p : work_queue_cells) {
+                    //log("Process cell '%s'\n", (p.first).c_str());
+                    change += run_cell(p.second);
+                }
 
-			work_queue_cells.clear();
-			for (auto bit : work_queue_bits)
-			for (auto port : mi.query_ports(bit))
-				if (module->selected(port.cell))
-					work_queue_cells.insert(port.cell);
-		}
+                // Thierry:
+                // we can work safely on the 'work_queue_cells' but at the end of
+                // processing all the cells we need to restart from fresh data
+                // if there was any change.
+
+                //log("Change = %d\n", change);
+           }
+
+	}
+
+	int run_on_wires()
+	{
 
 		pool<SigSpec> complete_wires;
 		for (auto w : module->wires())
@@ -461,7 +506,16 @@ struct WreduceWorker
 			Wire *nw = module->addWire(NEW_ID, GetSize(w) - unused_top_bits);
 			module->connect(nw, SigSpec(w).extract(0, GetSize(nw)));
 			module->swap_names(w, nw);
+
+                        // Thierry : as soon as we add a new wire we need to exit the 'for w:' loop
+                        // otherwise we will have non determinism. We need to come back from fresh
+                        // data. We cannot loop at the same time on 'wires' and create wires. This 
+                        // looks to lead to non-determinism (ex: EDA-2875 canny_edge_detector_02_24 design)
+                        //
+                        return 1;
 		}
+
+                return 0; // case of no change
 	}
 };
 
@@ -590,8 +644,38 @@ struct WreducePass : public Pass {
 				}
 			}
 
-			WreduceWorker worker(&config, module);
-			worker.run();
+// To trace non-determinism look at 'rtlil' dumped files
+//
+#if 0
+			Pass::call(design, stringf("write_rtlil before_run_on_cells.rtlil"));
+#endif
+
+                        // Process wreduce on cells
+                        //
+			WreduceWorker worker1(&config, module);
+			worker1.run_on_cells();
+
+#if 0
+			Pass::call(design, stringf("write_rtlil after_run_on_cells.rtlil"));
+#endif
+
+
+                        // Process wreduce on wires
+                        //
+                        int change = 1;
+
+                        while (change) {
+
+                           change = 0;
+
+			   WreduceWorker worker2(&config, module);
+
+			   change = worker2.run_on_wires();
+                        }
+
+#if 0
+			Pass::call(design, stringf("write_rtlil after_run_on_wires.rtlil"));
+#endif
 		}
 	}
 } WreducePass;
