@@ -423,6 +423,8 @@ struct TechmapWorker
 		FfInitVals initvals(&sigmap, module);
 
 		TopoSort<RTLIL::Cell*, IdString::compare_ptr_by_name<RTLIL::Cell>> cells;
+                dict<RTLIL::IdString, RTLIL::Cell*> dcells;
+
 		dict<RTLIL::Cell*, pool<RTLIL::SigBit>> cell_to_inbit;
 		dict<RTLIL::SigBit, pool<RTLIL::Cell*>> outbit_to_cell;
 
@@ -461,6 +463,7 @@ struct TechmapWorker
 			}
 
 			cells.node(cell);
+                        dcells[cell->name] = cell;
 		}
 
 		for (auto &it_right : cell_to_inbit)
@@ -470,8 +473,14 @@ struct TechmapWorker
 
 		cells.sort();
 
-		for (auto cell : cells.sorted)
+		// Thierry (Rapid Silicon) : fix non-determinism. 
+		// 'cells.sort()' does not sort cells in an absolute order and it creates
+		// non determinsim (EDA-2875 on canny_edge_detector) !
+		//
+		//for (auto cell : cells.sorted)
+                for (auto p : dcells)
 		{
+                        Cell* cell = p.second;
 			log_assert(handled_cells.count(cell) == 0);
 			log_assert(cell == module->cell(cell->name));
 			bool mapped_cell = false;
