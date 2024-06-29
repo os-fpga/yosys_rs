@@ -3236,9 +3236,9 @@ void vhdl_dump_module(std::ostream &f, std::string indent, RTLIL::Module *module
 
         // Genesis 3
         //
-		printComponent_DFFRE(f, indent);
+        printComponent_DFFRE(f, indent);
         printComponent_DFFNRE(f, indent);
-		printComponent_CARRY(f, indent);
+        printComponent_CARRY(f, indent);
         // LUTx
         printComponent_LUT1(f, indent);
         printComponent_LUT2(f, indent);
@@ -3247,9 +3247,10 @@ void vhdl_dump_module(std::ostream &f, std::string indent, RTLIL::Module *module
         printComponent_LUT5(f, indent);
         printComponent_LUT6(f, indent);
 
-		printComponent_I_BUF(f, indent);
-		printComponent_O_BUF(f, indent);
-		printComponent_CLK_BUF(f, indent);
+        printComponent_I_BUF(f, indent);
+        printComponent_O_BUF(f, indent);
+        printComponent_CLK_BUF(f, indent);
+
 
 	for (auto w : module->wires())
 		vhdl_dump_signal(f, indent + "  ", w);
