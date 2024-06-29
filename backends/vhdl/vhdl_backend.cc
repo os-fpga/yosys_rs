@@ -2161,6 +2161,18 @@ bool unsupportedCell(string cellName)
    if (cellName == "DFFNRE") 
        return false;
 
+   if (cellName == "CARRY")
+       return false;
+
+   if (cellName == "CLK_BUF")
+       return false;
+
+   if (cellName == "I_BUF")
+       return false;
+
+   if (cellName == "O_BUF")
+       return false;
+
    /* Genesis 2 */
    if (isGenesis2(cellName))
      return false;
@@ -2687,6 +2699,34 @@ void printComponent_LUT6(std::ostream &f, std::string indent)
 }
 
 
+void printComponent_I_BUF(std::ostream &f, std::string indent)
+{
+        f << stringf("%s" " component I_BUF\n", indent.c_str());
+        f << stringf("%s" "  port (\n", indent.c_str());
+        f << stringf("%s" "    O : out std_logic ;\n", indent.c_str());
+        f << stringf("%s" "    EN : in std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "    I : in std_logic := '0'\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" " end component;\n", indent.c_str());
+}
+void printComponent_O_BUF(std::ostream &f, std::string indent)
+{
+        f << stringf("%s" " component O_BUF\n", indent.c_str());
+        f << stringf("%s" "  port (\n", indent.c_str());
+        f << stringf("%s" "    O : out std_logic ;\n", indent.c_str());
+        f << stringf("%s" "    I : in std_logic := '0'\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" " end component;\n", indent.c_str());
+}
+void printComponent_CLK_BUF(std::ostream &f, std::string indent)
+{
+        f << stringf("%s" " component CLK_BUF\n", indent.c_str());
+        f << stringf("%s" "  port (\n", indent.c_str());
+        f << stringf("%s" "    O : out std_logic ;\n", indent.c_str());
+        f << stringf("%s" "    I : in std_logic := '0'\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" " end component;\n", indent.c_str());
+}
 
 void printComponent_shr(std::ostream &f, std::string indent)
 {
@@ -2762,6 +2802,20 @@ void printComponent_ADDER_CARRY(std::ostream &f, std::string indent)
         f << stringf("%s" "  );\n", indent.c_str());
         f << stringf("%s" " end component;\n", indent.c_str());
 }
+
+void printComponent_CARRY(std::ostream &f, std::string indent)
+{
+        f << stringf("%s" " component CARRY\n", indent.c_str());
+        f << stringf("%s" "  port (\n", indent.c_str());
+        f << stringf("%s" "    O : out std_logic ;\n", indent.c_str());
+        f << stringf("%s" "    COUT : out std_logic ;\n", indent.c_str());
+        f << stringf("%s" "    P : in std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "    G : in std_logic := '0';\n", indent.c_str());
+        f << stringf("%s" "    CIN : in std_logic := '0'\n", indent.c_str());
+        f << stringf("%s" "  );\n", indent.c_str());
+        f << stringf("%s" " end component;\n", indent.c_str());
+}
+
 
 // Genesis 2
 //
@@ -3184,7 +3238,7 @@ void vhdl_dump_module(std::ostream &f, std::string indent, RTLIL::Module *module
         //
         printComponent_DFFRE(f, indent);
         printComponent_DFFNRE(f, indent);
-
+        printComponent_CARRY(f, indent);
         // LUTx
         printComponent_LUT1(f, indent);
         printComponent_LUT2(f, indent);
@@ -3192,6 +3246,11 @@ void vhdl_dump_module(std::ostream &f, std::string indent, RTLIL::Module *module
         printComponent_LUT4(f, indent);
         printComponent_LUT5(f, indent);
         printComponent_LUT6(f, indent);
+
+        printComponent_I_BUF(f, indent);
+        printComponent_O_BUF(f, indent);
+        printComponent_CLK_BUF(f, indent);
+
 
 	for (auto w : module->wires())
 		vhdl_dump_signal(f, indent + "  ", w);
