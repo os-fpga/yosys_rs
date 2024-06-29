@@ -2704,7 +2704,7 @@ void printComponent_I_BUF(std::ostream &f, std::string indent)
         f << stringf("%s" " component I_BUF\n", indent.c_str());
         f << stringf("%s" "  port (\n", indent.c_str());
         f << stringf("%s" "    O : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    EN : in std_logic := '0'\n", indent.c_str());
+        f << stringf("%s" "    EN : in std_logic := '0';\n", indent.c_str());
         f << stringf("%s" "    I : in std_logic := '0'\n", indent.c_str());
         f << stringf("%s" "  );\n", indent.c_str());
         f << stringf("%s" " end component;\n", indent.c_str());
