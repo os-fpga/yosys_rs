@@ -39,7 +39,8 @@ void replace_undriven(RTLIL::Module *module, const CellTypes &ct)
 	SigPool all_signals;
 
 	dict<SigBit, pair<Wire*, State>> initbits;
-	pool<Wire*> revisit_initwires;
+	//pool<Wire*> revisit_initwires;
+	dict<RTLIL::IdString, Wire*> revisit_initwires;
 
 	for (auto cell : module->cells())
 	for (auto &conn : cell->connections()) {
@@ -82,7 +83,8 @@ void replace_undriven(RTLIL::Module *module, const CellTypes &ct)
 			SigBit bit = sigmap(sig[i]);
 			auto cursor = initbits.find(bit);
 			if (cursor != initbits.end()) {
-				revisit_initwires.insert(cursor->second.first);
+				//revisit_initwires.insert(cursor->second.first);
+				revisit_initwires[(cursor->second.first)->name] = cursor->second.first;
 				val[i] = cursor->second.second;
 			}
 		}
@@ -96,7 +98,8 @@ void replace_undriven(RTLIL::Module *module, const CellTypes &ct)
 	{
 		SigMap sm2(module);
 
-		for (auto wire : revisit_initwires) {
+		for (auto p : revisit_initwires) {
+                        Wire* wire = p.second;
 			SigSpec sig = sm2(wire);
 			Const initval = wire->attributes.at(ID::init);
 			for (int i = 0; i < GetSize(initval) && i < GetSize(wire); i++) {
@@ -410,7 +413,10 @@ void replace_const_cells(RTLIL::Design *design, RTLIL::Module *module, bool cons
 	dict<RTLIL::SigSpec, RTLIL::SigSpec> invert_map;
 
 	TopoSort<RTLIL::Cell*, RTLIL::IdString::compare_ptr_by_name<RTLIL::Cell>> cells;
+	dict<RTLIL::IdString, Cell*> dcells;
+
 	dict<RTLIL::Cell*, std::set<RTLIL::SigBit>> cell_to_inbit;
+
 	dict<RTLIL::SigBit, std::set<RTLIL::Cell*>> outbit_to_cell;
 
 	for (auto cell : module->cells())
@@ -432,6 +438,7 @@ void replace_const_cells(RTLIL::Design *design, RTLIL::Module *module, bool cons
 							outbit_to_cell[bit].insert(cell);
 				}
                         cells.node(cell);
+                        dcells[cell->name] = cell;
 		}
 
         // Build the graph for the topological sort.
@@ -445,10 +452,12 @@ void replace_const_cells(RTLIL::Design *design, RTLIL::Module *module, bool cons
           }
         }
 
-	cells.sort();
+	//cells.sort();
 
-	for (auto cell : cells.sorted)
+	//for (auto cell : cells.sorted)
+	for (auto p : dcells)
 	{
+          Cell* cell = p.second;
 #define ACTION_DO(_p_, _s_) do { cover("opt.opt_expr.action_" S__LINE__); replace_cell(assign_map, module, cell, input.as_string(), _p_, _s_); goto next_cell; } while (0)
 #define ACTION_DO_Y(_v_) ACTION_DO(ID::Y, RTLIL::SigSpec(RTLIL::State::S ## _v_))
 
