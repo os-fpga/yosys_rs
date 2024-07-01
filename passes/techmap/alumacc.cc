@@ -331,7 +331,9 @@ struct AlumaccWorker
 			if (GetSize(C) > 1)
 				goto next_macc;
 
-			if (!subtract_b && B < A && GetSize(B))
+                        // B < A is non determinist with operator <
+                        //
+			if (!subtract_b && (GetSize(B) < GetSize(A)) && GetSize(B))
 				std::swap(A, B);
 
 			log("  creating $alu model for $macc %s.\n", log_id(n->cell));
@@ -405,7 +407,9 @@ struct AlumaccWorker
 			RTLIL::SigSpec B = sigmap(cell->getPort(ID::B));
 			RTLIL::SigSpec Y = sigmap(cell->getPort(ID::Y));
 
-			if (B < A && GetSize(B)) {
+                        // B < A is non determinist with operator <
+                        //
+			if ((GetSize(B) < GetSize(A)) && GetSize(B)) {
 				cmp_less = !cmp_less;
 				std::swap(A, B);
 			}
@@ -445,7 +449,9 @@ struct AlumaccWorker
 			RTLIL::SigSpec B = sigmap(cell->getPort(ID::B));
 			RTLIL::SigSpec Y = sigmap(cell->getPort(ID::Y));
 
-			if (B < A && GetSize(B))
+                        // B < A is non determinist with operator <
+                        //
+			if ((GetSize(B) < GetSize(A)) && GetSize(B))
 				std::swap(A, B);
 
 			alunode_t *n = nullptr;
