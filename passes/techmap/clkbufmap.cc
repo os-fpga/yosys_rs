@@ -76,6 +76,18 @@ struct ClkbufmapPass : public Pass {
 		modules_sorted.push_back(module);
 		modules_processed.insert(module);
 	}
+	RTLIL::SigSpec find_clks_driving_lut(RTLIL::SigSpec signal, std::vector<std::pair<Wire *, Wire *>> &input_queue) {
+		for (auto &it : input_queue) {
+		    RTLIL::SigSpec wire = it.first;
+		    RTLIL::SigSpec new_wire = it.second;
+		    if (signal == wire) {
+				log_debug("signal= %s : wire = %s : new_wire= %s\n",log_signal(signal),log_signal(wire),log_signal(new_wire));
+		        return new_wire;
+		    }
+		}
+		return signal;
+	}
+
 
 	void execute(std::vector<std::string> args, RTLIL::Design *design) override
 	{
@@ -118,6 +130,7 @@ struct ClkbufmapPass : public Pass {
 		pool<pair<IdString, pair<IdString, int>>> buf_ports;
 		dict<pair<IdString, pair<IdString, int>>, pair<IdString, int>> inv_ports_out;
 		dict<pair<IdString, pair<IdString, int>>, pair<IdString, int>> inv_ports_in;
+		pool<IdString> cells_with_sink_ports;
 
 		// If true, use both ther -buf and -inpad cell for input ports that are clocks.
 		bool buffer_inputs = true;
@@ -169,9 +182,10 @@ struct ClkbufmapPass : public Pass {
 			for (auto cell : module->cells())
 			for (auto port : cell->connections())
 			for (int i = 0; i < port.second.size(); i++)
-				if (sink_ports.count(make_pair(cell->type, make_pair(port.first, i))))
+				if (sink_ports.count(make_pair(cell->type, make_pair(port.first, i)))){
+					cells_with_sink_ports.insert(cell->type);
 					sink_wire_bits.insert(sigmap(port.second[i]));
-
+				}
 			// Second, collect ones that already have a clock buffer.
 			for (auto cell : module->cells())
 			for (auto port : cell->connections())
@@ -377,6 +391,28 @@ struct ClkbufmapPass : public Pass {
 			}
 
 			module->fixup_ports();
+
+			// EDA-2953: Keep the orignal combinational input drivers
+			for (auto cell : module->cells()){
+				if (cells_with_sink_ports.empty()) // No need to go further
+					break;
+				if(cells_with_sink_ports.count(cell->type) || cell->type == RTLIL::escape_id(buf_celltype))
+					continue;
+				for (auto port : cell->connections()) {
+					if (cell->output(port.first))
+						continue;
+					RTLIL::SigSpec new_signal;
+					if (!port.second.is_chunk()) {
+						for (auto it = port.second.chunks().rbegin(); it != port.second.chunks().rend(); ++it) {
+							RTLIL::SigSpec sub_signal = *it;
+							new_signal.append(find_clks_driving_lut(sub_signal,input_queue));
+						}
+					}else {
+						new_signal.append(find_clks_driving_lut(port.second,input_queue));
+					}
+					cell->setPort(port.first, new_signal);
+				}
+			}
 		}
 	}
 } ClkbufmapPass;
