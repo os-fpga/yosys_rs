@@ -173,6 +173,7 @@ struct ClkbufmapPass : public Pass {
 			pool<SigBit> sink_wire_bits;
 			pool<SigBit> buf_wire_bits;
 			pool<SigBit> driven_wire_bits;
+			pool<SigBit> I_BUF_out;
 			pool<SigBit> generated_clk_bits;
 			SigMap sigmap(module);
 			// bit -> (buffer, buffer's input)
@@ -228,17 +229,24 @@ struct ClkbufmapPass : public Pass {
 			for (auto cell : module->cells()){
 				if (cell->type == RTLIL::escape_id("PLL") || cell->type == RTLIL::escape_id("BOOT_CLOCK")) //EDA-2653/EDA-2911:No CLK_BUFs on output clocks of PLL/BOOT_CLOCK
 					continue;
-			for (auto port : cell->connections())
-				if (cell->output(port.first))
-					for (int i = 0; i < port.second.size(); i++)
-						driven_wire_bits.insert(port.second[i]);
+			
+				for (auto port : cell->connections())
+					if (cell->output(port.first))
+						for (int i = 0; i < port.second.size(); i++)
+							driven_wire_bits.insert(port.second[i]);
+				
+				if (cell->type == RTLIL::escape_id("I_BUF")){
+					I_BUF_out.insert(cell->getPort(ID::O));
+				}
 			}
+
 
 			// Collect generated CLK bits.
 			for (auto cell : module->cells()){
 				if (cell->type == RTLIL::escape_id("DFFRE")){
 					for (auto port : cell->connections()){
-						if (cell->input(port.first) && (port.first == RTLIL::escape_id("C")) && (driven_wire_bits.count(port.second))){
+						if (cell->input(port.first) && (port.first == RTLIL::escape_id("C")) && (driven_wire_bits.count(port.second)) && (!(I_BUF_out.count(port.second)))){
+							// if ()
 							if(!generated_clk_bits.count(port.second)){
 								generated_clk_bits.insert(port.second);
 								log_warning("%s is generated clock\n",log_signal(port.second));
