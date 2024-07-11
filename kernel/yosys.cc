@@ -661,7 +661,17 @@ RTLIL::IdString new_id(std::string file, int line, std::string func)
 	if (pos != std::string::npos)
 		func = func.substr(pos+1);
 
+// This is to reduce QoR changes simply because of source code changes (ex: line change) 
+// affecting the new name creation mechanism (Thierry)
+//
+#if 1
+	return stringf("$auto_%d", 
+                       (line+autoidx++)-line); // use line for unused warning but
+                                               // make name independent of line
+#else
+
 	return stringf("$auto$%s:%d:%s$%d", file.c_str(), line, func.c_str(), autoidx++);
+#endif
 }
 
 RTLIL::IdString new_id_suffix(std::string file, int line, std::string func, std::string suffix)
@@ -678,7 +688,16 @@ RTLIL::IdString new_id_suffix(std::string file, int line, std::string func, std:
 	if (pos != std::string::npos)
 		func = func.substr(pos+1);
 
+// This is to reduce QoR changes simply because of source code changes (ex: line change) 
+// affecting the new name creation mechanism (Thierry)
+//
+#if 1
+	return stringf("$auto_%s_%d", suffix.c_str(), 
+                       (line+autoidx++)-line); // use line for unused warning but
+                                               // make name independent of line
+#else
 	return stringf("$auto$%s:%d:%s$%s$%d", file.c_str(), line, func.c_str(), suffix.c_str(), autoidx++);
+#endif
 }
 
 RTLIL::IdString new_id_no_prefix(std::string file, std::string func, std::string suffix)
@@ -695,7 +714,14 @@ RTLIL::IdString new_id_no_prefix(std::string file, std::string func, std::string
         if (pos != std::string::npos)
                 func = func.substr(pos+1);
 
+// This is to reduce QoR changes simply because of source code changes (ex: func change) 
+// affecting the new name creation mechanism (Thierry)
+//
+#if 1
+        return stringf("\\%s_%d", suffix.c_str(), autoidx++);
+#else
         return stringf("\\%s_%s_%d", func.c_str(), suffix.c_str(), autoidx++);
+#endif
 }
 
 RTLIL::Design *yosys_get_design()
