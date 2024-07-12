@@ -1,4 +1,4 @@
-/*
+n/*
  *  yosys -- Yosys Open SYnthesis Suite
  *
  *  Copyright (C) 2012  Claire Xenia Wolf <claire@yosyshq.com>
@@ -2533,570 +2533,83 @@ void vhdl_dump_process(std::ostream &f, std::string indent, RTLIL::Process *proc
 	}
 }
 
-void printComponent_TDP36K(std::ostream &f, std::string indent)
-{
-	f << stringf("%s" "component TDP36K\n", indent.c_str());
-#if 0
-        f << stringf("%s" " generic (\n", indent.c_str());
-        f << stringf("%s" "    MODE_BITS : std_logic_vector (80 downto 0);\n", indent.c_str());
-        f << stringf("%s" "    INIT_i : std_ulogic_vector (36863 downto 0)\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-#endif
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    RESET_ni : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    WEN_A1_i : in std_logic;\n", indent.c_str());
-        f << stringf("%s" "    WEN_B1_i : in std_logic;\n", indent.c_str());
-        f << stringf("%s" "    REN_A1_i : in std_logic;\n", indent.c_str());
-        f << stringf("%s" "    REN_B1_i : in std_logic;\n", indent.c_str());
-        f << stringf("%s" "    CLK_A1_i : in std_logic;\n", indent.c_str());
-        f << stringf("%s" "    CLK_B1_i : in std_logic;\n", indent.c_str());
-        f << stringf("%s" "    BE_A1_i : in std_logic_vector (1 downto 0);\n", indent.c_str());
-        f << stringf("%s" "    BE_B1_i : in std_logic_vector (1 downto 0);\n", indent.c_str());
-        f << stringf("%s" "    ADDR_A1_i : in std_logic_vector (14 downto 0);\n", indent.c_str());
-        f << stringf("%s" "    ADDR_B1_i : in std_logic_vector (14 downto 0);\n", indent.c_str());
-        f << stringf("%s" "    WDATA_A1_i : in std_logic_vector (17 downto 0);\n", indent.c_str());
-        f << stringf("%s" "    WDATA_B1_i : in std_logic_vector (17 downto 0);\n", indent.c_str());
-        f << stringf("%s" "    RDATA_A1_o : out std_logic_vector (17 downto 0);\n", indent.c_str());
-        f << stringf("%s" "    RDATA_B1_o : out std_logic_vector (17 downto 0);\n", indent.c_str());
-        f << stringf("%s" "    FLUSH1_i : in std_logic;\n", indent.c_str());
-        f << stringf("%s" "    WEN_A2_i : in std_logic;\n", indent.c_str());
-        f << stringf("%s" "    WEN_B2_i : in std_logic;\n", indent.c_str());
-        f << stringf("%s" "    REN_A2_i : in std_logic;\n", indent.c_str());
-        f << stringf("%s" "    REN_B2_i : in std_logic;\n", indent.c_str());
-        f << stringf("%s" "    CLK_A2_i : in std_logic;\n", indent.c_str());
-        f << stringf("%s" "    CLK_B2_i : in std_logic;\n", indent.c_str());
-        f << stringf("%s" "    BE_A2_i : in std_logic_vector (1 downto 0);\n", indent.c_str());
-        f << stringf("%s" "    BE_B2_i : in std_logic_vector (1 downto 0);\n", indent.c_str());
-        f << stringf("%s" "    ADDR_A2_i : in std_logic_vector (13 downto 0);\n", indent.c_str());
-        f << stringf("%s" "    ADDR_B2_i : in std_logic_vector (13 downto 0);\n", indent.c_str());
-        f << stringf("%s" "    WDATA_A2_i : in std_logic_vector (17 downto 0);\n", indent.c_str());
-        f << stringf("%s" "    WDATA_B2_i : in std_ulogic_vector (17 downto 0);\n", indent.c_str());
-        f << stringf("%s" "    RDATA_A2_o : out std_logic_vector (17 downto 0);\n", indent.c_str());
-        f << stringf("%s" "    RDATA_B2_o : out std_logic_vector (17 downto 0);\n", indent.c_str());
-        f << stringf("%s" "    FLUSH2_i : in std_logic\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
+void dump_component(std::ostream &f, std::string indent, RTLIL::Cell *cell){
+	int n = 0;
+
+	f << stringf("\n%s component %s\n", indent.c_str(),log_id(cell->type));
+	if (cell->parameters.size()>0){
+		f << stringf("%s  generic ( \n", indent.c_str());
+		for (auto param : cell->parameters){
+			if (n > 0)
+				f << stringf(";\n");
+			f << stringf("%s       %s: ",indent.c_str(),log_id(param.first));
+			if (param.second.size()>1){
+				f << stringf("std_logic_vector (%d downto 0)",param.second.size()-1);
+			}
+			else{
+				f << stringf("std_logic");
+			}
+			n++;
+		}
+		f << stringf("\n%s      );\n",indent.c_str());
+	}
+
+	f << stringf("%s   port (\n", indent.c_str());
+	n=0;
+	for (auto conn : cell->connections()){
+		if (n > 0)
+			f << stringf(";\n");
+		f << stringf("%s       %s : ",indent.c_str(),log_id(conn.first));
+		if (cell->input(conn.first))
+			f << stringf("in ");
+		else
+			f << stringf("out ");
+		if (conn.second.size()>1){
+			f << stringf("std_logic_vector (%d downto 0)",conn.second.size()-1);
+		}
+		else{
+			f << stringf("std_logic");
+		}
+		if ((cell->input(conn.first)))
+			f << stringf(" := '0'");
+		n++;
+	}
+
+	f << stringf("\n%s      );\n",indent.c_str());
+	f << stringf("%s end component;",indent.c_str());
 }
 
-void printComponent_RS_DSP2_MULT(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" "component RS_DSP2_MULT\n", indent.c_str());
-#if 0
-        f << stringf("%s" " generic (\n", indent.c_str());
-        f << stringf("%s" "    MODE_BITS : std_logic_vector (79 downto 0)\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-#endif
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    a : in std_logic_vector (19 downto 0);\n", indent.c_str());
-        f << stringf("%s" "    b : in std_logic_vector (17 downto 0);\n", indent.c_str());
-        f << stringf("%s" "    z : out std_logic_vector (37 downto 0);\n", indent.c_str());
-        f << stringf("%s" "    reset : in std_logic;\n", indent.c_str());
-        f << stringf("%s" "    feedback : in std_logic_vector(2 downto 0);\n", indent.c_str());
-        f << stringf("%s" "    unsigned_a : in std_logic;\n", indent.c_str());
-        f << stringf("%s" "    unsigned_b : in std_logic;\n", indent.c_str());
-        f << stringf("%s" "    f_mode : in std_logic;\n", indent.c_str());
-        f << stringf("%s" "    output_select : in std_logic_vector(2 downto 0);\n", indent.c_str());
-        f << stringf("%s" "    register_inputs : in std_logic\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
+void lut_complex_expression(RTLIL::Module *module){
+	for (auto cell : module->cells()) {
+		string cellName = id(cell->type, false);
+		if (isLUTx(cellName))
+		{ 	
+			for (auto port : cell->connections()){
+				if (cell->input(port.first) && (port.first == RTLIL::escape_id("A"))){
+					RTLIL::Wire *new_wire=module->addWire(NEW_ID,GetSize(port.second));
+					module->connect( SigSpec(new_wire),port.second);
+					cell->setPort(port.first, SigSpec(new_wire));
+				}
 
-void printComponent_lut(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" "component lut\n", indent.c_str());
-        f << stringf("%s" " generic (\n", indent.c_str());
-        f << stringf("%s" "    A_WIDTH : INTEGER ;\n", indent.c_str());
-        f << stringf("%s" "    B_WIDTH : INTEGER ;\n", indent.c_str());
-        f << stringf("%s" "    Y_WIDTH : INTEGER ;\n", indent.c_str());
-        f << stringf("%s" "    A_SIGNED : INTEGER ;\n", indent.c_str());
-        f << stringf("%s" "    B_SIGNED : INTEGER \n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    Y : out std_logic;\n", indent.c_str());
-        f << stringf("%s" "    B : in std_logic_vector(B_WIDTH-1 downto 0);\n", indent.c_str());
-        f << stringf("%s" "    A : in std_logic_vector(A_WIDTH-1 downto 0)\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
+			}
+		}
+    }
 }
+void vhdl_dump_components(std::ostream &f, std::string indent, RTLIL::Cell *cell){
+	 
+	dump_component(f, indent, cell);
+	getchar();
 
-void printComponent_LUT1(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" "component LUT1\n", indent.c_str());
-        f << stringf("%s" " generic (\n", indent.c_str());
-        f << stringf("%s" "    INIT_VALUE : std_logic_vector (1 downto 0) \n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    Y : out std_logic;\n", indent.c_str());
-        f << stringf("%s" "    A : in std_logic\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
 }
-
-
-void printComponent_LUT2(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" "component LUT2\n", indent.c_str());
-        f << stringf("%s" " generic (\n", indent.c_str());
-        f << stringf("%s" "    INIT_VALUE : std_logic_vector (3 downto 0) \n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    Y : out std_logic;\n", indent.c_str());
-        f << stringf("%s" "    A : in std_logic_vector(1 downto 0)\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-
-void printComponent_LUT3(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" "component LUT3\n", indent.c_str());
-        f << stringf("%s" " generic (\n", indent.c_str());
-        f << stringf("%s" "    INIT_VALUE : std_logic_vector (7 downto 0) \n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    Y : out std_logic;\n", indent.c_str());
-        f << stringf("%s" "    A : in std_logic_vector(2 downto 0)\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-
-void printComponent_LUT4(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" "component LUT4\n", indent.c_str());
-        f << stringf("%s" " generic (\n", indent.c_str());
-        f << stringf("%s" "    INIT_VALUE : std_logic_vector (15 downto 0) \n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    Y : out std_logic;\n", indent.c_str());
-        f << stringf("%s" "    A : in std_logic_vector(3 downto 0)\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-
-void printComponent_LUT5(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" "component LUT5\n", indent.c_str());
-        f << stringf("%s" " generic (\n", indent.c_str());
-        f << stringf("%s" "    INIT_VALUE : std_logic_vector (31 downto 0) \n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    Y : out std_logic;\n", indent.c_str());
-        f << stringf("%s" "    A : in std_logic_vector(4 downto 0)\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-
-void printComponent_LUT6(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" "component LUT6\n", indent.c_str());
-        f << stringf("%s" " generic (\n", indent.c_str());
-        f << stringf("%s" "    INIT_VALUE : std_logic_vector (63 downto 0) \n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    Y : out std_logic;\n", indent.c_str());
-        f << stringf("%s" "    A : in std_logic_vector(5 downto 0)\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-
-
-void printComponent_I_BUF(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component I_BUF\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    O : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    EN : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    I : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-void printComponent_O_BUF(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component O_BUF\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    O : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    I : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-void printComponent_CLK_BUF(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component CLK_BUF\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    O : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    I : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-
-void printComponent_shr(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" "component shr\n", indent.c_str());
-        f << stringf("%s" " generic (\n", indent.c_str());
-        f << stringf("%s" "    A_WIDTH : INTEGER ;\n", indent.c_str());
-        f << stringf("%s" "    B_WIDTH : INTEGER ;\n", indent.c_str());
-        f << stringf("%s" "    Y_WIDTH : INTEGER ;\n", indent.c_str());
-        f << stringf("%s" "    A_SIGNED : INTEGER ;\n", indent.c_str());
-        f << stringf("%s" "    B_SIGNED : INTEGER \n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    Y : out std_logic_vector(Y_WIDTH-1 downto 0);\n", indent.c_str());
-        f << stringf("%s" "    B : in std_logic_vector(B_WIDTH-1 downto 0);\n", indent.c_str());
-        f << stringf("%s" "    A : in std_logic_vector(A_WIDTH-1 downto 0)\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-
-void printComponent_dffsre(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component dffsre\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    S : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    R : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    E : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    D : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    C : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-
-void printComponent_dffnsre(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component dffnsre\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    S : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    R : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    E : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    D : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    C : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-
-void printComponent_latchsre(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component latchsre\n", indent.c_str());
-        f << stringf("%s" "  generic (VCS_MODE : boolean := false);\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    S : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    R : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    E : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    D : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    G : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-
-
-void printComponent_ADDER_CARRY(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component ADDER_CARRY\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    sumout : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    cout : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    p : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    g : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    cin : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-
-void printComponent_CARRY(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component CARRY\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    O : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    COUT : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    P : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    G : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    CIN : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-
-
-// Genesis 2
-//
-//
-void printComponent_dff(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component dff\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    D : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    C : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-void printComponent_dffn(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component dffn\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    D : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    C : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-void printComponent_sdff(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component sdff\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    R : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    D : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    C : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-void printComponent_sdffn(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component sdffn\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    R : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    D : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    C : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-void printComponent_dffr(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component dffr\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    R : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    D : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    C : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-void printComponent_dffnr(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component dffnr\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    R : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    D : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    C : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-void printComponent_dffe(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component dffe\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    E : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    D : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    C : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-void printComponent_dffne(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component dffne\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    E : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    D : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    C : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-void printComponent_sdffre(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component sdffre\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    R : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    E : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    D : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    C : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-void printComponent_sdffnre(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component sdffnre\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    R : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    E : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    D : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    C : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-void printComponent_dffre(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component dffre\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    R : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    E : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    D : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    C : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-void printComponent_DFFRE(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component DFFRE\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    R : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    E : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    D : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    C : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-void printComponent_dffnre(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component dffnre\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    R : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    E : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    D : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    C : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-void printComponent_DFFNRE(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component DFFNRE\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    R : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    E : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    D : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    C : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-
-void printComponent_latch(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component latch\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    g : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    d : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-void printComponent_latchn(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component latchn\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    g : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    d : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-void printComponent_latchr(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component latchr\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    r : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    g : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    d : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-void printComponent_latchnr(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component latchnr\n", indent.c_str());
-        f << stringf("%s" "  generic (INIT_VALUE : std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "  VCS_MODE : boolean := false\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    Q : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    r : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    g : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    d : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-void printComponent_fa_1bit(std::ostream &f, std::string indent)
-{
-        f << stringf("%s" " component fa_1bit\n", indent.c_str());
-        f << stringf("%s" "  port (\n", indent.c_str());
-        f << stringf("%s" "    sum : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    cout : out std_logic ;\n", indent.c_str());
-        f << stringf("%s" "    p : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    g : in std_logic := '0';\n", indent.c_str());
-        f << stringf("%s" "    cin : in std_logic := '0'\n", indent.c_str());
-        f << stringf("%s" "  );\n", indent.c_str());
-        f << stringf("%s" " end component;\n", indent.c_str());
-}
-
-
 void vhdl_dump_module(std::ostream &f, std::string indent, RTLIL::Module *module)
 {
+	lut_complex_expression(module);
 	reg_wires.clear();
 	reset_auto_counter(module);
 	active_module = module;
 	active_sigmap.set(module);
 	active_initdata.clear();
-
+	
 	for (auto wire : module->wires())
 		if (wire->attributes.count(ID::init)) {
 			SigSpec sig = active_sigmap(wire);
@@ -3196,61 +2709,10 @@ void vhdl_dump_module(std::ostream &f, std::string indent, RTLIL::Module *module
 
 	f << stringf("%s" "architecture arch of %s is\n", indent.c_str(), id(module->name, false).c_str());
 
-        // Genesis 
-        //
-        printComponent_TDP36K(f, indent);
-
-        printComponent_RS_DSP2_MULT(f, indent);
-
-        printComponent_lut(f, indent);
-
-        printComponent_shr(f, indent);
-
-        printComponent_dffsre(f, indent);
-
-        printComponent_dffnsre(f, indent);
-
-        printComponent_latchsre(f, indent);
-
-        printComponent_ADDER_CARRY(f, indent);
-
-        // Genesis 2
-        //
-        printComponent_dff(f, indent);
-        printComponent_dffn(f, indent);
-        printComponent_sdff(f, indent);
-        printComponent_sdffn(f, indent);
-        printComponent_dffr(f, indent);
-        printComponent_dffnr(f, indent);
-        printComponent_dffe(f, indent);
-        printComponent_dffne(f, indent);
-        printComponent_sdffre(f, indent);
-        printComponent_sdffnre(f, indent);
-        //printComponent_dffre(f, indent);
-        //printComponent_dffnre(f, indent);
-        printComponent_latch(f, indent);
-        printComponent_latchn(f, indent);
-        printComponent_latchr(f, indent);
-        printComponent_latchnr(f, indent);
-        printComponent_fa_1bit(f, indent);
-
-        // Genesis 3
-        //
-        printComponent_DFFRE(f, indent);
-        printComponent_DFFNRE(f, indent);
-        printComponent_CARRY(f, indent);
-        // LUTx
-        printComponent_LUT1(f, indent);
-        printComponent_LUT2(f, indent);
-        printComponent_LUT3(f, indent);
-        printComponent_LUT4(f, indent);
-        printComponent_LUT5(f, indent);
-        printComponent_LUT6(f, indent);
-
-        printComponent_I_BUF(f, indent);
-        printComponent_O_BUF(f, indent);
-        printComponent_CLK_BUF(f, indent);
-
+	for (auto cell : module->cells()) {
+		vhdl_dump_components(f, indent, cell);
+	}
+    
 
 	for (auto w : module->wires())
 		vhdl_dump_signal(f, indent + "  ", w);
