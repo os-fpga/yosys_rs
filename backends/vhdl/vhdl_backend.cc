@@ -1,4 +1,4 @@
-n/*
+/*
  *  yosys -- Yosys Open SYnthesis Suite
  *
  *  Copyright (C) 2012  Claire Xenia Wolf <claire@yosyshq.com>
@@ -2598,7 +2598,6 @@ void lut_complex_expression(RTLIL::Module *module){
 void vhdl_dump_components(std::ostream &f, std::string indent, RTLIL::Cell *cell){
 	 
 	dump_component(f, indent, cell);
-	getchar();
 
 }
 void vhdl_dump_module(std::ostream &f, std::string indent, RTLIL::Module *module)
