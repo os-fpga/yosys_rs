@@ -62,6 +62,7 @@ int auto_name_counter, auto_name_offset, auto_name_digits, extmem_counter;
 std::map<RTLIL::IdString, int> auto_name_map;
 std::set<RTLIL::IdString> reg_wires;
 std::string auto_prefix, extmem_prefix;
+std::set<RTLIL::IdString> component_cells;
 
 RTLIL::Module *active_module;
 dict<RTLIL::SigBit, RTLIL::State> active_initdata;
@@ -2596,7 +2597,11 @@ void lut_complex_expression(RTLIL::Module *module){
     }
 }
 void vhdl_dump_components(std::ostream &f, std::string indent, RTLIL::Cell *cell){
-	 
+
+	if (component_cells.count(cell->type)) 
+		return;
+
+	component_cells.insert(cell->type);
 	dump_component(f, indent, cell);
 
 }
