@@ -53,6 +53,7 @@
 #include <sstream>
 #include <set>
 #include <map>
+#include <typeinfo>
 
 USING_YOSYS_NAMESPACE
 PRIVATE_NAMESPACE_BEGIN
@@ -2544,7 +2545,11 @@ void dump_component(std::ostream &f, std::string indent, RTLIL::Cell *cell){
 			if (n > 0)
 				f << stringf(";\n");
 			f << stringf("%s       %s: ",indent.c_str(),log_id(param.first));
-			if (param.second.size()>1){
+			
+			if ((param.second.flags & RTLIL::CONST_FLAG_STRING) != 0)
+				f << stringf("string := \"%s\"",param.second.decode_string().c_str());
+
+			else if (param.second.size()>1){
 				f << stringf("std_logic_vector (%d downto 0)",param.second.size()-1);
 			}
 			else{
@@ -2571,8 +2576,8 @@ void dump_component(std::ostream &f, std::string indent, RTLIL::Cell *cell){
 		else{
 			f << stringf("std_logic");
 		}
-		if ((cell->input(conn.first)))
-			f << stringf(" := '0'");
+		// if ((cell->input(conn.first)))
+		// 	f << stringf(" := '0'");
 		n++;
 	}
 
