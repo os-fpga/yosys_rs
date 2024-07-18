@@ -2142,6 +2142,18 @@ bool unsupportedCell(string cellName)
    if (cellName == "TDP36K") 
        return false;
 
+   if (cellName == "DSP38") 
+       return false;
+
+   if (cellName == "DSP19X2") 
+       return false;
+
+   if (cellName == "TDP_RAM18KX2") 
+       return false;
+
+   if (cellName == "TDP_RAM36K") 
+       return false;
+
    if (cellName == "RS_DSP2_MULT") 
        return false;
 
@@ -2173,6 +2185,36 @@ bool unsupportedCell(string cellName)
        return false;
 
    if (cellName == "I_DELAY")
+       return false;
+
+   if (cellName == "BOOT_CLOCK")
+       return false;
+
+   if (cellName == "O_DELAY")
+       return false;
+
+   if (cellName == "I_SERDES")
+       return false;
+
+   if (cellName == "O_SERDES")
+       return false;
+
+   if (cellName == "O_BUF_DS")
+       return false;
+
+   if (cellName == "O_BUFT_DS")
+       return false;
+
+   if (cellName == "O_BUFT")
+       return false;
+
+   if (cellName == "O_DDR")
+       return false;
+
+   if (cellName == "LATCH")
+       return false;
+
+   if (cellName == "PLL")
        return false;
 
    if (cellName == "O_BUF")
@@ -2218,6 +2260,7 @@ void vhdl_dump_cell(std::ostream &f, std::string indent, RTLIL::Cell *cell)
 
         // Print instance name and cell name to be instantiated
 	//
+	log("Cell = %s, Type = %s\n",log_id(cell->name),log_id(cell->type));
 	f << stringf("%s" "%s : %s \n", indent.c_str(), 
                      cellname(cell).c_str(), cellName.c_str());
 
@@ -2548,13 +2591,14 @@ void dump_component(std::ostream &f, std::string indent, RTLIL::Cell *cell){
 			if (n > 0)
 				f << stringf(";\n");
 			f << stringf("%s       %s: ",indent.c_str(),log_id(param.first));
-			
-			if ((param.second.flags & RTLIL::CONST_FLAG_STRING) != 0)
-				f << stringf("string := \"%s\"",param.second.decode_string().c_str());
-			else if ((param.second.flags & RTLIL::CONST_FLAG_SIGNED) != 0)
-				f << stringf("integer := 0");
-			else if ((param.second.flags & RTLIL::CONST_FLAG_REAL) != 0)
+			log("Cell = %s, Paramter = %s, Flag = %d,\n",log_id(cell->type),log_id(param.first),param.second.flags);
+			if ((param.second.flags & RTLIL::CONST_FLAG_REAL) == 4)
 				f << stringf("real := 0.0");
+			else if ((param.second.flags & RTLIL::CONST_FLAG_STRING) != 0)
+				f << stringf("string := \"%s\"",param.second.decode_string().c_str());
+			else if (((param.second.flags & RTLIL::CONST_FLAG_SIGNED) != 0) || param.second.flags == 0)
+				f << stringf("integer := 0");
+			
 			else if (param.second.size()>1){
 				f << stringf("std_logic_vector (%d downto 0)",param.second.size()-1);
 			}
@@ -2594,8 +2638,12 @@ void dump_component(std::ostream &f, std::string indent, RTLIL::Cell *cell){
 
 void cell_complex_expression(RTLIL::Module *module){
 	for (auto cell : module->cells()) {
-		string cellName = id(cell->type, false);
-		if (isLUTx(cellName) || cell->type == RTLIL::escape_id("I_DELAY")){ 	
+		string cellName = id(cell->type, true);
+		if (isLUTx(cellName) || cell->type == RTLIL::escape_id("I_DELAY") || cell->type == RTLIL::escape_id("O_DELAY")\
+				|| cell->type == RTLIL::escape_id("I_SERDES") || cell->type == RTLIL::escape_id("O_SERDES")\
+				|| cell->type == RTLIL::escape_id("TDP_RAM18KX2") || cell->type == RTLIL::escape_id("TDP_RAM36K")\
+				|| cell->type == RTLIL::escape_id("DSP19X2") || cell->type == RTLIL::escape_id("DSP38")\
+		){ 	
 			for (auto port : cell->connections()){
 				if (port.second.size()>1){
 					RTLIL::Wire *new_wire=module->addWire(NEW_ID,GetSize(port.second));
