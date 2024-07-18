@@ -2172,6 +2172,9 @@ bool unsupportedCell(string cellName)
    if (cellName == "I_BUF")
        return false;
 
+   if (cellName == "I_DELAY")
+       return false;
+
    if (cellName == "O_BUF")
        return false;
 
@@ -2588,18 +2591,17 @@ void dump_component(std::ostream &f, std::string indent, RTLIL::Cell *cell){
 	f << stringf("%s end component;",indent.c_str());
 }
 
-void lut_complex_expression(RTLIL::Module *module){
+
+void cell_complex_expression(RTLIL::Module *module){
 	for (auto cell : module->cells()) {
 		string cellName = id(cell->type, false);
-		if (isLUTx(cellName))
-		{ 	
+		if (isLUTx(cellName) || cell->type == RTLIL::escape_id("I_DELAY")){ 	
 			for (auto port : cell->connections()){
-				if (cell->input(port.first) && (port.first == RTLIL::escape_id("A"))){
+				if (port.second.size()>1){
 					RTLIL::Wire *new_wire=module->addWire(NEW_ID,GetSize(port.second));
 					module->connect( SigSpec(new_wire),port.second);
 					cell->setPort(port.first, SigSpec(new_wire));
 				}
-
 			}
 		}
     }
@@ -2615,7 +2617,7 @@ void vhdl_dump_components(std::ostream &f, std::string indent, RTLIL::Cell *cell
 }
 void vhdl_dump_module(std::ostream &f, std::string indent, RTLIL::Module *module)
 {
-	lut_complex_expression(module);
+	cell_complex_expression(module);
 	reg_wires.clear();
 	reset_auto_counter(module);
 	active_module = module;
