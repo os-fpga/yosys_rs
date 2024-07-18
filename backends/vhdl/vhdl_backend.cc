@@ -2548,7 +2548,10 @@ void dump_component(std::ostream &f, std::string indent, RTLIL::Cell *cell){
 			
 			if ((param.second.flags & RTLIL::CONST_FLAG_STRING) != 0)
 				f << stringf("string := \"%s\"",param.second.decode_string().c_str());
-
+			else if ((param.second.flags & RTLIL::CONST_FLAG_SIGNED) != 0)
+				f << stringf("integer := 0");
+			else if ((param.second.flags & RTLIL::CONST_FLAG_REAL) != 0)
+				f << stringf("real := 0.0");
 			else if (param.second.size()>1){
 				f << stringf("std_logic_vector (%d downto 0)",param.second.size()-1);
 			}
