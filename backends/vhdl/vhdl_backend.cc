@@ -2936,6 +2936,8 @@ struct VhdlBackend : public Backend {
 		auto_name_map.clear();
 		reg_wires.clear();
 
+		design->sort();
+
 		size_t argidx;
 		for (argidx = 1; argidx < args.size(); argidx++) {
 			std::string arg = args[argidx];
