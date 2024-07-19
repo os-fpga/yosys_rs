@@ -112,6 +112,11 @@ std::string next_auto_id()
 std::string id(RTLIL::IdString internal_id, bool may_rename = true)
 {
 	const char *str = internal_id.c_str();
+
+        if (org_name) {
+	  return std::string(str);
+        }
+
 	bool do_escape = false;
 
 	if (may_rename && auto_name_map.count(internal_id) != 0)
