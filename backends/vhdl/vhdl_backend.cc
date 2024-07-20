@@ -2137,22 +2137,22 @@ bool unsupportedCell(string cellName)
        return false;
 
    if (cellName == "ADDER_CARRY") 
-       return false;
+       return true;
 
    if (cellName == "TDP36K") 
        return false;
 
    if (cellName == "DSP38") 
-       return false;
+       return true;
 
    if (cellName == "DSP19X2") 
-       return false;
+       return true;
 
    if (cellName == "TDP_RAM18KX2") 
-       return false;
+       return true;
 
    if (cellName == "TDP_RAM36K") 
-       return false;
+       return true;
 
    if (cellName == "RS_DSP2_MULT") 
        return false;
@@ -2176,7 +2176,7 @@ bool unsupportedCell(string cellName)
        return false;
 
    if (cellName == "CARRY")
-       return false;
+       return true;
 
    if (cellName == "CLK_BUF")
        return false;
@@ -2184,11 +2184,14 @@ bool unsupportedCell(string cellName)
    if (cellName == "I_BUF")
        return false;
 
+   if (cellName == "I_BUF_DS")
+       return false;
+
    if (cellName == "I_DELAY")
        return false;
 
    if (cellName == "BOOT_CLOCK")
-       return false;
+       return true;
 
    if (cellName == "O_DELAY")
        return false;
@@ -2212,10 +2215,10 @@ bool unsupportedCell(string cellName)
        return false;
 
    if (cellName == "LATCH")
-       return false;
+       return true;
 
    if (cellName == "PLL")
-       return false;
+       return true;
 
    if (cellName == "O_BUF")
        return false;
@@ -2596,7 +2599,7 @@ void dump_component(std::ostream &f, std::string indent, RTLIL::Cell *cell){
 				f << stringf("real := 0.0");
 			else if ((param.second.flags & RTLIL::CONST_FLAG_STRING) != 0)
 				f << stringf("string := \"%s\"",param.second.decode_string().c_str());
-			else if (((param.second.flags & RTLIL::CONST_FLAG_SIGNED) != 0) || param.second.flags == 0)
+			else if (((param.second.flags & RTLIL::CONST_FLAG_SIGNED) != 0) )
 				f << stringf("integer := 0");
 			
 			else if (param.second.size()>1){
