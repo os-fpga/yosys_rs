@@ -206,7 +206,7 @@ inline int hashtable_size(int min_size)
 
 	if (sizeof(int) == 4){
 		//throw std::length_error("hash table exceeded maximum size.\nDesign is likely too large for yosys to handle, if possible try not to flatten the design.");
-		std::cerr << "Error: Design is likely too large for yosys to handle, if possible try not to flatten the design.\n";
+		std::cerr << "ERROR: SYN: Design is likely too large for yosys to handle, if possible try not to flatten the design.\n";
 		std::exit(EXIT_FAILURE);
 	}
 
