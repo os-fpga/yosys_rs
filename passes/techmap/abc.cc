@@ -994,16 +994,45 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 	for (auto &si : signal_list)
 		fprintf(f, "# ys__n%-5d %s\n", si.id, log_signal(si.bit));
 
+        pool<int> const_id; // to store the constant signals
+
+        // First declare the constant signals in the blif
+        //
 	for (auto &si : signal_list) {
 		if (si.bit.wire == nullptr) {
 			fprintf(f, ".names ys__n%d\n", si.id);
 			if (si.bit == RTLIL::State::S1)
 				fprintf(f, "1\n");
+                   const_id.insert(si.id);
 		}
 	}
 
+        pool<int> signals; // to store the regular signals
+
+        // Then declare the non constant signals : it may happen that a signal can
+        // be mult-driven especially by a constant and a gate (ex: DFF). We need
+        // to analyze the situation to decide if there is a functional conflict
+        // between drivers or not.
+        // In EDA-3029 we have such a situation : a signal is driven by :
+        // 	- a constant 1'b0
+        // 	- a DFF with feedback loop and dont care init.
+        // In this case the constant 1'b0 covers the DFF so there is no functional
+        // conflict, therefore the DFF driver can be ignored.
+        //
+        // This is to avoid to have several time the signal 'si' declared : the 
+        // blif reader will fail in that case.
+        //
 	int count_gates = 0;
 	for (auto &si : signal_list) {
+
+                // remember : we cannot have same signal declared several times, this means multi
+                // driven signal.
+                //
+                if (signals.count(si.id)) {
+                 log_warning("A multiple driven case with different functional drivers has been detected\n");
+                }
+                signals.insert(si.id);
+
 		if (si.type == G(BUF)) {
 			fprintf(f, ".names ys__n%d ys__n%d\n", si.in1, si.id);
 			fprintf(f, "1 1\n");
@@ -1065,12 +1094,47 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 			fprintf(f, ".names ys__n%d ys__n%d ys__n%d ys__n%d ys__n%d\n", si.in1, si.in2, si.in3, si.in4, si.id);
 			fprintf(f, "00-- 1\n");
 			fprintf(f, "--00 1\n");
-		} else if (si.type == G(FF)) {
+
+		} else if (si.type == G(FF)) { // don't care init
+
+                        if (const_id.count(si.id) && (si.in1 == si.id)) {
+                          log_warning("multiple driven case : overiding with constant driver.\n");
+                          continue; // if si is already a constant value there is no need to
+                                    // add a 'si' feed-back loop FF with don't care init (EDA-3029) 
+                        }
+                        if (const_id.count(si.id)) {
+                          log_warning("A multiple driven case with different functional drivers has been detected\n");
+                        }
 			fprintf(f, ".latch ys__n%d ys__n%d 2\n", si.in1, si.id);
-		} else if (si.type == G(FF0)) {
+
+		} else if (si.type == G(FF0)) { // init is 1'b0
+
+                        if (const_id.count(si.id) && (si.bit != RTLIL::State::S1) &&
+                            (si.in1 == si.id)) {
+                          log_warning("multiple driven case : overiding with constant driver 1'b0.\n");
+                          continue; // if si is already a constant value there is no need to
+                                    // add a 'si' feed-back loop FF with init 1'b0 if the si
+                                    // constant is also 1'b0. 
+                        }
+                        if (const_id.count(si.id)) {
+                          log_warning("A multiple driven case with different functional drivers has been detected\n");
+                        }
 			fprintf(f, ".latch ys__n%d ys__n%d 0\n", si.in1, si.id);
-		} else if (si.type == G(FF1)) {
+
+		} else if (si.type == G(FF1)) { // init is 1'b1
+
+                        if (const_id.count(si.id) && (si.bit == RTLIL::State::S1) &&
+                            (si.in1 == si.id)) {
+                          log_warning("multiple driven case : overiding with constant driver 1'b1.\n");
+                          continue; // if si is already a constant value there is no need to
+                                    // add a 'si' feed-back loop FF with init 1'b1 if the si
+                                    // constant is also 1'b1. 
+                        }
+                        if (const_id.count(si.id)) {
+                          log_warning("A multiple driven case with different functional drivers has been detected\n");
+                        }
 			fprintf(f, ".latch ys__n%d ys__n%d 1\n", si.in1, si.id);
+
 		} else if (si.type != G(NONE))
 			log_abort();
 		if (si.type != G(NONE))
