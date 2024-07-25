@@ -2208,6 +2208,12 @@ bool unsupportedCell(string cellName)
    if (cellName == "O_BUFT_DS")
        return false;
 
+   if (cellName == "I_FAB")
+       return false;
+
+   if (cellName == "O_FAB")
+       return false;
+
    if (cellName == "O_BUFT")
        return false;
 
