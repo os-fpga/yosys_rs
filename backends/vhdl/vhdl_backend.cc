@@ -2074,7 +2074,7 @@ void vhdl_dump_cell_intermediate_outputs(std::ostream &f, std::string indent, RT
 }
 
 std::set<std::string> genesis3_cells = {"LUT1","LUT2","LUT3","LUT4","LUT5","LUT6","DSP38","DSP19X2","TDP_RAM18KX2","TDP_RAM36K","I_BUF","PLL","I_SERDES","O_SERDES",\
-"I_DELAY","O_DELAY","BOOT_CLOCK","DFFRE","DFFNRE","CLK_BUF","CARRY","I_BUF_DS","O_BUF_DS","O_BUFT","O_BUFT_DS","I_DDR","O_DDR","LATCH","O_BUF","FIFO36K","FIFO18KX2"};
+"I_DELAY","O_DELAY","I_FAB","O_FAB","BOOT_CLOCK","DFFRE","DFFNRE","CLK_BUF","CARRY","I_BUF_DS","O_BUF_DS","O_BUFT","O_BUFT_DS","I_DDR","O_DDR","LATCH","O_BUF","FIFO36K","FIFO18KX2"};
 
 std::set<std::string> genesis2_cells = {"$lut","dff","dffn","sdff","sdffn","dffr","dffnr","dffe","dffne","sdffre","sdffnre","dffre","dffnre","latch","latchn","latchr","latchnr","fa_1bit",\
 "TDP36K","RS_DSP_MULT","RS_DSP_MULT_REGIN","RS_DSP_MULT_REGOUT","RS_DSP_MULT_REGIN_REGOUT","RS_DSP_MULTADD","RS_DSP_MULTADD_REGIN","RS_DSP_MULTADD_REGOUT","RS_DSP_MULTADD_REGIN_REGOUT"\
