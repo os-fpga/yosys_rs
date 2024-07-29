@@ -221,7 +221,7 @@ RTLIL::Const::Const(const std::string &str)
 
 RTLIL::Const::Const(int val, int width)
 {
-	flags = RTLIL::CONST_FLAG_NONE;
+	flags = RTLIL::CONST_FLAG_SIGNED;
 	bits.reserve(width);
 	for (int i = 0; i < width; i++) {
 		bits.push_back((val & 1) != 0 ? State::S1 : State::S0);
