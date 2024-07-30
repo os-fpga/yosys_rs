@@ -2073,173 +2073,23 @@ void vhdl_dump_cell_intermediate_outputs(std::ostream &f, std::string indent, RT
      }
 }
 
-bool isLUTx(string cellName) 
-{
-   if (cellName == "LUT1")
-       return true;
-   if (cellName == "LUT2")
-       return true;
-   if (cellName == "LUT3")
-       return true;
-   if (cellName == "LUT4")
-       return true;
-   if (cellName == "LUT5")
-       return true;
-   if (cellName == "LUT6")
-       return true;
+std::set<std::string> genesis3_cells = {"LUT1","LUT2","LUT3","LUT4","LUT5","LUT6","DSP38","DSP19X2","TDP_RAM18KX2","TDP_RAM36K","I_BUF","PLL","I_SERDES","O_SERDES",\
+"I_DELAY","O_DELAY","I_FAB","O_FAB","BOOT_CLOCK","DFFRE","DFFNRE","CLK_BUF","CARRY","I_BUF_DS","O_BUF_DS","O_BUFT","O_BUFT_DS","I_DDR","O_DDR","LATCH","O_BUF","FIFO36K","FIFO18KX2"};
 
-   return false;
+std::set<std::string> genesis2_cells = {"$lut","dff","dffn","sdff","sdffn","dffr","dffnr","dffe","dffne","sdffre","sdffnre","dffre","dffnre","latch","latchn","latchr","latchnr","fa_1bit",\
+"TDP36K","RS_DSP_MULT","RS_DSP_MULT_REGIN","RS_DSP_MULT_REGOUT","RS_DSP_MULT_REGIN_REGOUT","RS_DSP_MULTADD","RS_DSP_MULTADD_REGIN","RS_DSP_MULTADD_REGOUT","RS_DSP_MULTADD_REGIN_REGOUT"\
+"RS_DSP_MULTACC","RS_DSP_MULTACC_REGIN","RS_DSP_MULTACC_REGOUT","RS_DSP_MULTACC_REGIN_REGOUT"};
+
+
+void map_vhdl_generics(std::ostream &f, std::string indent, const RTLIL::Const &param){
+	if ((param.flags & RTLIL::CONST_FLAG_REAL) == 4)
+		f << stringf(" %s",param.decode_string().c_str());
+	else if ((param.flags & RTLIL::CONST_FLAG_STRING) != 0)
+		f << stringf(" \"%s\"",param.decode_string().c_str());
+	else if (((param.flags & RTLIL::CONST_FLAG_SIGNED) != 0))
+		f << stringf(" %d",param.as_int());
 }
-
-bool isGenesis2(string cellName) 
-{
-if (cellName == "dff")
-       return true;
-   if (cellName == "dffn")
-       return true;
-   if (cellName == "sdff")
-       return true;
-   if (cellName == "sdffn")
-       return true;
-   if (cellName == "dffr")
-       return true;
-   if (cellName == "dffnr")
-       return true;
-   if (cellName == "dffe")
-       return true;
-   if (cellName == "dffne")
-       return true;
-   if (cellName == "sdffre")
-       return true;
-   if (cellName == "sdffnre")
-       return true;
-   if (cellName == "dffre")
-       return true;
-   if (cellName == "dffnre")
-       return true;
-   if (cellName == "latch")
-       return true;
-   if (cellName == "latchn")
-       return true;
-   if (cellName == "latchr")
-       return true;
-   if (cellName == "latchnr")
-       return true;
-   if (cellName == "fa_1bit")
-       return true;
-
-   return false;
-}
-
-bool unsupportedCell(string cellName)
-{
-   if (cellName == "shr") 
-       return false;
-
-   if (cellName == "ADDER_CARRY") 
-       return true;
-
-   if (cellName == "TDP36K") 
-       return false;
-
-   if (cellName == "DSP38") 
-       return true;
-
-   if (cellName == "DSP19X2") 
-       return true;
-
-   if (cellName == "TDP_RAM18KX2") 
-       return true;
-
-   if (cellName == "TDP_RAM36K") 
-       return true;
-
-   if (cellName == "RS_DSP2_MULT") 
-       return false;
-
-   if (cellName == "sh_dff") 
-       return false;
-
-   if (cellName == "latchsre") 
-       return false;
-
-   if (cellName == "dffsre") 
-       return false;
-
-   if (cellName == "dffnsre") 
-       return false;
-
-   if (cellName == "DFFRE") 
-       return false;
-
-   if (cellName == "DFFNRE") 
-       return false;
-
-   if (cellName == "CARRY")
-       return true;
-
-   if (cellName == "CLK_BUF")
-       return false;
-
-   if (cellName == "I_BUF")
-       return false;
-
-   if (cellName == "I_BUF_DS")
-       return false;
-
-   if (cellName == "I_DELAY")
-       return false;
-
-   if (cellName == "BOOT_CLOCK")
-       return true;
-
-   if (cellName == "O_DELAY")
-       return false;
-
-   if (cellName == "I_SERDES")
-       return false;
-
-   if (cellName == "O_SERDES")
-       return false;
-
-   if (cellName == "O_BUF_DS")
-       return false;
-
-   if (cellName == "O_BUFT_DS")
-       return false;
-
-   if (cellName == "I_FAB")
-       return false;
-
-   if (cellName == "O_FAB")
-       return false;
-
-   if (cellName == "O_BUFT")
-       return false;
-
-   if (cellName == "O_DDR")
-       return false;
-
-   if (cellName == "LATCH")
-       return true;
-
-   if (cellName == "PLL")
-       return true;
-
-   if (cellName == "O_BUF")
-       return false;
-
-   /* Genesis 2 */
-   if (isGenesis2(cellName))
-     return false;
-
-   if (isLUTx(cellName))
-     return false;
-
-   return true;
-}
-
-void vhdl_dump_cell(std::ostream &f, std::string indent, RTLIL::Cell *cell)
+void vhdl_dump_cell(std::ostream &f, std::string indent, RTLIL::Cell *cell, int cell_count)
 {
 	// Handled by vhdl_dump_memory
 	if (cell->is_mem_cell()) {
@@ -2256,9 +2106,8 @@ void vhdl_dump_cell(std::ostream &f, std::string indent, RTLIL::Cell *cell)
 
 	// Thierry : customized only for structural VHDL with specific cells
 	//
-        if (unsupportedCell(cellName)) {
-
-           log_cmd_error("Error: write_vhdl cannot handle cell '%s'\n", cellName.c_str());
+	if (!(genesis3_cells.count(cellName.c_str())||genesis3_cells.count(cellName.c_str()))) {
+		log_cmd_error("Error: write_vhdl cannot handle cell '%s'\n", cellName.c_str());
 	}
 
 	// Thierry : perform regular clean up of new created legalized strings
@@ -2268,27 +2117,29 @@ void vhdl_dump_cell(std::ostream &f, std::string indent, RTLIL::Cell *cell)
 	vhdl_dump_attributes(f, indent, cell->attributes);
 
         // Print instance name and cell name to be instantiated
-	//
-	log("Cell = %s, Type = %s\n",log_id(cell->name),log_id(cell->type));
-	f << stringf("%s" "%s : %s \n", indent.c_str(), 
-                     cellname(cell).c_str(), cellName.c_str());
+	
+	f << stringf("%s" "%s_RS_%d: %s \n", indent.c_str(), 
+                    cellName.c_str(),cell_count, cellName.c_str());
 
 	// ================================================
 	// Process "generic map" part of cell instantiation
 	//
-        if (isLUTx(cellName) || isGenesis2(cellName)) {
-
-	  if (!defparam && cell->parameters.size() > 0) {
-		f << stringf("     generic map (");
-		for (auto it = cell->parameters.begin(); it != cell->parameters.end(); ++it) {
-			if (it != cell->parameters.begin())
-				f << stringf(" ,");
-			f << stringf("\n    %s  %s => ", indent.c_str(), id(it->first).c_str());
-			vhdl_dump_const(f, it->second);
+    if (genesis3_cells.count(cellName.c_str()) || genesis2_cells.count(cellName.c_str())) {
+		if (!defparam && cell->parameters.size() > 0) {
+			f << stringf("     generic map (");
+			for (auto it = cell->parameters.begin(); it != cell->parameters.end(); ++it) {
+				if (it != cell->parameters.begin())
+					f << stringf(" ,");
+				
+				f << stringf("\n    %s  %s => ", indent.c_str(), id(it->first).c_str());
+				if ((it->second.flags & RTLIL::CONST_FLAG_REAL) == 4 || (it->second.flags & RTLIL::CONST_FLAG_STRING) != 0 || (it->second.flags & RTLIL::CONST_FLAG_SIGNED) != 0)
+					map_vhdl_generics(f,indent,it->second);
+				else
+					vhdl_dump_const(f, it->second);
+			}
+			f << stringf("\n%s" "   )\n", indent.c_str());
 		}
-		f << stringf("\n%s" "   )\n", indent.c_str());
-          }
-        }
+	}
 
 	// ================================================
 	// Processing "port map" association in instance
@@ -2600,14 +2451,12 @@ void dump_component(std::ostream &f, std::string indent, RTLIL::Cell *cell){
 			if (n > 0)
 				f << stringf(";\n");
 			f << stringf("%s       %s: ",indent.c_str(),log_id(param.first));
-			log("Cell = %s, Paramter = %s, Flag = %d,\n",log_id(cell->type),log_id(param.first),param.second.flags);
 			if ((param.second.flags & RTLIL::CONST_FLAG_REAL) == 4)
 				f << stringf("real := 0.0");
 			else if ((param.second.flags & RTLIL::CONST_FLAG_STRING) != 0)
 				f << stringf("string := \"%s\"",param.second.decode_string().c_str());
-			else if (((param.second.flags & RTLIL::CONST_FLAG_SIGNED) != 0) )
+			else if (((param.second.flags & RTLIL::CONST_FLAG_SIGNED) != 0))
 				f << stringf("integer := 0");
-			
 			else if (param.second.size()>1){
 				f << stringf("std_logic_vector (%d downto 0)",param.second.size()-1);
 			}
@@ -2635,8 +2484,11 @@ void dump_component(std::ostream &f, std::string indent, RTLIL::Cell *cell){
 		else{
 			f << stringf("std_logic");
 		}
-		// if ((cell->input(conn.first)))
-		// 	f << stringf(" := '0'");
+		if ((cell->input(conn.first) && conn.second.size()>1))
+			f << stringf(" := (others => \'0\')");
+		else if (cell->input(conn.first) && conn.second.size() == 1){
+			f << stringf(" := \'0\'");
+		}
 		n++;
 	}
 
@@ -2648,17 +2500,11 @@ void dump_component(std::ostream &f, std::string indent, RTLIL::Cell *cell){
 void cell_complex_expression(RTLIL::Module *module){
 	for (auto cell : module->cells()) {
 		string cellName = id(cell->type, true);
-		if (isLUTx(cellName) || cell->type == RTLIL::escape_id("I_DELAY") || cell->type == RTLIL::escape_id("O_DELAY")\
-				|| cell->type == RTLIL::escape_id("I_SERDES") || cell->type == RTLIL::escape_id("O_SERDES")\
-				|| cell->type == RTLIL::escape_id("TDP_RAM18KX2") || cell->type == RTLIL::escape_id("TDP_RAM36K")\
-				|| cell->type == RTLIL::escape_id("DSP19X2") || cell->type == RTLIL::escape_id("DSP38")\
-		){ 	
-			for (auto port : cell->connections()){
-				if (port.second.size()>1){
-					RTLIL::Wire *new_wire=module->addWire(NEW_ID,GetSize(port.second));
-					module->connect( SigSpec(new_wire),port.second);
-					cell->setPort(port.first, SigSpec(new_wire));
-				}
+		for (auto port : cell->connections()){
+			if (port.second.size()>1){
+				RTLIL::Wire *new_wire=module->addWire(NEW_ID,GetSize(port.second));
+				module->connect( SigSpec(new_wire),port.second);
+				cell->setPort(port.first, SigSpec(new_wire));
 			}
 		}
     }
@@ -2801,9 +2647,10 @@ void vhdl_dump_module(std::ostream &f, std::string indent, RTLIL::Module *module
 	}
 
         f << stringf("%s" "begin\n", indent.c_str());
-
+	int cell_count = 0;
 	for (auto cell : module->cells()) {
-		vhdl_dump_cell(f, indent + "  ", cell);
+		cell_count++;
+		vhdl_dump_cell(f, indent + "  ", cell, cell_count);
 	}
 
 	for (auto it = module->processes.begin(); it != module->processes.end(); ++it)
