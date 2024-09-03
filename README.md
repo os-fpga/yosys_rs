@@ -1,5 +1,5 @@
 ```
-yosys -- Yosys Open SYnthesis Suite
+yosys -- Yosys Open SYnthesis Suite X
 
 Copyright (C) 2012 - 2020  Claire Xenia Wolf <claire@yosyshq.com>
 
