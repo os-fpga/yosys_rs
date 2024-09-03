@@ -235,29 +235,29 @@ void set_instance_parameters(Design *design)
 class YosysStreamCallBackHandler : public VerificStreamCallBackHandler
 {
 public:
-    YosysStreamCallBackHandler() : VerificStreamCallBackHandler() { }
-    virtual ~YosysStreamCallBackHandler() { }
+	YosysStreamCallBackHandler() : VerificStreamCallBackHandler() { }
+	virtual ~YosysStreamCallBackHandler() { }
 
-    virtual verific_stream *GetSysCallStream(const char *file_path)
-    {
-        if (!file_path) return nullptr;
+	virtual verific_stream *GetSysCallStream(const char *file_path)
+	{
+		if (!file_path) return nullptr;
 
-        linefile_type src_loc = GetFromLocation();
+		linefile_type src_loc = GetFromLocation();
 
-        char *this_file_name = nullptr;
-        if (src_loc && !FileSystem::IsAbsolutePath(file_path)) {
-            const char *src_file_name = LineFile::GetFileName(src_loc);
-            char *dir_name = FileSystem::DirectoryPath(src_file_name);
-            if (dir_name) {
-                this_file_name = Strings::save(dir_name, "/", file_path);
-                Strings::free(dir_name);
-                file_path = this_file_name;
-            }
-        }
-        verific_stream *strm = new verific_ifstream(file_path);
-        Strings::free(this_file_name);
-        return strm;
-    }
+		char *this_file_name = nullptr;
+		if (src_loc && !FileSystem::IsAbsolutePath(file_path)) {
+			const char *src_file_name = LineFile::GetFileName(src_loc);
+			char *dir_name = FileSystem::DirectoryPath(src_file_name);
+			if (dir_name) {
+				this_file_name = Strings::save(dir_name, "/", file_path);
+				Strings::free(dir_name);
+				file_path = this_file_name;
+			}
+		}
+		verific_stream *strm = new verific_ifstream(file_path);
+		Strings::free(this_file_name);
+		return strm;
+	}
 };
 
 YosysStreamCallBackHandler verific_read_cb;
@@ -360,7 +360,6 @@ void VerificImporter::import_attributes(dict<RTLIL::IdString, RTLIL::Const> &att
 	if (obj->Linefile())
 		attributes[ID::src] = stringf("%s:%d.%d-%d.%d", LineFile::GetFileName(obj->Linefile()), obj->Linefile()->GetLeftLine(), obj->Linefile()->GetLeftCol(), obj->Linefile()->GetRightLine(), obj->Linefile()->GetRightCol());
 
-	// FIXME: Parse numeric attributes
 	FOREACH_ATTRIBUTE(obj, mi, attr) {
 		if (attr->Key()[0] == ' ' || attr->Value() == nullptr)
 			continue;
@@ -2177,6 +2176,7 @@ void VerificImporter::import_netlist(RTLIL::Design *design, Netlist *nl, std::ma
 		}
 
 		RTLIL::Cell *cell = module->addCell(inst_name, inst_type);
+		import_attributes(cell->attributes, inst);
 
 		if (inst->IsPrimitive() && mode_keep)
 			cell->attributes[ID::keep] = 1;
@@ -3083,6 +3083,9 @@ struct VerificPass : public Pass {
 		log("Get/set Verific runtime flags.\n");
 		log("\n");
 		log("\n");
+#if defined(YOSYS_ENABLE_VERIFIC) and defined(YOSYSHQ_VERIFIC_EXTENSIONS)
+		VerificExtensions::Help();
+#endif	
 		log("Use YosysHQ Tabby CAD Suite if you need Yosys+Verific.\n");
 		log("https://www.yosyshq.com/\n");
 		log("\n");

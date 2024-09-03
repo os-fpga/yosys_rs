@@ -42,7 +42,6 @@ struct OptMergeWorker
 	CellTypes ct;
 	int total_count;
 
-
 	static void sort_pmux_conn(dict<RTLIL::IdString, RTLIL::SigSpec> &conn)
 	{
 		SigSpec sig_s = conn.at(ID::S);
@@ -271,6 +270,9 @@ struct OptMergeWorker
 			for (auto cell : cells)
 			{
 				if ((!mode_share_all && !ct.cell_known(cell->type)) || !cell->known())
+					continue;
+
+				if (cell->type == ID($scopeinfo))
 					continue;
 
 				uint64_t hash = hash_cell_parameters_and_connections(cell);

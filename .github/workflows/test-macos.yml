@@ -8,7 +8,7 @@ jobs:
     strategy:
       matrix:
         os:
-          - { id: macos-11, name: 'Big Sur' }
+          - { id: macos-13, name: 'Ventura' }
         cpp_std:
           - 'c++11'
           - 'c++17'
@@ -16,7 +16,7 @@ jobs:
     steps:
       - name: Install Dependencies
         run: |
-          brew install bison flex gawk libffi pkg-config bash
+          HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 brew install bison flex gawk libffi pkg-config bash
 
       - name: Runtime environment
         shell: bash
@@ -35,19 +35,21 @@ jobs:
           cc --version
 
       - name: Checkout Yosys
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Get iverilog
         shell: bash
         run: |
           git clone https://github.com/steveicarus/iverilog.git
+          cd iverilog
+          echo "IVERILOG_GIT=$(git rev-parse HEAD)" >> $GITHUB_ENV
 
       - name: Cache iverilog
         id: cache-iverilog
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: .local/
-          key: ${{ matrix.os.id }}-${{ hashFiles('iverilog/.git/refs/heads/master') }}
+          key: ${{ matrix.os.id }}-${{ env.IVERILOG_GIT }}
 
       - name: Build iverilog
         if: steps.cache-iverilog.outputs.cache-hit != 'true'
@@ -71,57 +73,3 @@ jobs:
         shell: bash
         run: |
           make -j${{ env.procs }} test CXXSTD=${{ matrix.cpp_std }} CC=cc CXX=cc LD=cc
-
-
-  test-macos-homebrew:
-    runs-on: ${{ matrix.os.id }}
-    strategy:
-      matrix:
-        os:
-          - { id: macos-10.15, name: Catalina }
-        cpp_std:
-          - 'c++17'
-        compiler:
-          - gcc
-      fail-fast: false
-    steps:
-      - name: Install Dependencies
-        run: |
-          brew install bison flex gawk libffi pkg-config bash
-
-      - name: Runtime environment
-        shell: bash
-        env:
-          WORKSPACE: ${{ github.workspace }}
-        run: |
-          echo "GITHUB_WORKSPACE=`pwd`" >> $GITHUB_ENV
-          echo "$GITHUB_WORKSPACE/.local/bin" >> $GITHUB_PATH
-          echo "$(brew --prefix bison)/bin" >> $GITHUB_PATH
-          echo "$(brew --prefix flex)/bin" >> $GITHUB_PATH
-          echo "procs=$(sysctl -n hw.ncpu)" >> $GITHUB_ENV
-
-      - name: Setup compiler
-        shell: bash
-        run: |
-          brew install ${{ matrix.compiler }}
-          CC=${COMPILER/@/-}
-          CXX=${CC/#gcc/g++}
-          echo "CC=$CC" >> $GITHUB_ENV
-          echo "CXX=$CXX" >> $GITHUB_ENV
-        env:
-          COMPILER: ${{ matrix.compiler }}
-
-      - name: Tool versions
-        shell: bash
-        run: |
-          $CC --version
-          $CXX --version
-
-      - name: Checkout Yosys
-        uses: actions/checkout@v2
-
-      - name: Build yosys
-        shell: bash
-        run: |
-          make config-gcc
-          make -j${{ env.procs }} CXXSTD=${{ matrix.cpp_std }} CC=$CC CXX=$CC LD=$CC

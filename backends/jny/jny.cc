@@ -410,7 +410,6 @@ struct JnyWriter
 struct JnyBackend : public Backend {
     JnyBackend() : Backend("jny", "generate design metadata") { }
     void help() override {
-        // XXX(aki): TODO: explicitly document the JSON schema
         //   |---v---|---v---|---v---|---v---|---v---|---v---|---v---|---v---|---v---|---v---|
         log("\n");
         log("    jny [options] [selection]\n");
