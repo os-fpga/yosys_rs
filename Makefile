@@ -149,7 +149,7 @@ LIBS += -lrt
 endif
 endif
 
-YOSYS_VER := 0.40
+YOSYS_VER := 0.41
 
 # Note: We arrange for .gitcommit to contain the (short) commit hash in
 # tarballs generated with git-archive(1) using .gitattributes. The git repo
@@ -165,7 +165,7 @@ endif
 OBJS = kernel/version_$(GIT_REV).o
 
 bumpversion:
-#	sed -i "/^YOSYS_VER := / s/+[0-9][0-9]*$$/+`git log --oneline 0033808.. | wc -l`/;" Makefile
+#	sed -i "/^YOSYS_VER := / s/+[0-9][0-9]*$$/+`git log --oneline a1bb025.. | wc -l`/;" Makefile
 
 # set 'ABCREV = default' to use abc/ as it is
 #
@@ -173,7 +173,7 @@ bumpversion:
 # is just a symlink to your actual ABC working directory, as 'make mrproper'
 # will remove the 'abc' directory and you do not want to accidentally
 # delete your work on ABC..
-ABCREV = 0cd90d0
+ABCREV = 237d813
 ABCPULL = 1
 ABCURL ?= https://github.com/YosysHQ/abc
 ABCMKARGS = CC="$(CXX)" CXX="$(CXX)" ABC_USE_LIBSTDCXX=1 ABC_USE_NAMESPACE=abc VERBOSE=$(Q)
@@ -1001,16 +1001,27 @@ docs/gen_images:
 	$(Q) $(MAKE) -C docs images
 
 DOCS_GUIDELINE_FILES := GettingStarted CodingStyle
-docs/guidelines:
-	$(Q) mkdir -p docs/source/temp
-	$(Q) cp -f $(addprefix guidelines/,$(DOCS_GUIDELINE_FILES)) docs/source/temp
+docs/guidelines docs/source/generated:
+	$(Q) mkdir -p docs/source/generated
+	$(Q) cp -f $(addprefix guidelines/,$(DOCS_GUIDELINE_FILES)) docs/source/generated
 
-# many of these will return an error which can be safely ignored, so we prefix
-# the command with a '-'
-DOCS_USAGE_PROGS := yosys yosys-config yosys-filterlib yosys-abc yosys-smtbmc yosys-witness
-docs/usage: $(addprefix docs/source/temp/,$(DOCS_USAGE_PROGS))
-docs/source/temp/%: docs/guidelines
-	-$(Q) ./$(PROGRAM_PREFIX)$* --help > $@ 2>&1
+# some commands return an error and print the usage text to stderr
+define DOC_USAGE_STDERR
+docs/source/generated/$(1): $(PROGRAM_PREFIX)$(1) docs/source/generated
+	-$(Q) ./$$< --help 2> $$@
+endef
+DOCS_USAGE_STDERR := yosys-config yosys-filterlib yosys-abc
+$(foreach usage,$(DOCS_USAGE_STDERR),$(eval $(call DOC_USAGE_STDERR,$(usage))))
+
+# others print to stdout
+define DOC_USAGE_STDOUT
+docs/source/generated/$(1): $(PROGRAM_PREFIX)$(1) docs/source/generated
+	$(Q) ./$$< --help > $$@
+endef
+DOCS_USAGE_STDOUT := yosys yosys-smtbmc yosys-witness
+$(foreach usage,$(DOCS_USAGE_STDOUT),$(eval $(call DOC_USAGE_STDOUT,$(usage))))
+
+docs/usage: $(addprefix docs/source/generated/,$(DOCS_USAGE_STDOUT) $(DOCS_USAGE_STDERR))
 
 docs/reqs:
 	$(Q) $(MAKE) -C docs reqs
