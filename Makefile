@@ -36,7 +36,7 @@ ENABLE_PYOSYS := 0
 ENABLE_GCOV := 0
 ENABLE_GPROF := 0
 ENABLE_DEBUG := 0
-ENABLE_NDEBUG := 0
+ENABLE_LTO := 0
 ENABLE_CCACHE := 0
 # sccache is not always a drop-in replacement for ccache in practice
 ENABLE_SCCACHE := 0
@@ -56,6 +56,11 @@ SANITIZER =
 # SANITIZER = memory
 # SANITIZER = undefined
 # SANITIZER = cfi
+
+# Prefer using ENABLE_DEBUG over setting these
+OPT_LEVEL := -O3
+GCC_LTO :=
+CLANG_LTO := -flto=thin
 
 PROGRAM_PREFIX :=
 
@@ -150,14 +155,19 @@ LIBS += -lrt
 endif
 endif
 
-YOSYS_VER := 0.43
+ifeq ($(OS), Haiku)
+# Allow usage of non-posix vasprintf, mkstemps functions
+CXXFLAGS += -D_DEFAULT_SOURCE
+endif
+
+YOSYS_VER := 0.44
 
 # Note: We arrange for .gitcommit to contain the (short) commit hash in
 # tarballs generated with git-archive(1) using .gitattributes. The git repo
 # will have this file in its unexpanded form tough, in which case we fall
 # back to calling git directly.
 TARBALL_GIT_REV := $(shell cat $(YOSYS_SRC)/.gitcommit)
-ifeq ($(TARBALL_GIT_REV),$$Format:%h$$)
+ifneq ($(findstring Format:,$(TARBALL_GIT_REV)),)
 GIT_REV := $(shell GIT_DIR=$(YOSYS_SRC)/.git git rev-parse --short=9 HEAD || echo UNKNOWN)
 else
 GIT_REV := $(TARBALL_GIT_REV)
@@ -166,7 +176,7 @@ endif
 OBJS = kernel/version_$(GIT_REV).o
 
 bumpversion:
-#	sed -i "/^YOSYS_VER := / s/+[0-9][0-9]*$$/+`git log --oneline 9b6afcf.. | wc -l`/;" Makefile
+#	sed -i "/^YOSYS_VER := / s/+[0-9][0-9]*$$/+`git log --oneline ead4718.. | wc -l`/;" Makefile
 
 ABCMKARGS = CC="$(CXX)" CXX="$(CXX)" ABC_USE_LIBSTDCXX=1 ABC_USE_NAMESPACE=abc VERBOSE=$(Q)
 
@@ -214,10 +224,17 @@ ifeq ($(OS), OpenBSD)
 ABC_ARCHFLAGS += "-DABC_NO_RLIMIT"
 endif
 
+# This gets overridden later.
+LTOFLAGS := $(GCC_LTO)
+
 ifeq ($(CONFIG),clang)
 CXX = clang++
-CXXFLAGS += -std=$(CXXSTD) -Os
+CXXFLAGS += -std=$(CXXSTD) $(OPT_LEVEL)
+ifeq ($(ENABLE_LTO),1)
+LINKFLAGS += -fuse-ld=lld
+endif
 ABCMKARGS += ARCHFLAGS="-DABC_USE_STDINT_H $(ABC_ARCHFLAGS)"
+LTOFLAGS := $(CLANG_LTO)
 
 ifneq ($(SANITIZER),)
 $(info [Clang Sanitizer] $(SANITIZER))
@@ -233,19 +250,20 @@ endif
 ifneq ($(findstring cfi,$(SANITIZER)),)
 CXXFLAGS += -flto
 LINKFLAGS += -flto
+LTOFLAGS =
 endif
 endif
 
 else ifeq ($(CONFIG),gcc)
 CXX = g++
-CXXFLAGS += -std=$(CXXSTD) -Os
+CXXFLAGS += -std=$(CXXSTD) $(OPT_LEVEL)
 ABCMKARGS += ARCHFLAGS="-DABC_USE_STDINT_H $(ABC_ARCHFLAGS)"
 
 else ifeq ($(CONFIG),gcc-static)
 LINKFLAGS := $(filter-out -rdynamic,$(LINKFLAGS)) -static
 LIBS := $(filter-out -lrt,$(LIBS))
 CXXFLAGS := $(filter-out -fPIC,$(CXXFLAGS))
-CXXFLAGS += -std=$(CXXSTD) -Os
+CXXFLAGS += -std=$(CXXSTD) $(OPT_LEVEL)
 ABCMKARGS = CC="$(CC)" CXX="$(CXX)" LD="$(CXX)" ABC_USE_LIBSTDCXX=1 LIBS="-lm -lpthread -static" OPTFLAGS="-O" \
                        ARCHFLAGS="-DABC_USE_STDINT_H -DABC_NO_DYNAMIC_LINKING=1 -Wno-unused-but-set-variable $(ARCHFLAGS)" ABC_USE_NO_READLINE=1
 ifeq ($(DISABLE_ABC_THREADS),1)
@@ -254,12 +272,12 @@ endif
 
 else ifeq ($(CONFIG),afl-gcc)
 CXX = AFL_QUIET=1 AFL_HARDEN=1 afl-gcc
-CXXFLAGS += -std=$(CXXSTD) -Os
+CXXFLAGS += -std=$(CXXSTD) $(OPT_LEVEL)
 ABCMKARGS += ARCHFLAGS="-DABC_USE_STDINT_H"
 
 else ifeq ($(CONFIG),cygwin)
 CXX = g++
-CXXFLAGS += -std=gnu++11 -Os
+CXXFLAGS += -std=gnu++11 $(OPT_LEVEL)
 ABCMKARGS += ARCHFLAGS="-DABC_USE_STDINT_H"
 
 else ifeq ($(CONFIG),wasi)
@@ -274,7 +292,7 @@ AR = $(WASI_SDK)/bin/ar
 RANLIB = $(WASI_SDK)/bin/ranlib
 WASIFLAGS := --sysroot $(WASI_SDK)/share/wasi-sysroot $(WASIFLAGS)
 endif
-CXXFLAGS := $(WASIFLAGS) -std=$(CXXSTD) -Os -D_WASI_EMULATED_PROCESS_CLOCKS $(filter-out -fPIC,$(CXXFLAGS))
+CXXFLAGS := $(WASIFLAGS) -std=$(CXXSTD) $(OPT_LEVEL) -D_WASI_EMULATED_PROCESS_CLOCKS $(filter-out -fPIC,$(CXXFLAGS))
 LINKFLAGS := $(WASIFLAGS) -Wl,-z,stack-size=1048576 $(filter-out -rdynamic,$(LINKFLAGS))
 LIBS := -lwasi-emulated-process-clocks $(filter-out -lrt,$(LIBS))
 ABCMKARGS += AR="$(AR)" RANLIB="$(RANLIB)"
@@ -292,7 +310,7 @@ endif
 else ifeq ($(CONFIG),mxe)
 PKG_CONFIG = /usr/local/src/mxe/usr/bin/i686-w64-mingw32.static-pkg-config
 CXX = /usr/local/src/mxe/usr/bin/i686-w64-mingw32.static-g++
-CXXFLAGS += -std=$(CXXSTD) -Os -D_POSIX_SOURCE -DYOSYS_MXE_HACKS -Wno-attributes
+CXXFLAGS += -std=$(CXXSTD) $(OPT_LEVEL) -D_POSIX_SOURCE -DYOSYS_MXE_HACKS -Wno-attributes
 CXXFLAGS := $(filter-out -fPIC,$(CXXFLAGS))
 LINKFLAGS := $(filter-out -rdynamic,$(LINKFLAGS)) -s
 LIBS := $(filter-out -lrt,$(LIBS))
@@ -303,7 +321,7 @@ EXE = .exe
 
 else ifeq ($(CONFIG),msys2-32)
 CXX = i686-w64-mingw32-g++
-CXXFLAGS += -std=$(CXXSTD) -Os -D_POSIX_SOURCE -DYOSYS_WIN32_UNIX_DIR
+CXXFLAGS += -std=$(CXXSTD) $(OPT_LEVEL) -D_POSIX_SOURCE -DYOSYS_WIN32_UNIX_DIR
 CXXFLAGS := $(filter-out -fPIC,$(CXXFLAGS))
 LINKFLAGS := $(filter-out -rdynamic,$(LINKFLAGS)) -s
 LIBS := $(filter-out -lrt,$(LIBS))
@@ -313,7 +331,7 @@ EXE = .exe
 
 else ifeq ($(CONFIG),msys2-64)
 CXX = x86_64-w64-mingw32-g++
-CXXFLAGS += -std=$(CXXSTD) -Os -D_POSIX_SOURCE -DYOSYS_WIN32_UNIX_DIR
+CXXFLAGS += -std=$(CXXSTD) $(OPT_LEVEL) -D_POSIX_SOURCE -DYOSYS_WIN32_UNIX_DIR
 CXXFLAGS := $(filter-out -fPIC,$(CXXFLAGS))
 LINKFLAGS := $(filter-out -rdynamic,$(LINKFLAGS)) -s
 LIBS := $(filter-out -lrt,$(LIBS))
@@ -322,11 +340,18 @@ ABCMKARGS += LIBS="-lpthread -lshlwapi -s" ABC_USE_NO_READLINE=0 CC="x86_64-w64-
 EXE = .exe
 
 else ifeq ($(CONFIG),none)
-CXXFLAGS += -std=$(CXXSTD) -Os
+CXXFLAGS += -std=$(CXXSTD) $(OPT_LEVEL)
 ABCMKARGS += ARCHFLAGS="-DABC_USE_STDINT_H $(ABC_ARCHFLAGS)"
+LTOFLAGS =
 
 else
 $(error Invalid CONFIG setting '$(CONFIG)'. Valid values: clang, gcc, mxe, msys2-32, msys2-64, none)
+endif
+
+
+ifeq ($(ENABLE_LTO),1)
+CXXFLAGS += $(LTOFLAGS)
+LINKFLAGS += $(LTOFLAGS)
 endif
 
 ifeq ($(ENABLE_LIBYOSYS),1)
@@ -443,16 +468,8 @@ CXXFLAGS += -pg
 LINKFLAGS += -pg
 endif
 
-ifeq ($(ENABLE_NDEBUG),1)
-CXXFLAGS := -O3 -DNDEBUG $(filter-out -Os -ggdb,$(CXXFLAGS))
-endif
-
 ifeq ($(ENABLE_DEBUG),1)
-ifeq ($(CONFIG),clang)
-CXXFLAGS := -O0 -DDEBUG $(filter-out -Os,$(CXXFLAGS))
-else
-CXXFLAGS := -Og -DDEBUG $(filter-out -Os,$(CXXFLAGS))
-endif
+CXXFLAGS := -Og -DDEBUG $(filter-out $(OPT_LEVEL),$(CXXFLAGS))
 endif
 
 ifeq ($(ENABLE_ABC),1)
@@ -583,6 +600,7 @@ S =
 endif
 
 $(eval $(call add_include_file,kernel/binding.h))
+$(eval $(call add_include_file,kernel/bitpattern.h))
 $(eval $(call add_include_file,kernel/cellaigs.h))
 $(eval $(call add_include_file,kernel/celledges.h))
 $(eval $(call add_include_file,kernel/celltypes.h))
@@ -628,7 +646,7 @@ $(eval $(call add_include_file,backends/rtlil/rtlil_backend.h))
 
 OBJS += kernel/driver.o kernel/register.o kernel/rtlil.o kernel/log.o kernel/calc.o kernel/yosys.o
 OBJS += kernel/binding.o
-OBJS += kernel/cellaigs.o kernel/celledges.o kernel/satgen.o kernel/scopeinfo.o kernel/qcsat.o kernel/mem.o kernel/ffmerge.o kernel/ff.o kernel/yw.o kernel/json.o kernel/fmt.o
+OBJS += kernel/cellaigs.o kernel/celledges.o kernel/cost.o kernel/satgen.o kernel/scopeinfo.o kernel/qcsat.o kernel/mem.o kernel/ffmerge.o kernel/ff.o kernel/yw.o kernel/json.o kernel/fmt.o
 ifeq ($(ENABLE_ZLIB),1)
 OBJS += kernel/fstdata.o
 endif
@@ -785,10 +803,10 @@ check-git-abc:
 		exit 1; \
 	elif git -C "$(YOSYS_SRC)" submodule status abc 2>/dev/null | grep -q '^ '; then \
 		exit 0; \
-	elif [ -f "$(YOSYS_SRC)/abc/.gitcommit" ] && ! grep -q '\$$Format:%h\$$' "$(YOSYS_SRC)/abc/.gitcommit"; then \
+	elif [ -f "$(YOSYS_SRC)/abc/.gitcommit" ] && ! grep -q '\$$Format:%[hH]\$$' "$(YOSYS_SRC)/abc/.gitcommit"; then \
 		echo "'abc' comes from a tarball. Continuing."; \
 		exit 0; \
-	elif [ -f "$(YOSYS_SRC)/abc/.gitcommit" ] && grep -q '\$$Format:%h\$$' "$(YOSYS_SRC)/abc/.gitcommit"; then \
+	elif [ -f "$(YOSYS_SRC)/abc/.gitcommit" ] && grep -q '\$$Format:%[hH]\$$' "$(YOSYS_SRC)/abc/.gitcommit"; then \
 		echo "Error: 'abc' is not configured as a git submodule."; \
 		echo "To resolve this:"; \
 		echo "1. Back up your changes: Save any modifications from the 'abc' directory to another location."; \
@@ -875,6 +893,7 @@ endif
 	+cd tests/arch/quicklogic/pp3 && bash run-test.sh $(SEEDOPT)
 	+cd tests/arch/quicklogic/qlf_k6n10f && bash run-test.sh $(SEEDOPT)
 	+cd tests/arch/gatemate && bash run-test.sh $(SEEDOPT)
+	+cd tests/arch/microchip && bash run-test.sh $(SEEDOPT)
 	+cd tests/rpc && bash run-test.sh
 	+cd tests/memfile && bash run-test.sh
 	+cd tests/verilog && bash run-test.sh
