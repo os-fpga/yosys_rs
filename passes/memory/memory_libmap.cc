@@ -2490,6 +2490,7 @@ struct MemoryLibMapPass : public Pass {
 						if(counter <= limit_b){
 							map.emit(map.cfgs[idx]);
 						} else {
+							log_warning("BRAM usage exceeded. Required BRAMs: %0.1f; Available BRAMs on the device: %d.\n",counter,limit_b);
 							break;
 						}
 					} else {
