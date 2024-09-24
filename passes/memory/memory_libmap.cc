@@ -174,6 +174,7 @@ struct Swizzle {
 };
 
 struct MemMapping {
+        Design* design;
 	MapWorker &worker;
 	QuickConeSat qcsat;
 	Mem &mem;
@@ -190,7 +191,7 @@ struct MemMapping {
 	dict<std::pair<int, int>, bool> wr_excludes_srst_cache;
 	std::string rejected_cfg_debug_msgs;
 
-	MemMapping(MapWorker &worker, Mem &mem, const Library &lib, const PassOptions &opts) : worker(worker), qcsat(worker.modwalker), mem(mem), lib(lib), opts(opts) {
+	MemMapping(Design* design, MapWorker &worker, Mem &mem, const Library &lib, const PassOptions &opts) : worker(worker), qcsat(worker.modwalker), mem(mem), lib(lib), opts(opts) {
 		determine_style();
 		logic_ok = determine_logic_ok();
 		if (GetSize(mem.wr_ports) == 0)
@@ -234,6 +235,15 @@ struct MemMapping {
 		dump_configs(0);
 		prune_post_geom();
 		dump_configs(1);
+
+                // Inform through scratchpad mechanism that this memory is a 'rom'
+                //
+                const char *mem_str = (mem.memid).c_str();
+                std::string mem_string = mem_str;
+
+                if (mem.wr_ports.empty()) {
+                   design->scratchpad_set_string(mem_string, "rom");
+                }
 	}
 
 	bool addr_compatible(int wpidx, int rpidx) {
@@ -2367,7 +2377,7 @@ struct MemoryLibMapPass : public Pass {
 			for (auto &mem : mems)
 			{
 				bool wtrans_new = false;
-				MemMapping map(worker, mem, lib, opts);
+				MemMapping map(design, worker, mem, lib, opts);
 				int idx = -1;
 				int best = map.logic_cost;
 				if (!map.logic_ok) {

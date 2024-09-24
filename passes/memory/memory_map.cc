@@ -108,7 +108,14 @@ struct MemoryMapWorker
 		std::set<int> static_ports;
 		std::map<int, RTLIL::SigSpec> static_cells_map;
 
+                const char *mem_str = (mem.memid).c_str();
+                std::string mem_string = mem_str;
+
 		SigSpec init_data = mem.get_init_data();
+
+		if (mem.wr_ports.empty()) {
+                   design->scratchpad_set_string(mem_string, "rom");
+                }
 
 		if (!mem.wr_ports.empty() && rom_only)
 			return;
@@ -268,6 +275,8 @@ struct MemoryMapWorker
 					module->connect(RTLIL::SigSig(w_in, w_out));
 			}
 		}
+
+                design->scratchpad_set_string(mem_string, "dissolved");
 
 		log("  created %d %s cells and %d static cells of width %d.\n",
 				mem.size-count_static, formal && (static_only || async_wr) ? "$ff" : "$dff", count_static, mem.width);
