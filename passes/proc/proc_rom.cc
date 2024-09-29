@@ -66,6 +66,11 @@ struct RomWorker
 			}
 		}
 
+		if (lhs.empty()) {
+			log_debug("rejecting switch: lhs empty\n");
+			return;
+		}
+
 		int swsigbits = 0;
 		for (int i = 0; i < GetSize(sw->signal); i++)
 			if (sw->signal[i] != State::S0)
@@ -178,6 +183,12 @@ struct RomWorker
 		mem.rd_ports.push_back(std::move(rd));
 
 		mem.emit();
+
+		if (sw->has_attribute(ID::src)) {
+			mem.inits[0].cell->attributes[ID::src] = sw->attributes[ID::src];
+			mem.rd_ports[0].cell->attributes[ID::src] = sw->attributes[ID::src];
+		}
+
 		for (auto cs: sw->cases)
 			delete cs;
 		sw->cases.clear();

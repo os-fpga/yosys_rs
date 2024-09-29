@@ -17,10 +17,11 @@
  *
  */
 
-#include "kernel/yosys.h"
-
 #ifndef RTLIL_H
 #define RTLIL_H
+
+#include "kernel/yosys_common.h"
+#include "kernel/yosys.h"
 
 YOSYS_NAMESPACE_BEGIN
 
@@ -168,7 +169,7 @@ namespace RTLIL
 			log_assert(p[1] != 0);
 			for (const char *c = p; *c; c++)
 				if ((unsigned)*c <= (unsigned)' ')
-					log_error("Found control character or space (0x%02hhx) in string '%s' which is not allowed in RTLIL identifiers\n", *c, p);
+					log_error("Found control character or space (0x%02x) in string '%s' which is not allowed in RTLIL identifiers\n", *c, p);
 
 		#ifndef YOSYS_NO_IDS_REFCNT
 			if (global_free_idx_list_.empty()) {
@@ -712,7 +713,7 @@ struct RTLIL::Const
 	inline unsigned int hash() const {
 		unsigned int h = mkhash_init;
 		for (auto b : bits)
-			mkhash(h, b);
+			h = mkhash(h, b);
 		return h;
 	}
 };

@@ -2,6 +2,92 @@
 List of major changes and improvements between releases
 =======================================================
 
+Yosys 0.43 .. Yosys 0.44
+--------------------------
+ * Various
+    - Added ENABLE_LTO compile option to enable link time
+      optimizations.
+    - Build support for Haiku OS.
+
+ * New commands and options
+    - Added "keep_hierarchy" pass to add attribute with 
+      same name to modules based on cost.
+    - Added options "-noopt","-bloat" and "-check_cost" to
+      "test_cell" pass. 
+
+ * New back-ends
+    - Added initial PolarFire support. ( synth_microchip )
+
+Yosys 0.42 .. Yosys 0.43
+--------------------------
+ * Various
+    - C++ compiler with C++17 support is required.
+    - Support for IO liberty files for verification.
+    - Limit padding from shiftadd for "peepopt" pass.
+
+ * Verific support
+    - Support building Yosys with various Verific library
+      configurations. Can be built now without YosysHQ 
+      specific patch and extension library.
+
+Yosys 0.41 .. Yosys 0.42
+--------------------------
+ * New commands and options
+    - Added "box_derive" pass to derive box modules.
+    - Added option "assert-mod-count" to "select" pass. 
+    - Added option "-header","-push" and "-pop" to "log" pass. 
+ * Intel support
+    - Dropped Quartus support in "synth_intel_alm" pass.
+
+Yosys 0.40 .. Yosys 0.41
+--------------------------
+ * New commands and options
+    - Added "cellmatch" pass for picking out standard cells automatically. 
+
+ * Various
+    - Extended the experimental incremental JSON API to allow arbitrary
+      smtlib subexpressions.
+    - Added support for using ABCs library merging when providing multiple
+      liberty files.
+
+ * Verific support
+    - Expose library name as module attribute.
+
+Yosys 0.39 .. Yosys 0.40
+--------------------------
+ * New commands and options
+    - Added option "-vhdl2019" to "read" and "verific" pass. 
+
+ * Various
+    - Major documentation overhaul.
+    - Added port statistics to "stat" command.
+    - Added new formatting features to cxxrtl backend.
+
+ * Verific support
+    - Added better support for VHDL constants import.
+    - Added support for VHDL 2009.
+
+Yosys 0.38 .. Yosys 0.39
+--------------------------
+ * New commands and options
+    - Added option "-extra-map" to "synth" pass. 
+    - Added option "-dont_use" to "dfflibmap" pass.
+    - Added option "-href" to "show" command.
+    - Added option "-noscopeinfo" to "flatten" pass.
+    - Added option "-scopename" to "flatten" pass.
+
+ * SystemVerilog
+    - Added support for packed multidimensional arrays.
+
+ * Various
+    - Added "$scopeinfo" cells to preserve information about
+      the hierarchy during flattening.
+    - Added sequential area output to "stat -liberty".
+    - Added ability to record/replay diagnostics in cxxrtl backend.
+ 
+ * Verific support
+    - Added attributes to module instantiation.
+
 Yosys 0.37 .. Yosys 0.38
 --------------------------
  * New commands and options

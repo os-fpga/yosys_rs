@@ -843,8 +843,10 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 		for (std::string dont_use_cell : dont_use_cells) {
 			dont_use_args += stringf("-X \"%s\" ", dont_use_cell.c_str());
 		}
+		bool first_lib = true;
 		for (std::string liberty_file : liberty_files) {
-			abc_script += stringf("read_lib %s -w \"%s\" ; ", dont_use_args.c_str(), liberty_file.c_str());
+			abc_script += stringf("read_lib %s %s -w \"%s\" ; ", dont_use_args.c_str(), first_lib ? "" : "-m", liberty_file.c_str());
+			first_lib = false;
 		}
 		for (std::string liberty_file : genlib_files)
 			abc_script += stringf("read_library \"%s\"; ", liberty_file.c_str());
@@ -898,7 +900,7 @@ void abc_module(RTLIL::Design *design, RTLIL::Module *current_module, std::strin
 	for (size_t pos = abc_script.find("{S}"); pos != std::string::npos; pos = abc_script.find("{S}", pos))
 		abc_script = abc_script.substr(0, pos) + lutin_shared + abc_script.substr(pos+3);
 	if (abc_dress)
-		abc_script += "; dress";
+		abc_script += stringf("; dress \"%s/input.blif\"", tempdir_name.c_str());
 	abc_script += stringf("; write_blif %s/output.blif", tempdir_name.c_str());
 	abc_script = add_echos_to_abc_cmd(abc_script);
 

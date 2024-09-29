@@ -405,19 +405,10 @@ void remove_mul_param(RTLIL::Cell *cell){
 
 void replace_const_cells(RTLIL::Design *design, RTLIL::Module *module, bool consume_x, bool mux_undef, bool mux_bool, bool do_fine, bool keepdc, bool noclkinv)
 {
-	CellTypes ct_combinational;
-	ct_combinational.setup_internals();
-	ct_combinational.setup_stdcells();
-
 	SigMap assign_map(module);
 	dict<RTLIL::SigSpec, RTLIL::SigSpec> invert_map;
 
-	TopoSort<RTLIL::Cell*, RTLIL::IdString::compare_ptr_by_name<RTLIL::Cell>> cells;
 	dict<RTLIL::IdString, Cell*> dcells;
-
-	dict<RTLIL::Cell*, std::set<RTLIL::SigBit>> cell_to_inbit;
-
-	dict<RTLIL::SigBit, std::set<RTLIL::Cell*>> outbit_to_cell;
 
 	for (auto cell : module->cells())
 		if (design->selected(module, cell) && cell->type[0] == '$') {
@@ -427,42 +418,18 @@ void replace_const_cells(RTLIL::Design *design, RTLIL::Module *module, bool cons
 			if (cell->type.in(ID($mux), ID($_MUX_)) &&
 					cell->getPort(ID::A) == SigSpec(State::S1) && cell->getPort(ID::B) == SigSpec(State::S0))
 				invert_map[assign_map(cell->getPort(ID::Y))] = assign_map(cell->getPort(ID::S));
-			if (ct_combinational.cell_known(cell->type))
-				for (auto &conn : cell->connections()) {
-					RTLIL::SigSpec sig = assign_map(conn.second);
-					sig.remove_const();
-					if (ct_combinational.cell_input(cell->type, conn.first))
-						cell_to_inbit[cell].insert(sig.begin(), sig.end());
-					if (ct_combinational.cell_output(cell->type, conn.first))
-						for (auto &bit : sig)
-							outbit_to_cell[bit].insert(cell);
-				}
-                        cells.node(cell);
                         dcells[cell->name] = cell;
 		}
 
-        // Build the graph for the topological sort.
-	for (auto &it_right : cell_to_inbit) {
-          const int r_index = cells.node(it_right.first);
-          for (auto &it_sigbit : it_right.second) {
-            for (auto &it_left : outbit_to_cell[it_sigbit]) {
-              const int l_index = cells.node(it_left);
-              cells.edge(l_index, r_index);
-            }
-          }
-        }
+	CellTypes ct_memcells;
+	ct_memcells.setup_stdcells_mem();
 
-	//cells.sort();
 
-	//for (auto cell : cells.sorted)
+	if (!noclkinv)
 	for (auto p : dcells)
 	{
-          Cell* cell = p.second;
-#define ACTION_DO(_p_, _s_) do { cover("opt.opt_expr.action_" S__LINE__); replace_cell(assign_map, module, cell, input.as_string(), _p_, _s_); goto next_cell; } while (0)
-#define ACTION_DO_Y(_v_) ACTION_DO(ID::Y, RTLIL::SigSpec(RTLIL::State::S ## _v_))
-
-		if (!noclkinv)
-		{
+		Cell* cell = p.second;
+		if (design->selected(module, cell)) {
 			if (cell->type.in(ID($dff), ID($dffe), ID($dffsr), ID($dffsre), ID($adff), ID($adffe), ID($aldff), ID($aldffe), ID($sdff), ID($sdffe), ID($sdffce), ID($fsm), ID($memrd), ID($memrd_v2), ID($memwr), ID($memwr_v2)))
 				handle_polarity_inv(cell, ID::CLK, ID::CLK_POLARITY, assign_map, invert_map);
 
@@ -482,6 +449,9 @@ void replace_const_cells(RTLIL::Design *design, RTLIL::Module *module, bool cons
 
 			if (cell->type.in(ID($dffe), ID($adffe), ID($aldffe), ID($sdffe), ID($sdffce), ID($dffsre), ID($dlatch), ID($adlatch), ID($dlatchsr)))
 				handle_polarity_inv(cell, ID::EN, ID::EN_POLARITY, assign_map, invert_map);
+
+			if (!ct_memcells.cell_known(cell->type))
+				continue;
 
 			handle_clkpol_celltype_swap(cell, "$_SR_N?_", "$_SR_P?_", ID::S, assign_map, invert_map);
 			handle_clkpol_celltype_swap(cell, "$_SR_?N_", "$_SR_?P_", ID::R, assign_map, invert_map);
@@ -533,7 +503,15 @@ void replace_const_cells(RTLIL::Design *design, RTLIL::Module *module, bool cons
 			handle_clkpol_celltype_swap(cell, "$_DLATCHSR_N??_", "$_DLATCHSR_P??_", ID::E, assign_map, invert_map);
 			handle_clkpol_celltype_swap(cell, "$_DLATCHSR_?N?_", "$_DLATCHSR_?P?_", ID::S, assign_map, invert_map);
 			handle_clkpol_celltype_swap(cell, "$_DLATCHSR_??N_", "$_DLATCHSR_??P_", ID::R, assign_map, invert_map);
-		}
+		}	
+	}
+
+
+	for (auto p : dcells)
+	{
+        	Cell* cell = p.second;
+#define ACTION_DO(_p_, _s_) do { cover("opt.opt_expr.action_" S__LINE__); replace_cell(assign_map, module, cell, input.as_string(), _p_, _s_); goto next_cell; } while (0)
+#define ACTION_DO_Y(_v_) ACTION_DO(ID::Y, RTLIL::SigSpec(RTLIL::State::S ## _v_))
 
 		bool detect_const_and = false;
 		bool detect_const_or = false;

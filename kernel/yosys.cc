@@ -55,7 +55,7 @@
 #  include <glob.h>
 #endif
 
-#ifdef __FreeBSD__
+#if defined(__FreeBSD__) || defined(__NetBSD__)
 #  include <sys/sysctl.h>
 #endif
 
@@ -145,30 +145,15 @@ void yosys_banner()
 {
 	log("\n");
 	log(" /----------------------------------------------------------------------------\\\n");
-	log(" |                                                                            |\n");
 	log(" |  yosys -- Yosys Open SYnthesis Suite                                       |\n");
-	log(" |                                                                            |\n");
-	log(" |  Copyright (C) 2012 - 2020  Claire Xenia Wolf <claire@yosyshq.com>         |\n");
-	log(" |                                                                            |\n");
-	log(" |  Permission to use, copy, modify, and/or distribute this software for any  |\n");
-	log(" |  purpose with or without fee is hereby granted, provided that the above    |\n");
-	log(" |  copyright notice and this permission notice appear in all copies.         |\n");
-	log(" |                                                                            |\n");
-	log(" |  THE SOFTWARE IS PROVIDED \"AS IS\" AND THE AUTHOR DISCLAIMS ALL WARRANTIES  |\n");
-	log(" |  WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF          |\n");
-	log(" |  MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR   |\n");
-	log(" |  ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES    |\n");
-	log(" |  WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN     |\n");
-	log(" |  ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF   |\n");
-	log(" |  OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.            |\n");
-	log(" |                                                                            |\n");
+	log(" |  Copyright (C) 2012 - 2024  Claire Xenia Wolf <claire@yosyshq.com>         |\n");
+	log(" |  Distributed under an ISC-like license, type \"license\" to see terms        |\n");
 	log(" \\----------------------------------------------------------------------------/\n");
 	log("\n");
 #ifdef YOSYS_VERIFIC
 	log(" %s\n", yosys_verific_version_str);
 #endif    
 	log(" %s\n", yosys_version_str);
-	log("\n");
 }
 
 int ceil_log2(int x)
@@ -971,10 +956,14 @@ std::string proc_self_dirname()
 		buflen--;
 	return std::string(path, buflen);
 }
-#elif defined(__FreeBSD__)
+#elif defined(__FreeBSD__) || defined(__NetBSD__)
 std::string proc_self_dirname()
 {
+#ifdef __NetBSD__
+	int mib[4] = {CTL_KERN, KERN_PROC_ARGS, getpid(), KERN_PROC_PATHNAME};
+#else
 	int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1};
+#endif
 	size_t buflen;
 	char *buffer;
 	std::string path;
@@ -1033,7 +1022,7 @@ std::string proc_self_dirname()
 {
 	return "/";
 }
-#elif defined(__OpenBSD__)
+#elif defined(__OpenBSD__) || defined(__HAIKU__)
 char yosys_path[PATH_MAX];
 char *yosys_argv0;
 
@@ -1208,31 +1197,40 @@ bool run_frontend(std::string filename, std::string command, RTLIL::Design *desi
 		design = yosys_design;
 
 	if (command == "auto") {
-		std::string filename_trim = filename;
-		if (filename_trim.size() > 3 && filename_trim.compare(filename_trim.size()-3, std::string::npos, ".gz") == 0)
-			filename_trim.erase(filename_trim.size()-3);
-		if (filename_trim.size() > 2 && filename_trim.compare(filename_trim.size()-2, std::string::npos, ".v") == 0)
-			command = " -vlog2k";
-		else if (filename_trim.size() > 2 && filename_trim.compare(filename_trim.size()-3, std::string::npos, ".sv") == 0)
-			command = " -sv";
-		else if (filename_trim.size() > 3 && filename_trim.compare(filename_trim.size()-4, std::string::npos, ".vhd") == 0)
-			command = " -vhdl";
-		else if (filename_trim.size() > 4 && filename_trim.compare(filename_trim.size()-5, std::string::npos, ".blif") == 0)
-			command = "blif";
-		else if (filename_trim.size() > 5 && filename_trim.compare(filename_trim.size()-6, std::string::npos, ".eblif") == 0)
-			command = "blif";
-		else if (filename_trim.size() > 4 && filename_trim.compare(filename_trim.size()-5, std::string::npos, ".json") == 0)
-			command = "json";
-		else if (filename_trim.size() > 3 && filename_trim.compare(filename_trim.size()-3, std::string::npos, ".il") == 0)
-			command = "rtlil";
-		else if (filename_trim.size() > 3 && filename_trim.compare(filename_trim.size()-3, std::string::npos, ".ys") == 0)
-			command = "script";
-		else if (filename_trim.size() > 3 && filename_trim.compare(filename_trim.size()-4, std::string::npos, ".tcl") == 0)
-			command = "tcl";
-		else if (filename == "-")
-			command = "script";
-		else
-			log_error("Can't guess frontend for input file `%s' (missing -f option)!\n", filename.c_str());
+	  std::string filename_trim = filename;
+	  
+	  auto has_extension = [](const std::string& filename, const std::string& extension) {
+	    if (filename.size() >= extension.size()) {
+	      return filename.compare(filename.size() - extension.size(), extension.size(), extension) == 0;
+	    }
+	    return false;
+	  };
+
+	  if (has_extension(filename_trim, ".gz")) {
+	    filename_trim.erase(filename_trim.size() - 3);
+	  }
+	  
+	  if (has_extension(filename_trim, ".v")) {
+	    command = " -vlog2k";
+	  } else if (has_extension(filename_trim, ".sv")) {
+	    command = " -sv";
+	  } else if (has_extension(filename_trim, ".vhd") || has_extension(filename_trim, ".vhdl")) {
+	    command = " -vhdl";
+	  } else if (has_extension(filename_trim, ".blif") || has_extension(filename_trim, ".eblif")) {
+	    command = "blif";
+	  } else if (has_extension(filename_trim, ".json")) {
+	    command = "json";
+	  } else if (has_extension(filename_trim, ".il")) {
+	    command = "rtlil";
+	  } else if (has_extension(filename_trim, ".ys")) {
+	    command = "script";
+	  } else if (has_extension(filename_trim, ".tcl")) {
+	    command = "tcl";
+	  } else if (filename == "-") {
+	    command = "script";
+	  } else {
+	    log_error("Can't guess frontend for input file `%s' (missing -f option)!\n", filename.c_str());
+	  }
 	}
 
 	if (command == "script")
