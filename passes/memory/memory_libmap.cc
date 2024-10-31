@@ -572,7 +572,8 @@ void MemMapping::determine_style() {
 			if (val_s == "auto") {
 				// Nothing.
 			// } else if (val_s == "logic" || val_s == "registers") {
-			} else if (val_s == "logic" || val_s == "registers" || val_s == "pipe_distributed") { // Awais: pipe_distributed ram kind is mapped to logic 
+			} else if (val_s == "logic" || val_s == "registers" || val_s == "pipe_distributed" || val_s == "distributed") { // Awais: pipe_distributed ram kind is mapped to logic 
+				//Awais: map distributed memory to logic, not supported in architecture.
 				kind = RamKind::Logic;
 				log("found attribute '%s = %s' on memory %s.%s, forced mapping to FF\n", log_id(attr), val_s.c_str(), log_id(mem.module->name), log_id(mem.memid));
 			} else if (val_s == "distributed") {
