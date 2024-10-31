@@ -772,6 +772,13 @@ log("Nb solve = %d\n", nbSolve);
 			// Now check if any bit can be replaced by a constant.
 			pool<int> removed_sigbits;
 			for (int i = 0; i < ff.width; i++) {
+
+                                // Avoid runtime explosion in SAT solver (ex: EDA-3310)
+                                //
+                                if (i >= 128) {
+                                  break;
+                                }
+
 				State val = ff.val_init[i];
 				if (ff.has_arst)
 					val = combine_const(val, ff.val_arst[i]);
