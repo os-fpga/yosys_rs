@@ -22,6 +22,8 @@
 #include "kernel/celledges.h"
 #include "kernel/celltypes.h"
 #include "kernel/utils.h"
+#include <chrono>
+#include <exception>
 
 USING_YOSYS_NAMESPACE
 PRIVATE_NAMESPACE_BEGIN
@@ -330,6 +332,9 @@ struct CheckPass : public Pass {
 				}
 
 			topo.sort();
+			int  comb_loop_iter = 0;
+			auto start_time = std::chrono::steady_clock::now();
+			std::chrono::minutes time_limit = std::chrono::minutes(10);
 			for (auto &loop : topo.loops) {
 				string message = stringf("found logic loop in module %s:\n", log_id(module));
 
@@ -337,6 +342,14 @@ struct CheckPass : public Pass {
 				// which we have done the edges fallback. The cell and its ports that led to an edge are
 				// a piece of information we need to recover now. For that we need to have the previous
 				// wire bit of the loop at hand.
+				
+				auto current_time = std::chrono::steady_clock::now();
+
+				if ((current_time - start_time) >= time_limit ||  comb_loop_iter >= 300){
+					log_warning("Design check operation interrupted due to reaching maximum runtime limits.\n");
+					break;
+				}
+				comb_loop_iter++;
 				SigBit prev;
 				for (auto it = loop.rbegin(); it != loop.rend(); it++)
 				if (it->second != -1) { // skip the fallback helper nodes
