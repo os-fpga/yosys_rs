@@ -333,8 +333,6 @@ struct CheckPass : public Pass {
 
 			topo.sort();
 			int  comb_loop_iter = 0;
-			auto start_time = std::chrono::steady_clock::now();
-			std::chrono::minutes time_limit = std::chrono::minutes(10);
 			for (auto &loop : topo.loops) {
 				string message = stringf("found logic loop in module %s:\n", log_id(module));
 
@@ -343,9 +341,7 @@ struct CheckPass : public Pass {
 				// a piece of information we need to recover now. For that we need to have the previous
 				// wire bit of the loop at hand.
 				
-				auto current_time = std::chrono::steady_clock::now();
-
-				if ((current_time - start_time) >= time_limit ||  comb_loop_iter >= 300){
+				if (comb_loop_iter >= 100){
 					log_warning("Design check operation interrupted due to reaching maximum runtime limits.\n");
 					break;
 				}
